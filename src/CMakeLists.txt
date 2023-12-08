@@ -19,6 +19,9 @@ if (${USE_METIS})
    target_link_libraries(parmgmc PUBLIC metis GKlib)
 endif()
 
+find_package(PkgConfig REQUIRED)
+pkg_search_module(PETSc REQUIRED IMPORTED_TARGET PETSc>=3.1)
+
 target_include_directories(parmgmc PUBLIC "${CMAKE_SOURCE_DIR}/include")
 target_compile_options(parmgmc PRIVATE -Wall -Wextra -Wpedantic -Wnon-virtual-dtor)
-target_link_libraries(parmgmc PUBLIC Eigen3::Eigen ${MPI_TARGET})
+target_link_libraries(parmgmc PUBLIC Eigen3::Eigen ${MPI_TARGET} PkgConfig::PETSc)
