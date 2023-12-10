@@ -22,9 +22,8 @@ public:
     mat_assembler(mat, grid);
   }
 
-  Mat get_matrix() const { return mat; }
-
-  ~GridOperator() { MatDestroy(&mat); }
+  const Mat& get_matrix() const { return mat; }
+  const Grid &get_grid() const { return grid; }
 
 private:
   Grid grid;

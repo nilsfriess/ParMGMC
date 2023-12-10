@@ -1,6 +1,9 @@
 #include <iostream>
-
 #include <memory>
+#include <random>
+
+#include <pcg_random.hpp>
+
 #include <petscdm.h>
 #include <petscdmlabel.h>
 #include <petscds.h>
@@ -11,10 +14,11 @@
 #include <petscsystypes.h>
 #include <petscvec.h>
 #include <petscviewer.h>
-#include <random>
 
 #include "parmgmc/grid/grid.hh"
 #include "parmgmc/grid/grid_operator.hh"
+#include "parmgmc/samplers/cholesky.hh"
+#include "parmgmc/samplers/sample_chain.hh"
 #include "parmgmc/samplers/sor.hh"
 
 using namespace parmgmc;
@@ -29,6 +33,8 @@ PetscErrorCode assemble(Mat &mat, const Grid &grid) {
 
   DMDALocalInfo info;
   PetscCall(DMDAGetLocalInfo(grid.get_dm(), &info));
+
+  PetscReal noise_var = 1e-4;
 
   for (auto i = info.xs; i < info.xs + info.xm; ++i) {
     for (auto j = info.ys; j < info.ys + info.ym; ++j) {
@@ -67,7 +73,7 @@ PetscErrorCode assemble(Mat &mat, const Grid &grid) {
 
       col_stencil[k].i = i;
       col_stencil[k].j = j;
-      values[k] = static_cast<PetscScalar>(k);
+      values[k] = static_cast<PetscScalar>(k) + noise_var;
       ++k;
 
       PetscCall(MatSetValuesStencil(
@@ -90,21 +96,39 @@ int main(int argc, char *argv[]) {
 
   int n_vertices = 100;
   auto grid_operator =
-    std::make_shared<GridOperator>(n_vertices, n_vertices, assemble);
+      std::make_shared<GridOperator>(n_vertices, n_vertices, assemble);
 
-  std::mt19937_64 engine{123};
-  SORSampler sampler{grid_operator, &engine};
+  pcg32 engine;
+  // pcg_extras::seed_seq_from<std::random_device> seed_source;
+  engine.seed(0x123);
+  int rank;
+  MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+  engine.set_stream(rank);
 
-  Vec x;
-  PetscCall(MatCreateVecs(grid_operator->get_matrix(), &x, NULL));
+  Vec sample;
+  PetscCall(MatCreateVecs(grid_operator->get_matrix(), &sample, NULL));
 
-  sampler.sample(x, 100);
+  SampleChain<SORSampler<pcg32>> chain{grid_operator, &engine};
+
+  const std::size_t n_burnin = 10000;
+  const std::size_t n_samples = 1000;
 
   PetscReal norm;
-  VecNorm(x, NORM_2, &norm);
   
+  chain.disable_save();
+  chain.sample(sample, n_burnin);
+  chain.enable_save();
+  
+  chain.sample(sample, n_samples);
+
+  Vec mean;
+  VecDuplicate(sample, &mean);
+  chain.compute_mean(mean);
+
+  VecNorm(mean, NORM_2, &norm);
   std::cout << "||x|| = " << norm << "\n";
-  
-  PetscCall(VecDestroy(&x));
+
+  PetscCall(VecDestroy(&sample));
+  PetscCall(VecDestroy(&mean));
   PetscFinalize();
 }
