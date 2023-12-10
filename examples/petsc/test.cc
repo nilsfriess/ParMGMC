@@ -94,13 +94,15 @@ int main(int argc, char *argv[]) {
 
   PetscFunctionBeginUser;
 
-  int n_vertices = 100;
+  int n_vertices = 10;
   auto grid_operator =
       std::make_shared<GridOperator>(n_vertices, n_vertices, assemble);
 
   pcg32 engine;
-  // pcg_extras::seed_seq_from<std::random_device> seed_source;
-  engine.seed(0x123);
+  pcg_extras::seed_seq_from<std::random_device> seed_source;
+
+  engine.seed(seed_source);
+
   int rank;
   MPI_Comm_rank(MPI_COMM_WORLD, &rank);
   engine.set_stream(rank);
@@ -108,25 +110,28 @@ int main(int argc, char *argv[]) {
   Vec sample;
   PetscCall(MatCreateVecs(grid_operator->get_matrix(), &sample, NULL));
 
-  SampleChain<SORSampler<pcg32>> chain{grid_operator, &engine};
+  SampleChain<SORSampler<pcg32>> chain{grid_operator, &engine, 1.9852};
 
-  const std::size_t n_burnin = 10000;
+  const std::size_t n_burnin = 100;
   const std::size_t n_samples = 1000;
 
   PetscReal norm;
-  
+
   chain.disable_save();
   chain.sample(sample, n_burnin);
   chain.enable_save();
-  
-  chain.sample(sample, n_samples);
 
   Vec mean;
   VecDuplicate(sample, &mean);
-  chain.compute_mean(mean);
 
-  VecNorm(mean, NORM_2, &norm);
-  std::cout << "||x|| = " << norm << "\n";
+  for (std::size_t n = 0; n < n_samples; ++n) {
+    chain.sample(sample);
+
+    chain.get_mean(mean);
+
+    VecNorm(mean, NORM_2, &norm);
+    std::cout << norm << "\n";
+  }
 
   PetscCall(VecDestroy(&sample));
   PetscCall(VecDestroy(&mean));
