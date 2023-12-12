@@ -5,11 +5,12 @@
 
 #include <algorithm>
 #include <cmath>
-#include <petscpctypes.h>
-#include <petscsys.h>
+#include <memory>
 #include <random>
 #include <stdexcept>
 
+#include <petscpctypes.h>
+#include <petscsys.h>
 #include <petscerror.h>
 #include <petscksp.h>
 #include <petscmat.h>
@@ -20,7 +21,7 @@
 namespace parmgmc {
 template <class Engine> class SORSampler {
 public:
-  SORSampler(GridOperator grid_operator, Engine *engine, PetscReal omega = 1.) {
+  SORSampler(std::shared_ptr<GridOperator> grid_operator, Engine *engine, PetscReal omega = 1.) {
     auto call = [&](auto err) { PetscCallAbort(MPI_COMM_WORLD, err); };
 
     PetscFunctionBeginUser;
@@ -29,14 +30,14 @@ public:
     call(KSPSetType(ksp, KSPRICHARDSON));
     call(KSPSetTolerances(ksp, PETSC_DEFAULT, PETSC_DEFAULT, PETSC_DEFAULT, 1));
     call(KSPSetInitialGuessNonzero(ksp, PETSC_TRUE));
-    call(KSPSetOperators(ksp, grid_operator.mat, grid_operator.mat));
+    call(KSPSetOperators(ksp, grid_operator->mat, grid_operator->mat));
 
     PC pc;
     call(KSPGetPC(ksp, &pc));
     call(PCSetType(pc, PCSHELL));
 
     auto *context =
-        new SORRichardsonContext<Engine>(engine, grid_operator.mat, omega);
+        new SORRichardsonContext<Engine>(engine, grid_operator->mat, omega);
 
     call(PCShellSetContext(pc, context));
     call(PCShellSetApplyRichardson(pc, sor_pc_richardson_apply<Engine>));

@@ -1,145 +1,141 @@
 #pragma once
 
-#include "parmgmc/common/helpers.hh"
-#include "parmgmc/lattice/lattice.hh"
-#include "parmgmc/samplers/gibbs.hh"
-#include "parmgmc/samplers/sampler_statistics.hh"
+#include "parmgmc/grid/grid_operator.hh"
+#include "parmgmc/samplers/cholesky.hh"
+#include "parmgmc/samplers/sampler_preconditioner.hh"
+#include "parmgmc/samplers/sor.hh"
+#include "parmgmc/samplers/sor_preconditioner.hh"
 
-#include <cstddef>
+#include <iostream>
 #include <memory>
+#include <random>
+
+#include <mpi.h>
+
+#include <petscdm.h>
+#include <petscdmlabel.h>
+#include <petscds.h>
+#include <petscksp.h>
+#include <petscmat.h>
+#include <petscpc.h>
+#include <petscpctypes.h>
+#include <petscsys.h>
+#include <petscsystypes.h>
+#include <petscvec.h>
 
 namespace parmgmc {
-template <class Operator, class Engine,
-          class Smoother = GibbsSampler<Operator, Engine>>
-class MultigridSampler : public SamplerStatistics<Operator> {
+template <class Engine> class MultigridSampler {
 public:
-  struct Parameters {
-    std::size_t levels;
-    std::size_t cycles;
-    std::size_t n_presample;
-    std::size_t n_postsample;
-    double prepost_sampler_omega = 1.;
-  };
+  template <class MatAssembler>
+  MultigridSampler(std::shared_ptr<GridOperator> grid_operator, Engine *engine,
+                   std::size_t n_levels, MatAssembler &&mat_assembler)
+      : ops(n_levels) {
+    auto call = [&](auto err) { PetscCallAbort(MPI_COMM_WORLD, err); };
 
-  MultigridSampler(std::shared_ptr<Operator> finest_operator, Engine *engine,
-                   const Parameters &params)
-      : SamplerStatistics<Operator>{finest_operator}, engine{engine},
-        levels{params.levels}, cycles{params.cycles},
-        n_presample{params.n_presample}, n_postsample{params.n_postsample} {
-    assert(levels >= 2 && "Multigrid sampler must at least have two levels");
+    PetscFunctionBeginUser;
 
-    init(finest_operator,
-         params,
-         [&](auto level,
-             const auto & /*coarse_lattice*/,
-             const auto &fine_matrix) {
-           return prolongations[level - 1].transpose() * fine_matrix *
-                  prolongations[level - 1];
-         });
-  }
+    /* As in the SORSampler, we create a full Krylov solver but set it to only
+     * run the (Multigrid) preconditioner. */
+    call(KSPCreate(MPI_COMM_WORLD, &ksp));
+    call(KSPSetType(ksp, KSPPREONLY));
+    call(KSPSetOperators(ksp, grid_operator->mat, grid_operator->mat));
+    // call(KSPSetInitialGuessNonzero(ksp, PETSC_TRUE));
 
-  template <class CoarseOperatorGenerator>
-  MultigridSampler(std::shared_ptr<Operator> finest_operator, Engine *engine,
-                   const Parameters &params,
-                   CoarseOperatorGenerator &&generator)
-      : SamplerStatistics<Operator>{finest_operator}, engine{engine},
-        levels{params.levels}, cycles{params.cycles},
-        n_presample{params.n_presample}, n_postsample{params.n_postsample} {
-    assert(levels >= 2 && "Multigrid sampler must at least have two levels");
+    PC prec;
+    call(KSPGetPC(ksp, &prec));
+    call(PCSetType(prec, PCMG));
 
-    init(finest_operator,
-         params,
-         [&](auto /*level*/,
-             const auto &coarse_lattice,
-             const auto & /*fine_matrix*/) {
-           return generator(coarse_lattice);
-         });
-  }
+    call(PCMGSetLevels(prec, n_levels, NULL));
 
-  void sample(typename Operator::Vector &sample, std::size_t n_samples = 1) {
-    current_samples[0] = sample;
+    // Don't coarsen operators using Galerkin product, but rediscretize (see
+    // below)
+    call(PCMGSetGalerkin(prec, PC_MG_GALERKIN_NONE));
 
-    for (std::size_t n = 0; n < n_samples; ++n) {
-      sample_impl(0, operators[0]->vector());
+    // Create hierachy of meshes and operators
+    for (std::size_t level = 0; level < n_levels - 1; ++level)
+      ops[level] = std::make_shared<GridOperator>();
 
-      this->update_statistics(current_samples[0]);
+    ops[n_levels - 1] = grid_operator;
+
+    for (std::size_t level = n_levels - 1; level > 0; --level) {
+      call(DMCoarsen(ops[level]->dm, MPI_COMM_NULL, &(ops[level - 1]->dm)));
+
+      call(DMCreateMatrix(ops[level - 1]->dm, &(ops[level - 1]->mat)));
+      call(mat_assembler(ops[level - 1]->mat, ops[level - 1]->dm));
     }
 
-    sample = current_samples[0];
+    // Setup multigrid sampler
+    // using PCSampler = SamplerPreconditioner<SORSampler<Engine>>;
+
+    for (std::size_t level = 0; level < n_levels; ++level) {
+      KSP ksp_level;
+      PC pc_level;
+
+      /* We configure the smoother on each level to be a preconditioned
+         Richardson smoother with a (stochastic) Gauss-Seidel preconditioner. */
+      call(PCMGGetSmoother(prec, level, &ksp_level));
+      call(KSPSetType(ksp_level, KSPRICHARDSON));
+      call(KSPSetOperators(ksp_level, ops[level]->mat, ops[level]->mat));
+      call(KSPSetInitialGuessNonzero(ksp_level, PETSC_TRUE));
+
+      // Set preconditioner to be stochastic SOR
+      call(KSPGetPC(ksp_level, &pc_level));
+      call(PCSetType(pc_level, PCSHELL));
+
+      auto *context =
+          new SORRichardsonContext<Engine>(engine, ops[level]->mat, 1.);
+
+      call(PCShellSetContext(pc_level, context));
+      call(
+          PCShellSetApplyRichardson(pc_level, sor_pc_richardson_apply<Engine>));
+      call(PCShellSetDestroy(pc_level, sor_pc_richardson_destroy<Engine>));
+
+      if (level > 0) {
+        Mat grid_transfer;
+        DM dm_fine = ops[level]->dm;
+        DM dm_coarse = ops[level - 1]->dm;
+
+        call(DMCreateInterpolation(dm_coarse, dm_fine, &grid_transfer, NULL));
+        call(PCMGSetInterpolation(prec, level, grid_transfer));
+
+        // We can set the interpolation matrix as restriction matrix, PETSc will
+        // figure out that it should use the transpose.
+        call(PCMGSetRestriction(prec, level, grid_transfer));
+        call(MatDestroy(&grid_transfer));
+      }
+    }
+
+    // KSP ksp_coarse;
+    // call(PCMGGetCoarseSolve(prec, &ksp_coarse));
+    // call(KSPSetType(ksp_coarse, KSPPREONLY));
+    // call(KSPSetOperators(ksp_coarse, ops[0]->mat, ops[0]->mat));
+
+    // PC pc_coarse;
+    // using CoarseSampler = SamplerPreconditioner<CholeskySampler<Engine>>;
+
+    // call(KSPGetPC(ksp_coarse, &pc_coarse));
+    // call(PCSetType(pc_coarse, PCSHELL));
+    // call(CoarseSampler::attach(pc_coarse, ops[0], engine));
+
+    call(PCSetFromOptions(prec));
+
+    PetscFunctionReturnVoid();
   }
+
+  PetscErrorCode sample(Vec sample, Vec rhs, std::size_t n_samples = 1) {
+    PetscFunctionBeginUser;
+
+    for (std::size_t n = 0; n < n_samples; ++n)
+      PetscCall(KSPSolve(ksp, rhs, sample));
+
+    PetscFunctionReturn(PETSC_SUCCESS);
+  }
+
+  ~MultigridSampler() { KSPDestroy(&ksp); }
 
 private:
-  template <class CoarseMatrixBuilder>
-  void init(std::shared_ptr<Operator> finest_operator, const Parameters &params,
-            CoarseMatrixBuilder &&coarse_mat_builder) {
-    operators.push_back(finest_operator);
-    pre_smoothers.emplace_back(finest_operator, engine);
-    post_smoothers.emplace_back(finest_operator, engine);
+  std::vector<std::shared_ptr<GridOperator>> ops;
 
-    for (std::size_t l = 1; l < levels; ++l) {
-      // fine_operator.coarsen() takes Functor that is supposed to return the
-      // coarsened matrix given the coarsened_lattice and the fine level matrix.
-      auto coarse_operator = operators[l - 1]->coarsen(
-          [&](const auto &coarse_lattice, const auto &fine_matrix) {
-            prolongations.push_back(make_prolongation(
-                operators[l - 1]->get_lattice(), coarse_lattice));
-
-            return coarse_mat_builder(l, coarse_lattice, fine_matrix);
-          });
-      operators.push_back(coarse_operator);
-
-      pre_smoothers.emplace_back(
-          operators[l], engine, params.prepost_sampler_omega);
-      post_smoothers.emplace_back(
-          operators[l], engine, params.prepost_sampler_omega);
-    }
-
-    for (std::size_t l = 0; l < levels; ++l) {
-      current_samples.emplace_back(operators[l]->size());
-      for_each_ownindex_and_halo(operators[l]->get_lattice(), [&](auto idx) {
-        current_samples[l].coeffRef(idx) = 0;
-      });
-    }
-  }
-
-  void sample_impl(std::size_t level, const typename Operator::Vector &nu) {
-    operators[level]->vector() = nu;
-    pre_smoothers[level].sample(current_samples[level], n_presample);
-
-    if (level < levels - 1) {
-
-      // Compute residual
-      typename Operator::Vector resid =
-          prolongations[level].transpose() *
-          (nu - operators[level]->get_matrix() * current_samples[level]);
-
-      current_samples[level + 1].setZero();
-
-      for (std::size_t cycle = 0; cycle < cycles; ++cycle)
-        sample_impl(level + 1, resid);
-
-      // Update fine sample with coarse correction
-      current_samples[level] +=
-          prolongations[level] * current_samples[level + 1];
-    }
-
-    post_smoothers[level].sample(current_samples[level], n_postsample);
-  }
-
-  Engine *engine;
-
-  std::vector<std::shared_ptr<Operator>> operators;
-
-  std::vector<Smoother> pre_smoothers;
-  std::vector<Smoother> post_smoothers;
-
-  std::vector<Eigen::SparseMatrix<double>> prolongations;
-
-  std::vector<typename Operator::Vector> current_samples;
-
-  std::size_t levels;
-  std::size_t cycles;
-  std::size_t n_presample;
-  std::size_t n_postsample;
+  KSP ksp;
 };
 } // namespace parmgmc

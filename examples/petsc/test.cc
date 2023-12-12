@@ -102,7 +102,8 @@ int main(int argc, char *argv[]) {
   PetscOptionsGetInt(NULL, NULL, "-n_vertices", &n_vertices, &found);
   PetscOptionsGetInt(NULL, NULL, "-n_levels", &n_levels, &found);
 
-  GridOperator grid_operator(n_vertices, n_vertices, assemble);
+  auto grid_operator =
+      std::make_shared<GridOperator>(n_vertices, n_vertices, assemble);
 
   pcg32 engine;
   pcg_extras::seed_seq_from<std::random_device> seed_source;
@@ -116,8 +117,8 @@ int main(int argc, char *argv[]) {
 
   Vec sample;
   Vec rhs;
-  PetscCall(MatCreateVecs(grid_operator.mat, &sample, NULL));
-  PetscCall(MatCreateVecs(grid_operator.mat, &rhs, NULL));
+  PetscCall(MatCreateVecs(grid_operator->mat, &sample, NULL));
+  PetscCall(MatCreateVecs(grid_operator->mat, &rhs, NULL));
 
   PetscInt size;
   PetscCall(VecGetLocalSize(rhs, &size));
@@ -149,7 +150,7 @@ int main(int argc, char *argv[]) {
 
     chain.get_mean(mean);
 
-    PetscCall(MatMult(grid_operator.mat, mean, prec_x_mean));
+    PetscCall(MatMult(grid_operator->mat, mean, prec_x_mean));
     PetscCall(VecAXPY(prec_x_mean, -1., rhs));
     PetscCall(VecNorm(prec_x_mean, NORM_2, &err));
 
