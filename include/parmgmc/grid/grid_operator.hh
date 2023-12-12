@@ -55,8 +55,7 @@ struct GridOperator {
   GridOperator() = default;
 
   ~GridOperator() {
-    DMDestroy(&dm);
-
+    // DMDestroy(&dm);
     // Don't need to free the matrix, since it created from the DM and thus
     // automatically freed if it's no longer needed.
   }
