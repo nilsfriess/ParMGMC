@@ -1,10 +1,11 @@
 #include <iostream>
-#include <memory>
 #include <random>
 
 #include <pcg_random.hpp>
 
 #include <petscdm.h>
+#include <petscdmda.h>
+#include <petscdmdatypes.h>
 #include <petscdmlabel.h>
 #include <petscds.h>
 #include <petscerror.h>
@@ -13,17 +14,17 @@
 #include <petscsys.h>
 #include <petscsystypes.h>
 #include <petscvec.h>
-#include <petscviewer.h>
 
-#include "parmgmc/grid/grid.hh"
 #include "parmgmc/grid/grid_operator.hh"
+#include "parmgmc/petsc_helper.hh"
 #include "parmgmc/samplers/cholesky.hh"
+#include "parmgmc/samplers/multigrid.hh"
 #include "parmgmc/samplers/sample_chain.hh"
 #include "parmgmc/samplers/sor.hh"
 
 using namespace parmgmc;
 
-PetscErrorCode assemble(Mat &mat, const Grid &grid) {
+PetscErrorCode assemble(Mat mat, DM dm) {
   MatStencil row_stencil;
 
   MatStencil col_stencil[5]; // At most 5 non-zero entries per row
@@ -32,7 +33,7 @@ PetscErrorCode assemble(Mat &mat, const Grid &grid) {
   PetscFunctionBeginUser;
 
   DMDALocalInfo info;
-  PetscCall(DMDAGetLocalInfo(grid.get_dm(), &info));
+  PetscCall(DMDAGetLocalInfo(dm, &info));
 
   PetscReal noise_var = 1e-4;
 
@@ -90,50 +91,68 @@ PetscErrorCode assemble(Mat &mat, const Grid &grid) {
 }
 
 int main(int argc, char *argv[]) {
-  PetscInitialize(&argc, &argv, (char *)0, "PETSc test");
-
+  PetscHelper helper(&argc, &argv);
   PetscFunctionBeginUser;
 
-  int n_vertices = 10;
-  auto grid_operator =
-      std::make_shared<GridOperator>(n_vertices, n_vertices, assemble);
+  int n_vertices = (1 << 8) + 1;
+  int n_levels = 3;
+  PetscBool found;
+
+  PetscOptionsGetInt(NULL, NULL, "-n_vertices", &n_vertices, &found);
+  PetscOptionsGetInt(NULL, NULL, "-n_levels", &n_levels, &found);
+
+  GridOperator grid_operator(n_vertices, n_vertices, assemble);
 
   pcg32 engine;
   pcg_extras::seed_seq_from<std::random_device> seed_source;
 
   engine.seed(seed_source);
+  // engine.seed(0xCAFEBEEF);
 
   int rank;
   MPI_Comm_rank(MPI_COMM_WORLD, &rank);
   engine.set_stream(rank);
 
   Vec sample;
-  PetscCall(MatCreateVecs(grid_operator->get_matrix(), &sample, NULL));
+  Vec rhs;
+  PetscCall(MatCreateVecs(grid_operator.mat, &sample, NULL));
+  PetscCall(MatCreateVecs(grid_operator.mat, &rhs, NULL));
 
+  PetscCall(VecSet(rhs, 1));
+
+  // SampleChain<MultigridSampler<pcg32>> chain{
+  //     grid_operator, &engine, n_levels, assemble};
   SampleChain<SORSampler<pcg32>> chain{grid_operator, &engine, 1.9852};
 
-  const std::size_t n_burnin = 100;
-  const std::size_t n_samples = 1000;
+  const std::size_t n_burnin = 0;
+  PetscInt n_samples = 1;
+  PetscOptionsGetInt(NULL, NULL, "-n_samples", &n_samples, &found);
 
-  PetscReal norm;
-
-  chain.disable_save();
-  chain.sample(sample, n_burnin);
-  chain.enable_save();
-
+  chain.sample(sample, rhs, n_burnin);
+  chain.enable_est_mean_online();
+  
   Vec mean;
   VecDuplicate(sample, &mean);
 
-  for (std::size_t n = 0; n < n_samples; ++n) {
-    chain.sample(sample);
+  Vec prec_x_mean;
+  VecDuplicate(mean, &prec_x_mean);
+
+  PetscScalar err;
+  PetscReal rhs_norm;
+  PetscCall(VecNorm(rhs, NORM_2, &rhs_norm));
+  
+  for (PetscInt n = 0; n < n_samples; ++n) {
+    chain.sample(sample, rhs);
 
     chain.get_mean(mean);
 
-    VecNorm(mean, NORM_2, &norm);
-    std::cout << norm << "\n";
+    PetscCall(MatMult(grid_operator.mat, mean, prec_x_mean));
+    PetscCall(VecAXPY(prec_x_mean, -1., rhs));
+    PetscCall(VecNorm(prec_x_mean, NORM_2, &err));
+    
+    std::cout << err << ", " << err / rhs_norm << "\n";
   }
 
   PetscCall(VecDestroy(&sample));
   PetscCall(VecDestroy(&mean));
-  PetscFinalize();
 }

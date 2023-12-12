@@ -1,67 +1,75 @@
 #pragma once
 
 #include "parmgmc/grid/grid_operator.hh"
+#include "parmgmc/samplers/sor_preconditioner.hh"
 
 #include <algorithm>
 #include <cmath>
-#include <memory>
+#include <petscpctypes.h>
+#include <petscsys.h>
 #include <random>
 #include <stdexcept>
 
 #include <petscerror.h>
 #include <petscksp.h>
 #include <petscmat.h>
+#include <petscpc.h>
 #include <petscsystypes.h>
 #include <petscvec.h>
 
 namespace parmgmc {
 template <class Engine> class SORSampler {
 public:
-  SORSampler(std::shared_ptr<GridOperator> grid_operator, Engine *engine,
-             PetscReal omega = 1.)
+  SORSampler(GridOperator grid_operator, Engine *engine, PetscReal omega = 1.)
       : engine{engine}, omega{omega} {
-    auto check_error = [&](auto err) {
-      if (err != PETSC_SUCCESS)
-        throw std::runtime_error("Error while creating SORSampler\n");
-    };
+    auto call = [&](auto err) { PetscCallAbort(MPI_COMM_WORLD, err); };
 
-    /* We create a full Krylov solver since PETSc does not expose a SOR solver
-     * directly, only as a preconditioner for a Krylov solver. However, we can
-     * tell PETSc to only run the preconditioner, not the full solver. */
-    check_error(KSPCreate(MPI_COMM_WORLD, &ksp));
-    check_error(KSPSetType(ksp, KSPPREONLY));
-
-    PC prec;
-    check_error(KSPGetPC(ksp, &prec));
-    check_error(PCSetType(prec, PCSOR));
-    check_error(PCSORSetOmega(prec, omega));
-
-    check_error(KSPSetOperators(
-        ksp, grid_operator->get_matrix(), grid_operator->get_matrix()));
-
-    // Extract matrix diagonal and multiply by sqrt((2-omega)/omega)
-    check_error(
-        MatCreateVecs(grid_operator->get_matrix(), &scaled_sqrt_diag, NULL));
-    check_error(MatGetDiagonal(grid_operator->get_matrix(), scaled_sqrt_diag));
-    check_error(VecSqrtAbs(scaled_sqrt_diag));
-    check_error(VecScale(scaled_sqrt_diag, std::sqrt((2 - omega) / omega)));
-  }
-
-  PetscErrorCode sample(Vec sample, std::size_t n_samples = 1) {
     PetscFunctionBeginUser;
 
-    if (first_sample) {
-      PetscCall(VecDuplicate(sample, &rand));
-      PetscCall(VecGetLocalSize(sample, &vec_local_size));
-    }
+    call(KSPCreate(MPI_COMM_WORLD, &ksp));
+    call(KSPSetType(ksp, KSPRICHARDSON));
+    call(KSPSetTolerances(ksp, PETSC_DEFAULT, PETSC_DEFAULT, PETSC_DEFAULT, 1));
+    call(KSPSetInitialGuessNonzero(ksp, PETSC_TRUE));
 
-    for (std::size_t n = 0; n < n_samples; ++n) {
-      PetscCall(fill_rand());
-      PetscCall(VecPointwiseMult(rand, rand, scaled_sqrt_diag));
-      PetscCall(KSPSolve(ksp, rand, sample));
-    }
+    PC pc;
+    call(KSPGetPC(ksp, &pc));
+    call(PCSetType(pc, PCSHELL));
+
+    call(KSPSetOperators(ksp, grid_operator.mat, grid_operator.mat));
+
+    auto *context = new SORRichardsonContext<Engine>(engine, grid_operator.mat, omega);
+
+    call(PCShellSetContext(pc, context));
+    call(PCShellSetApplyRichardson(pc, sor_pc_richardson_apply<Engine>));
+    call(PCShellSetDestroy(pc, [](PC pc) {
+      PetscFunctionBeginUser;
+
+      SORRichardsonContext<Engine> *context;
+      PetscCall(PCShellGetContext(pc, &context));
+
+      delete context;
+
+      PetscFunctionReturn(PETSC_SUCCESS);
+    }));
+
+    PetscFunctionReturnVoid();
+  }
+
+  PetscErrorCode sample(Vec sample, Vec rhs, std::size_t n_samples = 1) {
+    PetscFunctionBeginUser;
+
+    for (std::size_t n = 0; n < n_samples; ++n)
+      PetscCall(KSPSolve(ksp, rhs, sample));
 
     PetscFunctionReturn(PETSC_SUCCESS);
+  }
+
+  ~SORSampler() {
+    KSPReset(ksp); // Make sure we don't free the matrix when freeing ksp
+    KSPDestroy(&ksp);
+
+    VecDestroy(&rand);
+    VecDestroy(&scaled_sqrt_diag);
   }
 
 private:
