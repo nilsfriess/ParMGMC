@@ -160,5 +160,9 @@ int main(int argc, char *argv[]) {
   }
 
   PetscCall(VecDestroy(&sample));
+  PetscCall(VecDestroy(&rhs));
   PetscCall(VecDestroy(&mean));
+  PetscCall(VecDestroy(&prec_x_mean));
+
+  PetscFunctionReturn(PETSC_SUCCESS);
 }

@@ -32,6 +32,13 @@ template <class Engine> struct SORRichardsonContext {
     call(VecGetLocalSize(sqrt_diag, &vec_size));
   }
 
+  ~SORRichardsonContext() {
+    VecDestroy(&sqrt_diag);
+    VecDestroy(&z);
+
+    PCDestroy(&pc);
+  }
+
   Engine *engine;
   std::normal_distribution<PetscReal> dist;
   Vec sqrt_diag;

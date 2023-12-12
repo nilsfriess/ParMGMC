@@ -55,7 +55,6 @@ public:
   }
 
   ~SORSampler() {
-    KSPReset(ksp); // Make sure we don't free the matrix when freeing ksp
     KSPDestroy(&ksp);
   }
 
