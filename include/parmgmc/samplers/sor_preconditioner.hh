@@ -28,12 +28,15 @@ template <class Engine> struct SORRichardsonContext {
     call(PCSetOperators(pc, mat, mat));
 
     call(VecDuplicate(sqrt_diag, &z));
+
+    call(VecGetLocalSize(sqrt_diag, &vec_size));
   }
 
   Engine *engine;
   std::normal_distribution<PetscReal> dist;
   Vec sqrt_diag;
   Vec z;
+  PetscInt vec_size;
 
   PC pc;
 };
@@ -66,14 +69,7 @@ sor_pc_richardson_apply(PC pc, Vec b, Vec x, Vec r, PetscReal rtol,
   PetscCall(PCShellGetContext(pc, &context));
 
   // Below we set: r <- b + sqrt((2-omega)/omega) * D^1/2 * c, where c ~ N(0,I)
-  PetscScalar *r_arr;
-  PetscInt vec_local_size;
-  PetscCall(VecGetLocalSize(r, &vec_local_size));
-
-  PetscCall(VecGetArray(r, &r_arr));
-  std::generate_n(
-      r_arr, vec_local_size, [&]() { return context->dist(*context->engine); });
-  PetscCall(VecRestoreArray(r, &r_arr));
+  fill_vec_rand(r, context->vec_size, *context->engine);
 
   PetscCall(VecPointwiseMult(r, r, context->sqrt_diag));
   PetscCall(VecAXPY(r, 1., b));
@@ -94,4 +90,16 @@ sor_pc_richardson_apply(PC pc, Vec b, Vec x, Vec r, PetscReal rtol,
 
   PetscFunctionReturn(PETSC_SUCCESS);
 }
+
+template <class Engine> PetscErrorCode sor_pc_richardson_destroy(PC pc) {
+  PetscFunctionBeginUser;
+
+  SORRichardsonContext<Engine> *context;
+  PetscCall(PCShellGetContext(pc, &context));
+
+  delete context;
+
+  PetscFunctionReturn(PETSC_SUCCESS);
+}
+
 } // namespace parmgmc

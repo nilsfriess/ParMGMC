@@ -15,6 +15,7 @@
 #include <petscsystypes.h>
 #include <petscvec.h>
 
+#include "parmgmc/common/helpers.hh"
 #include "parmgmc/grid/grid_operator.hh"
 #include "parmgmc/petsc_helper.hh"
 #include "parmgmc/samplers/cholesky.hh"
@@ -118,7 +119,9 @@ int main(int argc, char *argv[]) {
   PetscCall(MatCreateVecs(grid_operator.mat, &sample, NULL));
   PetscCall(MatCreateVecs(grid_operator.mat, &rhs, NULL));
 
-  PetscCall(VecSet(rhs, 1));
+  PetscInt size;
+  PetscCall(VecGetLocalSize(rhs, &size));
+  PetscCall(fill_vec_rand(rhs, size, engine));
 
   // SampleChain<MultigridSampler<pcg32>> chain{
   //     grid_operator, &engine, n_levels, assemble};
@@ -130,7 +133,7 @@ int main(int argc, char *argv[]) {
 
   chain.sample(sample, rhs, n_burnin);
   chain.enable_est_mean_online();
-  
+
   Vec mean;
   VecDuplicate(sample, &mean);
 
@@ -140,7 +143,7 @@ int main(int argc, char *argv[]) {
   PetscScalar err;
   PetscReal rhs_norm;
   PetscCall(VecNorm(rhs, NORM_2, &rhs_norm));
-  
+
   for (PetscInt n = 0; n < n_samples; ++n) {
     chain.sample(sample, rhs);
 
@@ -149,8 +152,11 @@ int main(int argc, char *argv[]) {
     PetscCall(MatMult(grid_operator.mat, mean, prec_x_mean));
     PetscCall(VecAXPY(prec_x_mean, -1., rhs));
     PetscCall(VecNorm(prec_x_mean, NORM_2, &err));
-    
-    std::cout << err << ", " << err / rhs_norm << "\n";
+
+    if (rhs_norm < 1e-18)
+      std::cout << err << "\n";
+    else
+      std::cout << err << ", " << err / rhs_norm << "\n";
   }
 
   PetscCall(VecDestroy(&sample));

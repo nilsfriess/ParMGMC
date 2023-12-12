@@ -4,7 +4,14 @@
 
 #include <Eigen/Dense>
 #include <Eigen/Sparse>
+
+#include <random>
 #include <set>
+
+#include <mpi.h>
+
+#include <petscerror.h>
+#include <petscvec.h>
 
 namespace parmgmc {
 // Gathers Eigen::VectorXds that are scattered across multiple MPI processes
@@ -35,5 +42,17 @@ template <class Functor>
 void for_each_ownindex_and_halo(const Lattice &lattice, Functor f) {
   for (auto v : lattice.vertices(VertexType::Any))
     f(v);
+}
+
+template <class Engine>
+PetscErrorCode fill_vec_rand(Vec vec, PetscInt size, Engine &engine) {
+  static std::normal_distribution<PetscReal> dist;
+
+  PetscFunctionBeginUser;
+  PetscScalar *r_arr;
+  PetscCall(VecGetArray(vec, &r_arr));
+  std::generate_n(r_arr, size, [&]() { return dist(engine); });
+  PetscCall(VecRestoreArray(vec, &r_arr));
+  PetscFunctionReturn(PETSC_SUCCESS);
 }
 } // namespace parmgmc

@@ -20,8 +20,7 @@
 namespace parmgmc {
 template <class Engine> class SORSampler {
 public:
-  SORSampler(GridOperator grid_operator, Engine *engine, PetscReal omega = 1.)
-      : engine{engine}, omega{omega} {
+  SORSampler(GridOperator grid_operator, Engine *engine, PetscReal omega = 1.) {
     auto call = [&](auto err) { PetscCallAbort(MPI_COMM_WORLD, err); };
 
     PetscFunctionBeginUser;
@@ -30,27 +29,18 @@ public:
     call(KSPSetType(ksp, KSPRICHARDSON));
     call(KSPSetTolerances(ksp, PETSC_DEFAULT, PETSC_DEFAULT, PETSC_DEFAULT, 1));
     call(KSPSetInitialGuessNonzero(ksp, PETSC_TRUE));
+    call(KSPSetOperators(ksp, grid_operator.mat, grid_operator.mat));
 
     PC pc;
     call(KSPGetPC(ksp, &pc));
     call(PCSetType(pc, PCSHELL));
 
-    call(KSPSetOperators(ksp, grid_operator.mat, grid_operator.mat));
-
-    auto *context = new SORRichardsonContext<Engine>(engine, grid_operator.mat, omega);
+    auto *context =
+        new SORRichardsonContext<Engine>(engine, grid_operator.mat, omega);
 
     call(PCShellSetContext(pc, context));
     call(PCShellSetApplyRichardson(pc, sor_pc_richardson_apply<Engine>));
-    call(PCShellSetDestroy(pc, [](PC pc) {
-      PetscFunctionBeginUser;
-
-      SORRichardsonContext<Engine> *context;
-      PetscCall(PCShellGetContext(pc, &context));
-
-      delete context;
-
-      PetscFunctionReturn(PETSC_SUCCESS);
-    }));
+    call(PCShellSetDestroy(pc, sor_pc_richardson_destroy<Engine>));
 
     PetscFunctionReturnVoid();
   }
@@ -67,35 +57,9 @@ public:
   ~SORSampler() {
     KSPReset(ksp); // Make sure we don't free the matrix when freeing ksp
     KSPDestroy(&ksp);
-
-    VecDestroy(&rand);
-    VecDestroy(&scaled_sqrt_diag);
   }
 
 private:
-  PetscErrorCode fill_rand() {
-    PetscFunctionBeginUser;
-
-    PetscScalar *rand_arr;
-    PetscCall(VecGetArray(rand, &rand_arr));
-    std::generate_n(
-        rand_arr, vec_local_size, [&]() { return normal_dist(*engine); });
-    PetscCall(VecRestoreArray(rand, &rand_arr));
-
-    PetscFunctionReturn(PETSC_SUCCESS);
-  }
-
-  Engine *engine;
-  std::normal_distribution<PetscReal> normal_dist;
-
   KSP ksp;
-  Vec scaled_sqrt_diag;
-
-  Vec rand;
-  PetscInt vec_local_size;
-
-  double omega;
-
-  bool first_sample = true;
 };
 } // namespace parmgmc
