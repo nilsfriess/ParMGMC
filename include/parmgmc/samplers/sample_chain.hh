@@ -20,11 +20,6 @@ public:
   PetscErrorCode sample(Vec sample, Vec rhs, std::size_t n_steps = 1) {
     PetscFunctionBeginUser;
 
-    if (n_samples == 0) {
-      PetscCall(VecDuplicate(sample, &mean_));
-      PetscCall(VecZeroEntries(mean_));
-    }
-
     for (std::size_t n = 0; n < n_steps; ++n) {
       n_samples++;
 
@@ -63,9 +58,10 @@ public:
   PetscErrorCode update_mean(Vec new_sample) {
     PetscFunctionBeginUser;
 
-    if (n_samples == 1)
+    if (n_samples == 1) {
+      PetscCall(VecDuplicate(new_sample, &mean_));
       PetscCall(VecCopy(new_sample, mean_));
-    else {
+    } else {
       PetscCall(VecAXPBY(
           mean_, 1. / n_samples, (n_samples - 1.) / n_samples, new_sample));
     }
