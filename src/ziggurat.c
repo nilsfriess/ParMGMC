@@ -141,7 +141,9 @@ static PetscErrorCode PetscRandomSeed_Ziggurat(PetscRandom r)
 {
   ZigguratData *zig = r->data;
   PetscFunctionBegin;
-  zig->seed = r->seed;
+  /* The XOR-shift PRNG has 0 as a fixed point: seeding with 0 would produce
+     only zeros. Fall back to 1 in that case. */
+  zig->seed = r->seed ? (uint32_t)r->seed : 1u;
   PetscFunctionReturn(PETSC_SUCCESS);
 }
 

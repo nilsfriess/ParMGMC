@@ -1,5 +1,8 @@
 build/
+build2/
+debugbuild/
 buildopt/
+optbuild/
 
 .cache/
 
@@ -27,3 +30,7 @@ _minted-main/
 *.png
 
 compile_commands.json
+
+examples/python/mgmc/
+
+**/*/__pycache__/
