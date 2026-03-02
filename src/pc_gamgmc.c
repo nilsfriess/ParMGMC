@@ -109,7 +109,6 @@ PetscErrorCode PCGAMGMCSetLevels(PC pc, PetscInt levels)
 
   PetscFunctionBeginUser;
   PetscCall(PCMGSetLevels(pg->mg, levels, NULL));
-
   PetscFunctionReturn(PETSC_SUCCESS);
 }
 
@@ -159,12 +158,11 @@ static PetscErrorCode PCGAMGMC_SetUpHierarchy(PC pc)
   }
 
   {
-    KSP         ksps;
-    PC          pcs;
-    PetscRandom pr;
-    PCType      ptype;
-    PetscBool   ischol;
-    Mat         A;
+    KSP       ksps;
+    PC        pcs;
+    PCType    ptype;
+    PetscBool ischol;
+    Mat       A;
 
     PetscCall(PCMGGetSmoother(pg->mg, 0, &ksps));
     PetscCall(KSPGetPC(ksps, &pcs));
@@ -173,25 +171,14 @@ static PetscErrorCode PCGAMGMC_SetUpHierarchy(PC pc)
     // We need to find a way to query this here.
     PetscCall(PCGetType(pcs, &ptype));
     PetscCall(PetscStrcmp(ptype, PCCHOLSAMPLER, &ischol));
-    PetscCall(PCGetPetscRandom(pcs, &pr));
     if (ischol) {
       PetscCall(KSPGetOperators(ksps, &A, NULL));
       PetscCall(PetscObjectReference((PetscObject)A));
-      PetscCall(PetscObjectReference((PetscObject)pr)); // Make sure the PetscRandom object is not freed in the next step
       PetscCall(PCReset(pcs));
-      PetscCall(PCCholSamplerSetIsCoarseGAMG(pcs, PETSC_TRUE));
+      // PetscCall(PCCholSamplerSetIsCoarseGAMG(pcs, PETSC_TRUE));
       PetscCall(KSPSetOperators(ksps, A, A));
       PetscCall(PCSetUp(pcs));
       PetscCall(PetscObjectDereference((PetscObject)A));
-      PetscCall(PCSetPetscRandom(pcs, pr));
-      PetscCall(PetscObjectDereference((PetscObject)pr));
-    }
-
-    PetscCall(PCGetPetscRandom(pcs, &pr));
-    for (PetscInt l = 1; l < levels; ++l) {
-      PetscCall(PCMGGetSmoother(pg->mg, l, &ksps));
-      PetscCall(KSPGetPC(ksps, &pcs));
-      PetscCall(PCSetPetscRandom(pcs, pr));
     }
   }
   PetscFunctionReturn(PETSC_SUCCESS);
@@ -261,14 +248,17 @@ static PetscErrorCode PCView_GAMGMC(PC pc, PetscViewer v)
 
 static PetscErrorCode PCSetUp_GAMGMC(PC pc)
 {
-  PC_GAMGMC pg = pc->data;
-  MatType   type;
-  Mat       P;
-  PetscBool islrc;
+  PC_GAMGMC   pg = pc->data;
+  MatType     type;
+  Mat         P;
+  PetscBool   islrc;
+  const char *prefix;
 
   PetscFunctionBeginUser;
   PetscCall(PCSetType(pg->mg, pg->mgtype));
-  PetscCall(PCSetOptionsPrefix(pg->mg, "gamgmc_"));
+  PetscCall(PCGetOptionsPrefix(pc, &prefix));
+  PetscCall(PCSetOptionsPrefix(pg->mg, prefix));
+  PetscCall(PCAppendOptionsPrefix(pg->mg, "gamgmc_"));
   PetscCall(MatGetType(pc->pmat, &type));
   PetscCall(PetscStrcmp(type, MATLRC, &islrc));
   if (islrc) PetscCall(MatLRCGetMats(pc->pmat, &P, NULL, NULL, NULL));
@@ -277,28 +267,49 @@ static PetscErrorCode PCSetUp_GAMGMC(PC pc)
   PetscCall(PCSetOperators(pg->mg, P, P));
   if (strcmp(pg->mgtype, PCMG) == 0) {
     PetscCall(PCSetDM(pg->mg, pc->dm));
-    PetscCall(PCMGSetGalerkin(pg->mg, PC_MG_GALERKIN_BOTH));
+    // PetscCall(PCMGSetGalerkin(pg->mg, PC_MG_GALERKIN_BOTH));
   }
 
-  // Ugly way to set the default "smoother" (=sampler) to be Gibbs
+  // Ugly way to set the default "smoother" (=sampler) to be Gibbs.
+  // NOTE: PetscOptionsSetValue does NOT honour the PetscOptionsPrefixPush stack;
+  // the option name must be fully qualified (prefix + suffix) manually.
   {
     PetscBool flag;
-    char      opt[256];
+    char      opt[512];
 
-    PetscCall(PetscOptionsGetString(NULL, NULL, "-gamgmc_mg_levels_ksp_type", opt, 256, &flag));
-    if (!flag) PetscCall(PetscOptionsSetValue(NULL, "-gamgmc_mg_levels_ksp_type", KSPRICHARDSON));
+    PetscCall(PCGetOptionsPrefix(pg->mg, &prefix));
 
-    PetscCall(PetscOptionsGetString(NULL, NULL, "-gamgmc_mg_levels_pc_type", opt, 256, &flag));
-    if (!flag) PetscCall(PetscOptionsSetValue(NULL, "-gamgmc_mg_levels_pc_type", PCGIBBS));
+    // Always force Richardson iteration so the PC is called as a pure sampler.
+    PetscCall(PetscSNPrintf(opt, sizeof(opt), "-%smg_levels_ksp_type", prefix ? prefix : ""));
+    PetscCall(PetscOptionsSetValue(NULL, opt, KSPRICHARDSON));
+    PetscCall(PetscSNPrintf(opt, sizeof(opt), "-%smg_coarse_ksp_type", prefix ? prefix : ""));
+    PetscCall(PetscOptionsSetValue(NULL, opt, KSPRICHARDSON));
 
-    PetscCall(PetscOptionsGetString(NULL, NULL, "-gamgmc_mg_coarse_ksp_type", opt, 256, &flag));
+    PetscCall(PetscOptionsHasName(NULL, prefix, "-mg_levels_ksp_max_it", &flag));
     if (!flag) {
-      PetscCall(PetscOptionsSetValue(NULL, "-gamgmc_mg_coarse_pc_type", PCCHOLSAMPLER));
-      PetscCall(PetscOptionsSetValue(NULL, "-gamgmc_mg_coarse_pc_cholsampler_coarse_gamg", ""));
+      PetscCall(PetscSNPrintf(opt, sizeof(opt), "-%smg_levels_ksp_max_it", prefix ? prefix : ""));
+      PetscCall(PetscOptionsSetValue(NULL, opt, "2"));
     }
 
-    PetscCall(PetscOptionsGetString(NULL, NULL, "-gamgmc_mg_coarse_pc_type", opt, 256, &flag));
-    if (!flag) PetscCall(PetscOptionsSetValue(NULL, "-gamgmc_mg_coarse_pc_type", PCCHOLSAMPLER));
+    PetscCall(PetscOptionsHasName(NULL, prefix, "-mg_coarse_ksp_max_it", &flag));
+    if (!flag) {
+      PetscCall(PetscSNPrintf(opt, sizeof(opt), "-%smg_coarse_ksp_max_it", prefix ? prefix : ""));
+      PetscCall(PetscOptionsSetValue(NULL, opt, "1"));
+    }
+
+    PetscCall(PetscOptionsHasName(NULL, prefix, "-mg_levels_pc_type", &flag));
+    if (!flag) {
+      PetscCall(PetscSNPrintf(opt, sizeof(opt), "-%smg_levels_pc_type", prefix ? prefix : ""));
+      PetscCall(PetscOptionsSetValue(NULL, opt, PCGIBBS));
+    }
+
+    PetscCall(PetscOptionsHasName(NULL, prefix, "-mg_coarse_pc_type", &flag));
+    if (!flag) {
+      PetscCall(PetscSNPrintf(opt, sizeof(opt), "-%smg_coarse_pc_type", prefix ? prefix : ""));
+      PetscCall(PetscOptionsSetValue(NULL, opt, PCCHOLSAMPLER));
+      PetscCall(PetscSNPrintf(opt, sizeof(opt), "-%smg_coarse_pc_cholsampler_coarse_gamg", prefix ? prefix : ""));
+      PetscCall(PetscOptionsSetValue(NULL, opt, ""));
+    }
   }
 
   PetscCall(PCSetFromOptions(pg->mg));
@@ -307,7 +318,7 @@ static PetscErrorCode PCSetUp_GAMGMC(PC pc)
   PetscFunctionReturn(PETSC_SUCCESS);
 }
 
-static PetscErrorCode PCSetFromOptions_GAMGMC(PC pc, PetscOptionItems *PetscOptionsObject)
+static PetscErrorCode PCSetFromOptions_GAMGMC(PC pc, PetscOptionItems PetscOptionsObject)
 {
   PC_GAMGMC pg = pc->data;
 
@@ -315,23 +326,6 @@ static PetscErrorCode PCSetFromOptions_GAMGMC(PC pc, PetscOptionItems *PetscOpti
   PetscOptionsHeadBegin(PetscOptionsObject, "PCGAMGMC options");
   PetscCall(PetscOptionsString("-pc_gamgmc_mg_type", "The type of the inner multigrid method", NULL, pg->mgtype, pg->mgtype, sizeof(pg->mgtype), NULL));
   PetscOptionsHeadEnd();
-  PetscFunctionReturn(PETSC_SUCCESS);
-}
-
-static PetscErrorCode PCGAMGMCSetPetscRandom(PC pc, PetscRandom pr)
-{
-  KSP       ksps;
-  PC        pcs;
-  PetscInt  levels;
-  PC_GAMGMC pg = pc->data;
-
-  PetscFunctionBeginUser;
-  PetscCall(PCMGGetLevels(pg->mg, &levels));
-  for (PetscInt l = levels - 1; l >= 0; --l) {
-    PetscCall(PCMGGetSmoother(pg->mg, l, &ksps));
-    PetscCall(KSPGetPC(ksps, &pcs));
-    PetscCall(PCSetPetscRandom(pcs, pr));
-  }
   PetscFunctionReturn(PETSC_SUCCESS);
 }
 
@@ -348,19 +342,6 @@ static PetscErrorCode PCSetSampleCallback_GAMGMC(PC pc, PetscErrorCode (*cb)(Pet
   PetscFunctionReturn(PETSC_SUCCESS);
 }
 
-static PetscErrorCode PCGAMGMCGetPetscRandom(PC pc, PetscRandom *pr)
-{
-  PC_GAMGMC pg = pc->data;
-  KSP       ksps;
-  PC        pcs;
-
-  PetscFunctionBeginUser;
-  PetscCall(PCMGGetSmoother(pg->mg, 0, &ksps));
-  PetscCall(KSPGetPC(ksps, &pcs));
-  PetscCall(PCGetPetscRandom(pcs, pr));
-  PetscFunctionReturn(PETSC_SUCCESS);
-}
-
 static PetscErrorCode PCPreSolve_GAMGMC(PC pc, KSP ksp, Vec b, Vec x)
 {
   (void)b;
@@ -370,6 +351,15 @@ static PetscErrorCode PCPreSolve_GAMGMC(PC pc, KSP ksp, Vec b, Vec x)
 
   PetscFunctionBeginUser;
   pg->ksp = ksp;
+  PetscFunctionReturn(PETSC_SUCCESS);
+}
+
+static PetscErrorCode PCGAMGMCGetLevels(PC pc, PetscInt *levels)
+{
+  PC_GAMGMC pg = pc->data;
+
+  PetscFunctionBegin;
+  PetscCall(PCMGGetLevels(pg->mg, levels));
   PetscFunctionReturn(PETSC_SUCCESS);
 }
 
@@ -394,7 +384,8 @@ PetscErrorCode PCCreate_GAMGMC(PC pc)
   pc->ops->destroy        = PCDestroy_GAMGMC;
   pc->ops->setfromoptions = PCSetFromOptions_GAMGMC;
   pc->ops->presolve       = PCPreSolve_GAMGMC;
-  PetscCall(RegisterPCSetGetPetscRandom(pc, PCGAMGMCSetPetscRandom, PCGAMGMCGetPetscRandom));
   PetscCall(PCRegisterSetSampleCallback(pc, PCSetSampleCallback_GAMGMC));
+
+  PetscCall(PetscObjectComposeFunction((PetscObject)pc, "PCMGGetLevels_C", PCGAMGMCGetLevels));
   PetscFunctionReturn(PETSC_SUCCESS);
 }

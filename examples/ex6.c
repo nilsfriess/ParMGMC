@@ -174,9 +174,9 @@ int main(int argc, char *argv[])
 
   PetscCall(KSPGetPC(ksp, &pc));
   PetscCall(PCViewFromOptions(pc, NULL, "-pc_view"));
-  PetscCall(PCSetPetscRandom(pc, pr));
-  PetscCall(PetscRandomSetSeed(pr, seed));
-  PetscCall(PetscRandomSeed(pr));
+  /* PetscCall(PCSetPetscRandom(pc, pr)); */
+  /* PetscCall(PetscRandomSetSeed(pr, seed)); */
+  /* PetscCall(PetscRandomSeed(pr)); */
   PetscCall(VecDuplicate(b, &x));
   PetscCall(KSPSolve(ksp, b, x)); // Burn-in
 

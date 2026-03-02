@@ -146,7 +146,6 @@ int main(int argc, char *argv[])
     PetscCall(KSPSetConvergenceTest(samplers[i], KSPConvergedSkip, NULL, NULL));
     PetscCall(KSPSetInitialGuessNonzero(samplers[i], PETSC_TRUE));
     PetscCall(KSPGetPC(samplers[i], &pc));
-    PetscCall(PCSetPetscRandom(pc, pr));
 
     if (i == 0) PetscCall(PCViewFromOptions(pc, NULL, "-view_sampler"));
   }

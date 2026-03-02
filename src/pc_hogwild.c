@@ -20,7 +20,6 @@
 typedef struct {
   Vec         sqrtdiag;
   PetscRandom prand;
-  PetscBool   prand_is_initial_prand;
 
   void *cbctx;
   PetscErrorCode (*scb)(PetscInt, Vec, void *);
@@ -57,12 +56,12 @@ static PetscErrorCode PCReset_Hogwild(PC pc)
   PC_Hogwild hw = pc->data;
 
   PetscFunctionBeginUser;
+  PetscCall(PetscRandomDestroy(&hw->prand));
   PetscCall(VecDestroy(&hw->sqrtdiag));
   if (hw->del_scb) {
     PetscCall(hw->del_scb(hw->cbctx));
     hw->del_scb = NULL;
   }
-  if (hw->prand_is_initial_prand) PetscCall(PetscRandomDestroy(&hw->prand));
   PetscFunctionReturn(PETSC_SUCCESS);
 }
 
@@ -71,12 +70,12 @@ static PetscErrorCode PCDestroy_Hogwild(PC pc)
   PC_Hogwild hw = pc->data;
 
   PetscFunctionBeginUser;
+  PetscCall(PetscRandomDestroy(&hw->prand));
   PetscCall(VecDestroy(&hw->sqrtdiag));
   if (hw->del_scb) {
     PetscCall(hw->del_scb(hw->cbctx));
     hw->del_scb = NULL;
   }
-  if (hw->prand_is_initial_prand) PetscCall(PetscRandomDestroy(&hw->prand));
   PetscCall(PetscFree(hw));
   PetscFunctionReturn(PETSC_SUCCESS);
 }
@@ -89,10 +88,7 @@ static PetscErrorCode PCSetUp_Hogwild(PC pc)
   PetscCall(MatCreateVecs(pc->pmat, &hw->sqrtdiag, NULL));
   PetscCall(MatGetDiagonal(pc->pmat, hw->sqrtdiag));
   PetscCall(VecSqrtAbs(hw->sqrtdiag));
-
-  PetscCall(PetscRandomCreate(PetscObjectComm((PetscObject)pc), &hw->prand));
-  PetscCall(PetscRandomSetType(hw->prand, PARMGMC_ZIGGURAT));
-  hw->prand_is_initial_prand = PETSC_TRUE; // TODO: Use PETSc's reference counting instead
+  if (!hw->prand) PetscCall(ParMGMCGetPetscRandom(&hw->prand));
   PetscFunctionReturn(PETSC_SUCCESS);
 }
 
@@ -111,28 +107,6 @@ static PetscErrorCode PCSetSampleCallback_Hogwild(PC pc, PetscErrorCode (*cb)(Pe
   PetscFunctionReturn(PETSC_SUCCESS);
 }
 
-static PetscErrorCode PCHogwildGetPetscRandom(PC pc, PetscRandom *pr)
-{
-  PC_Hogwild hw = pc->data;
-
-  PetscFunctionBeginUser;
-  *pr = hw->prand;
-  PetscFunctionReturn(PETSC_SUCCESS);
-}
-
-static PetscErrorCode PCHogwildSetPetscRandom(PC pc, PetscRandom pr)
-{
-  PC_Hogwild hw = pc->data;
-
-  PetscFunctionBeginUser;
-  if (hw->prand_is_initial_prand) {
-    PetscCall(PetscRandomDestroy(&hw->prand));
-    hw->prand_is_initial_prand = PETSC_FALSE;
-  }
-  hw->prand = pr;
-  PetscFunctionReturn(PETSC_SUCCESS);
-}
-
 PetscErrorCode PCCreate_Hogwild(PC pc)
 {
   PC_Hogwild hw;
@@ -146,6 +120,5 @@ PetscErrorCode PCCreate_Hogwild(PC pc)
   pc->ops->reset           = PCReset_Hogwild;
   pc->ops->setup           = PCSetUp_Hogwild;
   PetscCall(PCRegisterSetSampleCallback(pc, PCSetSampleCallback_Hogwild));
-  PetscCall(RegisterPCSetGetPetscRandom(pc, PCHogwildSetPetscRandom, PCHogwildGetPetscRandom));
   PetscFunctionReturn(PETSC_SUCCESS);
 }

@@ -51,10 +51,10 @@ static PetscErrorCode PCDestroy_CholSampler(PC pc)
   PC_CholSampler chol = pc->data;
 
   PetscFunctionBeginUser;
+  PetscCall(PetscRandomDestroy(&chol->prand));
   PetscCall(MatDestroy(&chol->F));
   PetscCall(VecDestroy(&chol->r));
   PetscCall(VecDestroy(&chol->v));
-  PetscCall(PetscRandomDestroy(&chol->prand));
   if (chol->is_gamg_coarse) {
     PetscCall(VecDestroy(&chol->xl));
     PetscCall(VecDestroy(&chol->yl));
@@ -68,10 +68,10 @@ static PetscErrorCode PCReset_CholSampler(PC pc)
   PC_CholSampler chol = pc->data;
 
   PetscFunctionBeginUser;
+  PetscCall(PetscRandomDestroy(&chol->prand));
   PetscCall(MatDestroy(&chol->F));
   PetscCall(VecDestroy(&chol->r));
   PetscCall(VecDestroy(&chol->v));
-  PetscCall(PetscRandomDestroy(&chol->prand));
   if (chol->is_gamg_coarse) {
     PetscCall(VecDestroy(&chol->xl));
     PetscCall(VecDestroy(&chol->yl));
@@ -83,7 +83,7 @@ static PetscErrorCode PCSetUp_CholSampler(PC pc)
 {
   PC_CholSampler chol = pc->data;
   Mat            S, P;
-  PetscMPIInt    size, rank;
+  PetscMPIInt    size, rank, grank;
   MatType        type;
   PetscBool      flag;
   IS             rowperm, colperm;
@@ -91,9 +91,8 @@ static PetscErrorCode PCSetUp_CholSampler(PC pc)
 
   PetscFunctionBeginUser;
   PetscCallMPI(MPI_Comm_rank(PetscObjectComm((PetscObject)pc), &rank));
-
-  PetscCall(PetscRandomCreate(PetscObjectComm((PetscObject)pc), &chol->prand));
-  PetscCall(PetscRandomSetType(chol->prand, PARMGMC_ZIGGURAT));
+  PetscCallMPI(MPI_Comm_rank(MPI_COMM_WORLD, &grank));
+  if (!chol->prand) PetscCall(ParMGMCGetPetscRandom(&chol->prand));
 
   PetscCall(MatGetType(pc->pmat, &type));
   PetscCall(PetscStrcmp(type, MATLRC, &flag));
@@ -138,7 +137,9 @@ static PetscErrorCode PCSetUp_CholSampler(PC pc)
   if (size != 1) {
     if (chol->is_gamg_coarse) PetscCall(MatMPIAIJGetSeqAIJ(P, &S, NULL, NULL));
     else PetscCall(MatConvert(P, MATSBAIJ, MAT_INITIAL_MATRIX, &S));
-  } else S = P;
+  } else {
+    S = P;
+  }
   PetscCall(MatSetOption(S, MAT_SPD, PETSC_TRUE));
   PetscCall(MatCreateVecs(S, &chol->r, &chol->v));
   PetscCall(MatGetFactor(S, chol->st, MAT_FACTOR_CHOLESKY, &chol->F));
@@ -158,8 +159,8 @@ static PetscErrorCode PCSetUp_CholSampler(PC pc)
   PetscCall(ISDestroy(&rowperm));
   PetscCall(ISDestroy(&colperm));
 
-  pc->setupcalled         = PETSC_TRUE;
-  pc->reusepreconditioner = PETSC_TRUE;
+  /* pc->setupcalled         = PETSC_TRUE; */
+  /* pc->reusepreconditioner = PETSC_TRUE; */
   PetscFunctionReturn(PETSC_SUCCESS);
 }
 
@@ -214,26 +215,6 @@ static PetscErrorCode PCApplyRichardson_CholSampler(PC pc, Vec b, Vec y, Vec w, 
   PetscFunctionReturn(PETSC_SUCCESS);
 }
 
-PetscErrorCode PCCholSamplerGetPetscRandom(PC pc, PetscRandom *pr)
-{
-  PC_CholSampler chol = pc->data;
-
-  PetscFunctionBeginUser;
-  *pr = chol->prand;
-  PetscFunctionReturn(PETSC_SUCCESS);
-}
-
-static PetscErrorCode PCCholSamplerSetPetscRandom(PC pc, PetscRandom pr)
-{
-  PC_CholSampler chol = pc->data;
-
-  PetscFunctionBeginUser;
-  PetscCall(PetscRandomDestroy(&chol->prand));
-  chol->prand = pr;
-  PetscCall(PetscObjectReference((PetscObject)pr));
-  PetscFunctionReturn(PETSC_SUCCESS);
-}
-
 static PetscErrorCode PCSetSampleCallback_Cholsampler(PC pc, PetscErrorCode (*cb)(PetscInt, Vec, void *), void *ctx, PetscErrorCode (*deleter)(void *))
 {
   PC_CholSampler chol = pc->data;
@@ -267,7 +248,7 @@ PetscErrorCode PCCholSamplerSetIsCoarseGAMG(PC pc, PetscBool flag)
   PetscFunctionReturn(PETSC_SUCCESS);
 }
 
-static PetscErrorCode PCSetFromOptions_CholSampler(PC pc, PetscOptionItems *PetscOptionsObject)
+static PetscErrorCode PCSetFromOptions_CholSampler(PC pc, PetscOptionItems PetscOptionsObject)
 {
   PetscBool flag = PETSC_FALSE;
 
@@ -300,7 +281,6 @@ PetscErrorCode PCCreate_CholSampler(PC pc)
   pc->ops->view            = PCView_CholSampler;
   pc->ops->setfromoptions  = PCSetFromOptions_CholSampler;
   chol->is_gamg_coarse     = PETSC_FALSE;
-  PetscCall(RegisterPCSetGetPetscRandom(pc, PCCholSamplerSetPetscRandom, PCCholSamplerGetPetscRandom));
   PetscCall(PCRegisterSetSampleCallback(pc, PCSetSampleCallback_Cholsampler));
   PetscFunctionReturn(PETSC_SUCCESS);
 }

@@ -103,6 +103,7 @@ static PetscErrorCode PCReset_Gibbs(PC pc)
   PC_Gibbs *pg = pc->data;
 
   PetscFunctionBeginUser;
+  PetscCall(PetscRandomDestroy(&pg->prand));
   PetscCall(VecDestroy(&pg->sqrtdiag));
   PetscCall(MCSORDestroy(&pg->mc));
   PetscCall(VecDestroy(&pg->w));
@@ -112,7 +113,6 @@ static PetscErrorCode PCReset_Gibbs(PC pc)
     PetscCall(pg->del_scb(pg->cbctx));
     pg->del_scb = NULL;
   }
-  PetscCall(PetscRandomDestroy(&pg->prand));
   PetscFunctionReturn(PETSC_SUCCESS);
 }
 
@@ -189,7 +189,7 @@ static PetscErrorCode PCApplyRichardson_Gibbs(PC pc, Vec b, Vec y, Vec w, PetscR
   PetscFunctionReturn(PETSC_SUCCESS);
 }
 
-static PetscErrorCode PCSetFromOptions_Gibbs(PC pc, PetscOptionItems *PetscOptionsObject)
+static PetscErrorCode PCSetFromOptions_Gibbs(PC pc, PetscOptionItems PetscOptionsObject)
 {
   PC_Gibbs *pg = pc->data;
   PetscBool flag;
@@ -219,12 +219,12 @@ static PetscErrorCode PCSetUp_Gibbs(PC pc)
   Mat       P = pc->pmat;
 
   PetscFunctionBeginUser;
-  PetscCall(PetscRandomCreate(PetscObjectComm((PetscObject)pc), &pg->prand));
-  PetscCall(PetscRandomSetType(pg->prand, PARMGMC_ZIGGURAT));
-
   if (pc->setupcalled) {
+    PetscCall(PetscRandomDestroy(&pg->prand));
     PetscCall(VecDestroy(&pg->sqrtS));
     PetscCall(VecDestroy(&pg->sqrtdiag));
+    PetscCall(VecDestroy(&pg->w));
+    PetscCall(VecDestroy(&pg->z));
     PetscCall(MCSORDestroy(&pg->mc));
   }
   PetscCall(MCSORCreate(P, &pg->mc));
@@ -252,6 +252,7 @@ static PetscErrorCode PCSetUp_Gibbs(PC pc)
   }
   PetscCall(MatCreateVecs(pg->A, &pg->sqrtdiag, &pg->z));
   pg->omega_changed = PETSC_TRUE;
+  PetscCall(ParMGMCGetPetscRandom(&pg->prand));
   PetscFunctionReturn(PETSC_SUCCESS);
 }
 
@@ -263,25 +264,6 @@ static PetscErrorCode PCView_Gibbs(PC pc, PetscViewer viewer)
   PetscFunctionBeginUser;
   PetscCall(MCSORGetNumColors(pg->mc, &ncolors));
   PetscCall(PetscViewerASCIIPrintf(viewer, "Number of colours: %" PetscInt_FMT "\n", ncolors));
-  PetscFunctionReturn(PETSC_SUCCESS);
-}
-
-/**
-   @brief Get the PetscRandom context used to generate random numbers
-
-   This can be used to seed the random number generator:
-
-       PetscRandom pr;
-       PCGibbsGetPetscRandom(pc, &pr);
-       PetscRandomSetSeed(pr, seed);
-       PetscRandomSeed(pr);
- */
-static PetscErrorCode PCGibbsGetPetscRandom(PC pc, PetscRandom *pr)
-{
-  PC_Gibbs *pg = pc->data;
-
-  PetscFunctionBeginUser;
-  *pr = pg->prand;
   PetscFunctionReturn(PETSC_SUCCESS);
 }
 
@@ -304,17 +286,6 @@ PetscErrorCode PCGibbsSetSweepType(PC pc, MatSORType type)
 
   PetscFunctionBeginUser;
   PetscCall(MCSORSetSweepType(pg->mc, type));
-  PetscFunctionReturn(PETSC_SUCCESS);
-}
-
-static PetscErrorCode PCGibbsSetPetscRandom(PC pc, PetscRandom pr)
-{
-  PC_Gibbs *pg = pc->data;
-
-  PetscFunctionBeginUser;
-  PetscCall(PetscRandomDestroy(&pg->prand));
-  pg->prand = pr;
-  PetscCall(PetscObjectReference((PetscObject)pr));
   PetscFunctionReturn(PETSC_SUCCESS);
 }
 
@@ -353,7 +324,6 @@ PetscErrorCode PCCreate_Gibbs(PC pc)
   pc->ops->setfromoptions  = PCSetFromOptions_Gibbs;
   pc->ops->reset           = PCReset_Gibbs;
   pc->ops->view            = PCView_Gibbs;
-  PetscCall(RegisterPCSetGetPetscRandom(pc, PCGibbsSetPetscRandom, PCGibbsGetPetscRandom));
   PetscCall(PCRegisterSetSampleCallback(pc, PCSetSampleCallback_Gibbs));
   PetscFunctionReturn(PETSC_SUCCESS);
 }

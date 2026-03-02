@@ -116,7 +116,7 @@ static PetscErrorCode MS_AssembleMat(MS ms)
   PetscDS        ds;
   DMLabel        label;
   DM             cdm;
-  const PetscInt id = 1;
+  const PetscInt id = 0;
 
   PetscFunctionBeginUser;
   PetscCall(SNESCreate(ctx->comm, &snes));

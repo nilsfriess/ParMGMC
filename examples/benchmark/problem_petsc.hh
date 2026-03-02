@@ -156,7 +156,7 @@ public:
       PetscCallVoid(VecZeroEntries(rhs));
     }
 
-    CreateMeasurementVec();
+    PetscCallVoid(CreateMeasurementVec());
   }
 
   PetscErrorCode GetPrecisionMat(Mat *mat) override

@@ -24,7 +24,7 @@
 #include "problem_petsc.hh"
 
 #if defined(PARMGMC_HAVE_MFEM)
-#include "problem_mfem.hh"
+  #include "problem_mfem.hh"
 #endif
 
 struct SampleCtx {
@@ -87,7 +87,7 @@ static PetscErrorCode InfoView(Mat A, Parameters params, PetscViewer viewer)
   PetscCall(PetscViewerASCIIPrintf(viewer, "\n"));
   PetscCall(MatGetSize(A, &n, nullptr));
   PetscCall(PetscViewerASCIIPrintf(viewer, "Problem size (degrees of freedom): %" PetscInt_FMT "\n\n", n));
-  PetscCall(MPI_Comm_size(MPI_COMM_WORLD, &size));
+  PetscCallMPI(MPI_Comm_size(MPI_COMM_WORLD, &size));
   PetscCall(PetscViewerASCIIPrintf(viewer, "Running on %d MPI ranks\n\n", size));
 
   PetscCall(PetscOptionsView(nullptr, viewer));
@@ -113,7 +113,6 @@ static PetscErrorCode SamplerCreate(Mat A, DM dm, PetscRandom pr, Parameters par
   }
   PetscCall(KSPSetUp(*ksp));
   PetscCall(KSPGetPC(*ksp, &pc));
-  PetscCall(PCSetPetscRandom(pc, pr));
   PetscFunctionReturn(PETSC_SUCCESS);
 }
 

@@ -18,7 +18,7 @@ endif()
 find_package(MPI REQUIRED)
 message(STATUS "mpiexec executable located at ${MPIEXEC_EXECUTABLE}")
 
-find_package(FFTW REQUIRED)
+find_package(FFTW)
 message(STATUS ${FFTW_INCLUDE_DIRS} ${FFTW_LIBRARIES})
 if (DEFINED FFTW_INCLUDE_DIRS AND NOT DEFINED FFTW_LIBRARIES)
   message(STATUS "Found FFTW include dirs but no libs, assuming that Intel MKL FFTW is used")
@@ -40,7 +40,6 @@ target_sources(parmgmc
 	    src/parmgmc.c
 	    src/problems.c
 	    src/ms.c
-    	    src/cgs.c
 	    src/obs.c
 	    src/iact.c
 	    src/stats.c
@@ -53,12 +52,12 @@ target_sources(parmgmc
 target_include_directories(parmgmc SYSTEM PUBLIC ${PETSC_INCLUDE_DIRS} ${FFTW_INCLUDE_DIRS})
 target_compile_options(parmgmc PRIVATE -Wall -Wextra -Wpedantic -pedantic -Wshadow -Wpointer-arith -Wcast-qual -Wstrict-prototypes -Wmissing-prototypes)
 target_compile_options(parmgmc PUBLIC ${PETSC_CFLAGS})
-target_link_libraries(parmgmc PUBLIC PkgConfig::PETSC ${FFTW_DOUBLE_LIB} MPI::MPI_C)
+target_link_libraries(parmgmc PUBLIC PkgConfig::PETSC MPI::MPI_C )
 
 add_executable(benchmark examples/benchmark/main.cc)
 target_include_directories(benchmark PRIVATE include)
 target_compile_options(benchmark PRIVATE -Wall -Wextra -Wpedantic -pedantic)
-target_link_libraries(benchmark PRIVATE parmgmc m MPI::MPI_CXX MPI::MPI_C)
+target_link_libraries(benchmark PRIVATE parmgmc m MPI::MPI_CXX MPI::MPI_C ${FFTW_DOUBLE_LIB})
 
 # add_executable(test test.c)
 # target_include_directories(test PRIVATE include)

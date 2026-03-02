@@ -7,7 +7,6 @@
  */
 
 #include "parmgmc/parmgmc.h"
-#include "parmgmc/ksp/cgs.h"
 #include "parmgmc/pc/pc_chols.h"
 #include "parmgmc/pc/pc_gamgmc.h"
 #include "parmgmc/pc/pc_gibbs.h"
@@ -30,6 +29,8 @@
 PetscClassId  PARMGMC_CLASSID;
 PetscLogEvent MULTICOL_SOR;
 
+PetscRandom parmgmc_rand = NULL;
+
 static PetscErrorCode ParMGMCRegisterPCAll(void)
 {
   PetscFunctionBeginUser;
@@ -37,8 +38,6 @@ static PetscErrorCode ParMGMCRegisterPCAll(void)
   PetscCall(PCRegister(PCGIBBS, PCCreate_Gibbs));
   PetscCall(PCRegister(PCGAMGMC, PCCreate_GAMGMC));
   PetscCall(PCRegister(PCCHOLSAMPLER, PCCreate_CholSampler));
-
-  PetscCall(KSPRegister(KSPCGSAMPLER, KSPCreate_CGSampler));
   PetscFunctionReturn(PETSC_SUCCESS);
 }
 
@@ -46,6 +45,20 @@ static PetscErrorCode ParMGMCRegisterPetscRandomAll(void)
 {
   PetscFunctionBeginUser;
   PetscCall(PetscRandomRegister(PARMGMC_ZIGGURAT, PetscRandomCreate_Ziggurat));
+  PetscFunctionReturn(PETSC_SUCCESS);
+}
+
+PetscErrorCode ParMGMCGetPetscRandom(PetscRandom *pr)
+{
+  PetscFunctionBegin;
+  if (!parmgmc_rand) {
+    PetscCall(PetscRandomCreate(MPI_COMM_WORLD, &parmgmc_rand));
+    PetscCall(PetscRandomSetType(parmgmc_rand, PARMGMC_ZIGGURAT));
+  }
+  /* Bump the reference count so that callers can call PetscRandomDestroy on
+     the returned object independently of the global parmgmc_rand lifetime. */
+  PetscCall(PetscObjectReference((PetscObject)parmgmc_rand));
+  *pr = parmgmc_rand;
   PetscFunctionReturn(PETSC_SUCCESS);
 }
 
@@ -60,28 +73,12 @@ PetscErrorCode ParMGMCInitialize(void)
   PetscFunctionReturn(PETSC_SUCCESS);
 }
 
-/* /\** */
-/*    @brief Set a callback function that is called everytime a sampler generated a new sample. */
-
-/*    For PETSc's own PC's this does nothing. This works by abusing the `void* user` field */
-/*    in the `PC` class which also means that the `user` field cannot be used for anything */
-/*    else. */
-
-/*    TODO: Use PetscTryMethod instead. */
-/* *\/ */
-/* PetscErrorCode PCSetSampleCallback(PC pc, PetscErrorCode (*cb)(PetscInt, Vec, void *), void *ctx) */
-/* { */
-/*   SampleCallbackCtx cbctx; */
-
-/*   PetscFunctionBeginUser; */
-/*   if (!pc->user) PetscFunctionReturn(PETSC_SUCCESS); */
-
-/*   cbctx      = pc->user; */
-/*   cbctx->cb  = cb; */
-/*   cbctx->ctx = ctx; */
-
-/*   PetscFunctionReturn(PETSC_SUCCESS); */
-/* } */
+PetscErrorCode ParMGMCFinalize(void)
+{
+  PetscFunctionBeginUser;
+  if (parmgmc_rand) PetscCall(PetscRandomDestroy(&parmgmc_rand));
+  PetscFunctionReturn(PETSC_SUCCESS);
+}
 
 PetscErrorCode PCRegisterSetSampleCallback(PC pc, PetscErrorCode (*set)(PC pc, PetscErrorCode (*cb)(PetscInt, Vec, void *), void *ctx, PetscErrorCode (*deleter)(void *)))
 {
@@ -94,57 +91,5 @@ PetscErrorCode PCSetSampleCallback(PC pc, PetscErrorCode (*cb)(PetscInt, Vec, vo
 {
   PetscFunctionBeginUser;
   PetscUseMethod((PetscObject)pc, "PCSetSampleCallback_C", (PC, PetscErrorCode(*)(PetscInt, Vec, void *), void *, PetscErrorCode (*)(void *)), (pc, cb, ctx, deleter));
-  PetscFunctionReturn(PETSC_SUCCESS);
-}
-
-PetscErrorCode PCSetPetscRandom(PC pc, PetscRandom pr)
-{
-  PCType    type;
-  PetscBool flag;
-
-  PetscFunctionBeginUser;
-  PetscCall(PCGetType(pc, &type));
-  PetscCall(PetscStrcmp(type, PCREDUNDANT, &flag));
-  if (flag) {
-    // If the PC is a PCREDUNDANT, get the inner pc and try to call the method there.
-    KSP kspi;
-    PC  pci;
-
-    PetscCall(PCRedundantGetKSP(pc, &kspi));
-    PetscCall(KSPGetPC(kspi, &pci));
-    PetscUseMethod((PetscObject)pci, "PCSetPetscRandom_C", (PC, PetscRandom), (pci, pr));
-  } else {
-    PetscUseMethod((PetscObject)pc, "PCSetPetscRandom_C", (PC, PetscRandom), (pc, pr));
-  }
-  PetscFunctionReturn(PETSC_SUCCESS);
-}
-
-PetscErrorCode PCGetPetscRandom(PC pc, PetscRandom *pr)
-{
-  PCType    type;
-  PetscBool flag;
-
-  PetscFunctionBeginUser;
-  PetscCall(PCGetType(pc, &type));
-  PetscCall(PetscStrcmp(type, PCREDUNDANT, &flag));
-  if (flag) {
-    // If the PC is a PCREDUNDANT, get the inner pc and try to call the method there.
-    KSP kspi;
-    PC  pci;
-
-    PetscCall(PCRedundantGetKSP(pc, &kspi));
-    PetscCall(KSPGetPC(kspi, &pci));
-    PetscUseMethod((PetscObject)pci, "PCGetPetscRandom_C", (PC, PetscRandom *), (pci, pr));
-  } else {
-    PetscUseMethod((PetscObject)pc, "PCGetPetscRandom_C", (PC, PetscRandom *), (pc, pr));
-  }
-  PetscFunctionReturn(PETSC_SUCCESS);
-}
-
-PetscErrorCode RegisterPCSetGetPetscRandom(PC pc, PetscErrorCode (*set)(PC, PetscRandom), PetscErrorCode (*get)(PC, PetscRandom *))
-{
-  PetscFunctionBeginUser;
-  PetscCall(PetscObjectComposeFunction((PetscObject)pc, "PCSetPetscRandom_C", set));
-  PetscCall(PetscObjectComposeFunction((PetscObject)pc, "PCGetPetscRandom_C", get));
   PetscFunctionReturn(PETSC_SUCCESS);
 }

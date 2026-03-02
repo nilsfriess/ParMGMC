@@ -26,10 +26,9 @@ PETSC_EXTERN PetscClassId  PARMGMC_CLASSID;
 PETSC_EXTERN PetscLogEvent MULTICOL_SOR;
 
 PETSC_EXTERN PetscErrorCode ParMGMCInitialize(void);
+PETSC_EXTERN PetscErrorCode ParMGMCFinalize(void);
 
 PETSC_EXTERN PetscErrorCode PCRegisterSetSampleCallback(PC, PetscErrorCode (*)(PC, PetscErrorCode (*)(PetscInt, Vec, void *), void *, PetscErrorCode (*)(void *)));
 PETSC_EXTERN PetscErrorCode PCSetSampleCallback(PC, PetscErrorCode (*)(PetscInt, Vec, void *), void *, PetscErrorCode (*)(void *));
 
-PETSC_EXTERN PetscErrorCode PCSetPetscRandom(PC, PetscRandom);
-PETSC_EXTERN PetscErrorCode PCGetPetscRandom(PC, PetscRandom *);
-PETSC_EXTERN PetscErrorCode RegisterPCSetGetPetscRandom(PC, PetscErrorCode (*)(PC, PetscRandom), PetscErrorCode (*)(PC, PetscRandom *));
+PETSC_EXTERN PetscErrorCode ParMGMCGetPetscRandom(PetscRandom *);

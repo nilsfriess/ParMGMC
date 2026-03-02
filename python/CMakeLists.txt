@@ -23,4 +23,4 @@ else()
 endif()
 
 target_include_directories(pymgmc PUBLIC ${PETSC_INCLUDE_DIRS} ${pybind11_INCLUDE_DIRS} ../include)
-target_link_libraries(pymgmc PUBLIC pybind11::module PkgConfig::PETSC parmgmc)
+target_link_libraries(pymgmc PUBLIC pybind11::module parmgmc)
