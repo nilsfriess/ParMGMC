@@ -25,10 +25,10 @@ if (PROJECT_IS_TOP_LEVEL)
    configure_file(lit.site.cfg.py.in lit.site.cfg.py @ONLY)
    add_custom_target(check-seq
                 COMMENT "Running sequential tests"
-                COMMAND lit "${CMAKE_CURRENT_BINARY_DIR}" -a --time-tests -DNP=1)
+                COMMAND lit -j 4 "${CMAKE_CURRENT_BINARY_DIR}" -a --time-tests -DNP=1)
    add_custom_target(check-par
                 COMMENT "Running parallel tests"
-                COMMAND lit "${CMAKE_CURRENT_BINARY_DIR}" -a --time-tests --filter-out=ex6.c -DNP=4)
+                COMMAND lit -j 2 "${CMAKE_CURRENT_BINARY_DIR}" -a --time-tests --filter-out=ex6.c -DNP=4)
 
    add_custom_target(check
                 DEPENDS check-par check-seq)
