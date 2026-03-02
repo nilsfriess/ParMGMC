@@ -55,10 +55,10 @@ jobs:
       - name: Run sequential tests
         run: |
           cd ${GITHUB_WORKSPACE}/examples/build
-          make check-seq
+          OMP_NUM_THREADS=1 make check-seq
 
       - name: Run parallel tests
         run: |
           cd ${GITHUB_WORKSPACE}/examples/build
           export LD_PRELOAD=/opt/intel/oneapi/mkl/latest/lib/libmkl_blacs_intelmpi_lp64.so
-          make check-par
+          OMP_NUM_THREADS=1 make check-par
