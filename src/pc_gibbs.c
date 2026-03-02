@@ -189,7 +189,7 @@ static PetscErrorCode PCApplyRichardson_Gibbs(PC pc, Vec b, Vec y, Vec w, PetscR
   PetscFunctionReturn(PETSC_SUCCESS);
 }
 
-static PetscErrorCode PCSetFromOptions_Gibbs(PC pc, PetscOptionItems PetscOptionsObject)
+static PetscErrorCode PCSetFromOptions_Gibbs(PC pc, PetscOptionItems_ARG PetscOptionsObject)
 {
   PC_Gibbs *pg = pc->data;
   PetscBool flag;

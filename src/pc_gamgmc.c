@@ -267,7 +267,7 @@ static PetscErrorCode PCSetUp_GAMGMC(PC pc)
   PetscCall(PCSetOperators(pg->mg, P, P));
   if (strcmp(pg->mgtype, PCMG) == 0) {
     PetscCall(PCSetDM(pg->mg, pc->dm));
-    // PetscCall(PCMGSetGalerkin(pg->mg, PC_MG_GALERKIN_BOTH));
+    PetscCall(PCMGSetGalerkin(pg->mg, PC_MG_GALERKIN_BOTH));
   }
 
   // Ugly way to set the default "smoother" (=sampler) to be Gibbs.
@@ -318,7 +318,7 @@ static PetscErrorCode PCSetUp_GAMGMC(PC pc)
   PetscFunctionReturn(PETSC_SUCCESS);
 }
 
-static PetscErrorCode PCSetFromOptions_GAMGMC(PC pc, PetscOptionItems PetscOptionsObject)
+static PetscErrorCode PCSetFromOptions_GAMGMC(PC pc, PetscOptionItems_ARG PetscOptionsObject)
 {
   PC_GAMGMC pg = pc->data;
 
