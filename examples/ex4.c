@@ -29,7 +29,6 @@
 #include <parmgmc/problems.h>
 
 #include <petsc.h>
-#include <petsc/private/kspimpl.h>
 #include <petscdm.h>
 #include <petscdmplex.h>
 #include <petscds.h>
@@ -49,7 +48,6 @@
 typedef struct _SampleCtx {
   Vec         mean, y, mean_exact, tmp;
   PetscScalar mean_exact_norm;
-  void       *dctx;
 } *SampleCtx;
 
 static PetscErrorCode SampleCtxCreate(DM dm, SampleCtx *ctx)
@@ -60,7 +58,6 @@ static PetscErrorCode SampleCtxCreate(DM dm, SampleCtx *ctx)
   PetscCall(DMCreateGlobalVector(dm, &(*ctx)->y));
   PetscCall(DMCreateGlobalVector(dm, &(*ctx)->mean_exact));
   PetscCall(DMCreateGlobalVector(dm, &(*ctx)->tmp));
-  PetscCall(KSPConvergedDefaultCreate(&(*ctx)->dctx));
   PetscFunctionReturn(PETSC_SUCCESS);
 }
 
@@ -73,7 +70,6 @@ static PetscErrorCode SampleCtxDestroy(void *sctx)
   PetscCall(VecDestroy(&(*ctx)->y));
   PetscCall(VecDestroy(&(*ctx)->mean_exact));
   PetscCall(VecDestroy(&(*ctx)->tmp));
-  PetscCall(KSPConvergedDefaultDestroy((*ctx)->dctx));
   PetscCall(PetscFree(*ctx));
   *ctx = NULL;
   PetscFunctionReturn(PETSC_SUCCESS);
