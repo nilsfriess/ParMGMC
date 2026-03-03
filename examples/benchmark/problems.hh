@@ -3,6 +3,7 @@
 #include <petscsystypes.h>
 #include <petscmat.h>
 #include <petscvec.h>
+#include <petscdm.h>
 
 class Problem {
 public:

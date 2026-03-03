@@ -65,12 +65,9 @@ target_link_libraries(benchmark PRIVATE parmgmc m MPI::MPI_CXX MPI::MPI_C ${FFTW
 # target_link_libraries(test parmgmc m)
 
 set(MFEM_DIR "" CACHE PATH "Path to the MFEM build or install prefix.")
-find_package(mfem
-             NAMES MFEM
-             HINTS "${MFEM_DIR}" "${MFEM_DIR}/lib/cmake/mfem"
-             NO_DEFAULT_PATH)
-if(${mfem_FOUND})
-  message(STATUS "Found MFEM at ${mfem_DIR} (version ${MFEM_VERSION})")
+find_package(MFEM)
+if(MFEM_FOUND)
+  message(STATUS "Found MFEM (include dirs: ${MFEM_INCLUDE_DIRS})")
 
   find_package(MPI REQUIRED)
   message(STATUS "mpiexec executable located at ${MPIEXEC_EXECUTABLE}")

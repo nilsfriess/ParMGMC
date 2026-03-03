@@ -27,7 +27,7 @@ public:
     }
 
     PetscScalar kappa = 1;
-    PetscOptionsGetReal(nullptr, nullptr, "-matern_kappa", &kappa, nullptr);
+    PetscCallVoid(PetscOptionsGetReal(nullptr, nullptr, "-matern_kappa", &kappa, nullptr));
     mfem::ConstantCoefficient kappa2(kappa * kappa);
 
     mfem::ParBilinearForm a(fespace.get());
@@ -50,7 +50,7 @@ public:
     a.FormLinearSystem(ess_tdof_list, u, b, A, X, F);
     B = std::make_unique<mfem::PetscParVector>(MPI_COMM_WORLD, F, true);
 
-    MatSetOption(A, MAT_SPD, PETSC_TRUE);
+    PetscCallVoid(MatSetOption(A, MAT_SPD, PETSC_TRUE));
 
     PetscCallVoid(CreateMeasurementVec());
 
@@ -277,23 +277,23 @@ private:
     mfem::Mesh serial_mesh;
     PetscInt   refine = 0, parRefine = 0;
 
-    PetscOptionsGetString(nullptr, nullptr, "-mesh_file", mesh_file, 256, &flag);
+    (void)PetscOptionsGetString(nullptr, nullptr, "-mesh_file", mesh_file, 256, &flag);
 
     if (!flag) {
       PetscInt faces_per_dim = 4;
 
-      PetscOptionsGetInt(nullptr, nullptr, "-box_faces", &faces_per_dim, nullptr);
+      (void)PetscOptionsGetInt(nullptr, nullptr, "-box_faces", &faces_per_dim, nullptr);
       serial_mesh = mfem::Mesh::MakeCartesian2D(faces_per_dim, faces_per_dim, mfem::Element::Type::TRIANGLE);
     } else {
       serial_mesh = mfem::Mesh::LoadFromFile(mesh_file);
     }
-    PetscOptionsGetInt(nullptr, nullptr, "-dm_refine", &refine, nullptr);
+    (void)PetscOptionsGetInt(nullptr, nullptr, "-dm_refine", &refine, nullptr);
     for (PetscInt i = 0; i < refine; ++i) serial_mesh.UniformRefinement();
 
     mesh = new mfem::ParMesh(MPI_COMM_WORLD, serial_mesh);
     serial_mesh.Clear();
 
-    PetscOptionsGetInt(nullptr, nullptr, "-dm_par_refine", &parRefine, nullptr);
+    (void)PetscOptionsGetInt(nullptr, nullptr, "-dm_par_refine", &parRefine, nullptr);
     for (PetscInt i = 0; i < parRefine; ++i) mesh->UniformRefinement();
   }
 

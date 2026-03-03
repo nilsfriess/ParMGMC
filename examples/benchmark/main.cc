@@ -97,6 +97,7 @@ static PetscErrorCode InfoView(Mat A, Parameters params, PetscViewer viewer)
 static PetscErrorCode SamplerCreate(Mat A, DM dm, PetscRandom pr, Parameters params, KSP *ksp)
 {
   (void)params;
+  (void)pr;
 
   PC pc;
 
