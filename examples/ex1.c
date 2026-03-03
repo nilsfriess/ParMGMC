@@ -68,12 +68,14 @@ int main(int argc, char *argv[])
   KSP       ksp;
   PC        pc;
   PetscReal err, ex_mean_norm;
-  PetscInt  n_samples = 500000; // 5000000;
+  PetscInt  n_samples = 500000;
+  PetscInt  n_burnin  = 1000;
 
   PetscCall(PetscInitialize(&argc, &argv, NULL, NULL));
   PetscCall(ParMGMCInitialize());
 
   PetscCall(PetscOptionsGetInt(NULL, NULL, "-samples", &n_samples, NULL));
+  PetscCall(PetscOptionsGetInt(NULL, NULL, "-burnin", &n_burnin, NULL));
 
   PetscCall(DMDACreate2d(MPI_COMM_WORLD, DM_BOUNDARY_NONE, DM_BOUNDARY_NONE, DMDA_STENCIL_STAR, 9, 9, PETSC_DECIDE, PETSC_DECIDE, 1, 1, NULL, NULL, &da));
   PetscCall(DMSetFromOptions(da));
@@ -86,7 +88,6 @@ int main(int argc, char *argv[])
   PetscCall(KSPSetOperators(ksp, A, A));
   PetscCall(KSPSetDM(ksp, da));
   PetscCall(KSPSetDMActive(ksp, PETSC_FALSE));
-  PetscCall(KSPSetTolerances(ksp, 0, 0, 0, n_samples));
   PetscCall(KSPSetNormType(ksp, KSP_NORM_NONE));
   PetscCall(KSPSetInitialGuessNonzero(ksp, PETSC_TRUE));
   PetscCall(KSPSetFromOptions(ksp));
@@ -94,13 +95,13 @@ int main(int argc, char *argv[])
 
   PetscCall(DMCreateGlobalVector(da, &mean));
   PetscCall(KSPGetPC(ksp, &pc));
-  PetscCall(PCSetSampleCallback(pc, SampleCallback, mean, NULL));
 
   PetscCall(DMCreateGlobalVector(da, &x));
   PetscCall(VecDuplicate(x, &b));
   PetscCall(VecDuplicate(x, &ex_mean));
   PetscCall(VecSet(b, 1));
-  PetscCall(VecSet(x, 1));
+  PetscCall(VecSet(x, 0));
+
   {
     KSP ksp2;
 
@@ -111,41 +112,20 @@ int main(int argc, char *argv[])
     PetscCall(KSPDestroy(&ksp2));
   }
 
+  // Burn-in phase: advance the chain without recording samples
+  PetscCall(KSPSetTolerances(ksp, 0, 0, 0, n_burnin));
   PetscCall(KSPSolve(ksp, b, x));
 
-#if 1
-  {
-    PetscViewer viewer;
-    Vec         error;
-
-    PetscCall(PetscViewerCreate(PETSC_COMM_WORLD, &viewer));
-    PetscCall(PetscViewerSetType(viewer, PETSCVIEWERVTK));
-    PetscCall(PetscViewerFileSetMode(viewer, FILE_MODE_WRITE));
-    PetscCall(PetscViewerFileSetName(viewer, "sample.vts"));
-
-    PetscCall(PetscObjectSetName((PetscObject)x, "sample"));
-    PetscCall(PetscObjectSetName((PetscObject)mean, "mean"));
-    PetscCall(PetscObjectSetName((PetscObject)ex_mean, "exact mean"));
-    PetscCall(VecView(x, viewer));
-    PetscCall(VecView(mean, viewer));
-    PetscCall(VecView(ex_mean, viewer));
-
-    PetscCall(VecDuplicate(mean, &error));
-    PetscCall(VecCopy(mean, error));
-    PetscCall(VecAXPY(error, -1, ex_mean));
-    PetscCall(PetscObjectSetName((PetscObject)error, "error"));
-    PetscCall(VecView(error, viewer));
-
-    PetscCall(PetscViewerDestroy(&viewer));
-    PetscCall(VecDestroy(&error));
-  }
-#endif
+  // Sampling phase
+  PetscCall(PCSetSampleCallback(pc, SampleCallback, mean, NULL));
+  PetscCall(KSPSetTolerances(ksp, 0, 0, 0, n_samples));
+  PetscCall(KSPSolve(ksp, b, x));
 
   PetscCall(VecAXPY(mean, -1, ex_mean));
   PetscCall(VecNorm(mean, NORM_2, &err));
   PetscCall(VecNorm(ex_mean, NORM_2, &ex_mean_norm));
 
-  PetscCheck(PetscIsCloseAtTol(err, 0, 0.01, 0.01), MPI_COMM_WORLD, PETSC_ERR_NOT_CONVERGED, "Sample mean has not converged: got %.4f, expected %.4f", err, 0.f);
+  PetscCheck(PetscIsCloseAtTol(err / ex_mean_norm, 0, 0.01, 0.01), MPI_COMM_WORLD, PETSC_ERR_NOT_CONVERGED, "Sample mean has not converged: rel. error %.5f", err / ex_mean_norm);
   PetscCall(PetscPrintf(MPI_COMM_WORLD, "Rel. mean error: %.5f\n", err / ex_mean_norm));
 
   PetscCall(VecDestroy(&mean));
@@ -155,6 +135,5 @@ int main(int argc, char *argv[])
   PetscCall(DMDestroy(&da));
   PetscCall(MatDestroy(&A));
   PetscCall(KSPDestroy(&ksp));
-  PetscCall(DMDestroy(&da));
   PetscCall(PetscFinalize());
 }
