@@ -167,15 +167,17 @@ static PetscErrorCode PCGAMGMC_SetUpHierarchy(PC pc)
     PetscCall(PCMGGetSmoother(pg->mg, 0, &ksps));
     PetscCall(KSPGetPC(ksps, &pcs));
 
-    // TODO: We just assume here that the coarse grid sampler works only on a single MPI rank, but this can be changed at runtime in GAMG.
-    // We need to find a way to query this here.
     PetscCall(PCGetType(pcs, &ptype));
     PetscCall(PetscStrcmp(ptype, PCCHOLSAMPLER, &ischol));
+    // GAMG coarsens to a single rank (rank 0 owns all rows; other ranks have 0 rows)
+    // without using a sub-communicator.  MKL Cluster Pardiso cannot handle that
+    // degenerate distribution, so we must use the sequential path which extracts
+    // the rank-0 local matrix and factorizes it with MKL_PARDISO (or PETSc).
     if (ischol) {
       PetscCall(KSPGetOperators(ksps, &A, NULL));
       PetscCall(PetscObjectReference((PetscObject)A));
       PetscCall(PCReset(pcs));
-      // PetscCall(PCCholSamplerSetIsCoarseGAMG(pcs, PETSC_TRUE));
+      PetscCall(PCCholSamplerSetIsCoarseGAMG(pcs, PETSC_TRUE));
       PetscCall(KSPSetOperators(ksps, A, A));
       PetscCall(PCSetUp(pcs));
       PetscCall(PetscObjectDereference((PetscObject)A));
