@@ -49,11 +49,11 @@ if (MFEM_CONFIG_FILE)
 
   # Verify MFEM was built with MPI support
   if(NOT MFEM_USE_MPI)
-    message(FATAL_ERROR "MFEM must be built with MPI support.")
+    message(STATUS "FindMFEM: MFEM was not built with MPI support.")
   endif(NOT MFEM_USE_MPI)
 
 else(MFEM_CONFIG_FILE)
-  message(FATAL_ERROR "MFEM configuration file not found!")
+  message(STATUS "FindMFEM: MFEM configuration file (config.mk) not found.")
 endif(MFEM_CONFIG_FILE)
 
 # Find the header
@@ -74,35 +74,37 @@ find_library(MFEM_LIBRARY mfem
   DOC "The MFEM library.")
 
 
-# Setup the imported target
-if (NOT TARGET MFEM::mfem)
-  add_library(MFEM::mfem UNKNOWN IMPORTED)
-endif (NOT TARGET MFEM::mfem)
+# Setup the imported target only when the library was actually found
+if (MFEM_LIBRARY AND MFEM_INCLUDE_DIRS)
+  if (NOT TARGET MFEM::mfem)
+    add_library(MFEM::mfem UNKNOWN IMPORTED)
+  endif (NOT TARGET MFEM::mfem)
 
-# Set the library location
-set_property(TARGET MFEM::mfem
-  PROPERTY IMPORTED_LOCATION ${MFEM_LIBRARY})
+  # Set the library location
+  set_property(TARGET MFEM::mfem
+    PROPERTY IMPORTED_LOCATION ${MFEM_LIBRARY})
 
-# Add the include path
-set_property(TARGET MFEM::mfem APPEND
-  PROPERTY INTERFACE_INCLUDE_DIRECTORIES ${MFEM_INCLUDE_DIRS})
-
-# Add the guaranteed dependencies -- HYPRE, METIS, MPI
-set_property(TARGET MFEM::mfem APPEND
-  PROPERTY INTERFACE_LINK_LIBRARIES
-  ${HYPRE_LIBRARIES} ${METIS_LIBRARIES} ${MPI_CXX_LIBRARIES})
-
-# Add SuiteSparse, if used
-if (MFEM_USE_SUITESPARSE)
+  # Add the include path
   set_property(TARGET MFEM::mfem APPEND
-    PROPERTY INTERFACE_LINK_LIBRARIES ${SuiteSparse_LIBRARIES})
-endif (MFEM_USE_SUITESPARSE)
+    PROPERTY INTERFACE_INCLUDE_DIRECTORIES ${MFEM_INCLUDE_DIRS})
 
-# Add LAPACK, if used
-if (MFEM_USE_LAPACK)
+  # Add the guaranteed dependencies -- HYPRE, METIS, MPI
   set_property(TARGET MFEM::mfem APPEND
-    PROPERTY INTERFACE_LINK_LIBRARIES ${LAPACK_LIBRARIES})
-endif (MFEM_USE_LAPACK)
+    PROPERTY INTERFACE_LINK_LIBRARIES
+    ${HYPRE_LIBRARIES} ${METIS_LIBRARIES} ${MPI_CXX_LIBRARIES})
+
+  # Add SuiteSparse, if used
+  if (MFEM_USE_SUITESPARSE)
+    set_property(TARGET MFEM::mfem APPEND
+      PROPERTY INTERFACE_LINK_LIBRARIES ${SuiteSparse_LIBRARIES})
+  endif (MFEM_USE_SUITESPARSE)
+
+  # Add LAPACK, if used
+  if (MFEM_USE_LAPACK)
+    set_property(TARGET MFEM::mfem APPEND
+      PROPERTY INTERFACE_LINK_LIBRARIES ${LAPACK_LIBRARIES})
+  endif (MFEM_USE_LAPACK)
+endif (MFEM_LIBRARY AND MFEM_INCLUDE_DIRS)
 
 # Set the include directories
 set(MFEM_INCLUDE_DIRS ${MFEM_INCLUDE_DIRS}
@@ -140,7 +142,7 @@ if(NOT MFEM_CONFIG_HEADER)
     DOC "The MFEM configuration header")
   find_file(MFEM_CONFIG_HEADER config.hpp)
   if(NOT MFEM_CONFIG_HEADER)
-    message(FATAL ERROR "MFEM Config Header File Not Found")
+    message(STATUS "FindMFEM: MFEM config header (_config.hpp / config.hpp) not found.")
   endif()
 endif()
 
