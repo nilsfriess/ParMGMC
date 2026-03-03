@@ -41,6 +41,7 @@
 typedef struct _MCSOR_Ctx {
   Mat         A, Asor;
   PetscInt   *diagptrs;
+  PetscInt    ncolors;
   PetscReal   omega;
   PetscBool   omega_changed;
   VecScatter *scatters;
@@ -61,12 +62,10 @@ PetscErrorCode MCSORDestroy(MCSOR *mc)
   PetscFunctionBeginUser;
   if (*mc) {
     MCSOR_Ctx ctx = (*mc)->ctx;
-    PetscInt  ncolors;
 
     PetscCall(PetscFree(ctx->diagptrs));
-    PetscCall(ISColoringGetIS(ctx->isc, PETSC_USE_POINTER, &ncolors, NULL));
     if (ctx->scatters && ctx->ghostvecs) {
-      for (PetscInt i = 0; i < ncolors; ++i) {
+      for (PetscInt i = 0; i < ctx->ncolors; ++i) {
         PetscCall(VecScatterDestroy(&ctx->scatters[i]));
         PetscCall(VecDestroy(&ctx->ghostvecs[i]));
       }
@@ -180,12 +179,18 @@ static PetscErrorCode MatCreateScatters(Mat mat, ISColoring isc, VecScatter **sc
     PetscCall(ISRestoreIndices(iss[color], &curidxs));
   }
 
+  // Find the maximum off-processor count across all colors so we can reuse a single buffer.
+  PetscInt maxOffProc = 0;
+  for (PetscInt color = 0; color < ncolors; ++color)
+    if (nTotalOffProc[color] > maxOffProc) maxOffProc = nTotalOffProc[color];
+
+  PetscInt *offProcIdx;
+  PetscCall(PetscMalloc1(maxOffProc, &offProcIdx));
+
   // Now we again loop over all colors and create the required VecScatters
   for (PetscInt color = 0; color < ncolors; ++color) {
-    PetscInt       *offProcIdx;
     PetscInt        nCurCol;
     const PetscInt *curidxs;
-    PetscCall(PetscMalloc1(nTotalOffProc[color], &offProcIdx));
     PetscCall(ISGetLocalSize(iss[color], &nCurCol));
     PetscCall(ISGetIndices(iss[color], &curidxs));
     PetscInt cnt = 0;
@@ -193,12 +198,13 @@ static PetscErrorCode MatCreateScatters(Mat mat, ISColoring isc, VecScatter **sc
       for (PetscInt k = rowptr[curidxs[i]]; k < rowptr[curidxs[i] + 1]; ++k) offProcIdx[cnt++] = colmap[colptr[k]];
     PetscCall(ISRestoreIndices(iss[color], &curidxs));
 
-    PetscCall(ISCreateGeneral(PETSC_COMM_SELF, nTotalOffProc[color], offProcIdx, PETSC_USE_POINTER, &is));
+    PetscCall(ISCreateGeneral(PETSC_COMM_SELF, nTotalOffProc[color], offProcIdx, PETSC_COPY_VALUES, &is));
     PetscCall(VecCreateSeq(MPI_COMM_SELF, nTotalOffProc[color], &(*ghostvecs)[color]));
     PetscCall(VecScatterCreate(gvec, is, (*ghostvecs)[color], NULL, &((*scatters)[color])));
     PetscCall(ISDestroy(&is));
-    PetscCall(PetscFree(offProcIdx));
   }
+
+  PetscCall(PetscFree(offProcIdx));
 
   PetscCall(ISColoringRestoreIS(isc, PETSC_USE_POINTER, &iss));
   PetscCall(PetscFree(nTotalOffProc));
@@ -344,13 +350,20 @@ static PetscErrorCode MCSORApply_MPIAIJ(MCSOR_Ctx ctx, Vec b, Vec y)
       PetscCall(ISGetIndices(iss[color], &rowind));
       PetscCall(VecGetArray(y, &yarr));
 
-      gcnt = 0;
+      // ghostarr is laid out in forward row order (rowind[0], rowind[1], ...).
+      // For the backward sweep we iterate rows in reverse, so we compute each
+      // row's start offset by working backwards from the total ghost count.
+      PetscInt ghostSize;
+      PetscCall(VecGetLocalSize(ctx->ghostvecs[color], &ghostSize));
+      gcnt = ghostSize;
       for (PetscInt i = nind - 1; i >= 0; --i) {
         PetscReal sum = 0;
+        gcnt -= bRowptr[rowind[i] + 1] - bRowptr[rowind[i]];
 
         for (PetscInt k = rowptr[rowind[i]]; k < ctx->diagptrs[rowind[i]]; ++k) sum -= matvals[k] * yarr[colptr[k]];
         for (PetscInt k = ctx->diagptrs[rowind[i]] + 1; k < rowptr[rowind[i] + 1]; ++k) sum -= matvals[k] * yarr[colptr[k]];
-        for (PetscInt k = bRowptr[rowind[i]]; k < bRowptr[rowind[i] + 1]; ++k) sum -= bMatvals[k] * ghostarr[gcnt++];
+        PetscInt go = gcnt;
+        for (PetscInt k = bRowptr[rowind[i]]; k < bRowptr[rowind[i] + 1]; ++k) sum -= bMatvals[k] * ghostarr[go++];
 
         yarr[rowind[i]] = (1 - ctx->omega) * yarr[rowind[i]] + idiagarr[rowind[i]] * (sum + barr[rowind[i]]);
       }
@@ -436,6 +449,7 @@ static PetscErrorCode MCSORSetupSOR(MCSOR mc)
   PetscCallMPI(MPI_Comm_size(PetscObjectComm((PetscObject)ctx->Asor), &size));
   if (size == 1) PetscCall(MatCreateISColoring_Seq(ctx->Asor, &ctx->isc));
   else PetscCall(MatCreateISColoring_AIJ(ctx->Asor, &ctx->isc));
+  PetscCall(ISColoringGetIS(ctx->isc, PETSC_USE_POINTER, &ctx->ncolors, NULL));
   PetscFunctionReturn(PETSC_SUCCESS);
 }
 
@@ -511,7 +525,6 @@ static PetscErrorCode MCSORCreateBbarMat(MCSOR mc, Mat C, Vec S, Mat *Bb)
   PetscCall(VecDestroy(&Si));
   PetscCall(MatDestroy(&Id));
   PetscCall(MatDestroy(&Sb));
-  PetscCall(MatDestroy(&tmp));
   PetscCall(MatDestroy(&tmp));
   PetscFunctionReturn(PETSC_SUCCESS);
 }
