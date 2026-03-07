@@ -25,7 +25,7 @@
  */
 
 /**************************** Test specification ****************************/
-// Gibbs with default omega
+// MulticolorGibbs with default omega
 // RUN: %cc %s -o %t %flags && %mpirun -np %NP %t
 /****************************************************************************/
 

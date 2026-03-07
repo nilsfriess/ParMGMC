@@ -32,7 +32,10 @@ struct SampleCtx {
   {
     PetscFunctionBeginUser;
     PetscCallVoid(VecDuplicate(b, &mean));
+    PetscCallVoid(VecSet(mean, 0));
     PetscCallVoid(VecDuplicate(mean, &M));
+    PetscCallVoid(VecSet(M, 0));
+    PetscCallVoid(VecDuplicate(mean, &var));
     PetscCallVoid(VecDuplicate(mean, &delta));
     PetscCallVoid(VecDuplicate(mean, &delta2));
     PetscCallVoid(PetscCalloc1(nqois, &qois));
@@ -49,8 +52,11 @@ struct SampleCtx {
   PetscErrorCode GetVar(Vec *var)
   {
     PetscFunctionBeginUser;
-    PetscCall(VecScale(M, 1. / nqois));
-    *var = M;
+    // Divide M (sum of squared deviations) by nseen to get the population
+    // variance. Use a copy so this method is safe to call multiple times.
+    PetscCall(VecCopy(M, this->var));
+    if (nseen > 0) PetscCall(VecScale(this->var, 1. / nseen));
+    *var = this->var;
     PetscFunctionReturn(PETSC_SUCCESS);
   }
 
@@ -58,6 +64,7 @@ struct SampleCtx {
   {
     PetscFunctionBeginUser;
     PetscCallVoid(VecDestroy(&M));
+    PetscCallVoid(VecDestroy(&var));
     PetscCallVoid(VecDestroy(&mean));
     PetscCallVoid(VecDestroy(&delta));
     PetscCallVoid(VecDestroy(&delta2));
@@ -66,9 +73,10 @@ struct SampleCtx {
   }
 
   PetscInt     nqois;
+  PetscInt     nseen = 0;
   PetscScalar *qois;
   Vec          meas_vec = nullptr;
-  Vec          M = nullptr, mean = nullptr, delta = nullptr, delta2 = nullptr;
+  Vec          M = nullptr, var = nullptr, mean = nullptr, delta = nullptr, delta2 = nullptr;
   PetscBool    est_mean_and_var;
 };
 
@@ -94,10 +102,9 @@ static PetscErrorCode InfoView(Mat A, Parameters params, PetscViewer viewer)
   PetscFunctionReturn(PETSC_SUCCESS);
 }
 
-static PetscErrorCode SamplerCreate(Mat A, DM dm, PetscRandom pr, Parameters params, KSP *ksp)
+static PetscErrorCode SamplerCreate(Mat A, DM dm, Parameters params, KSP *ksp)
 {
   (void)params;
-  (void)pr;
 
   PC pc;
 
@@ -110,7 +117,7 @@ static PetscErrorCode SamplerCreate(Mat A, DM dm, PetscRandom pr, Parameters par
   PetscCall(KSPSetOperators(*ksp, A, A));
   if (dm) {
     PetscCall(KSPSetDM(*ksp, dm));
-    PetscCall(KSPSetDMActive(*ksp, PETSC_FALSE));
+    PetscCall(KSPSetDMActive(*ksp, KSP_DMACTIVE_OPERATOR, PETSC_FALSE));
   }
   PetscCall(KSPSetUp(*ksp));
   PetscCall(KSPGetPC(*ksp, &pc));
@@ -146,7 +153,8 @@ static PetscErrorCode SaveSample(PetscInt it, Vec y, void *ctx)
   PetscFunctionBeginUser;
   if (sctx->est_mean_and_var) {
     // https://en.wikipedia.org/wiki/Algorithms_for_calculating_variance#Welford's_online_algorithm
-    PetscInt i = it + 1;
+    ++sctx->nseen;
+    PetscInt i = sctx->nseen;
 
     PetscCall(VecCopy(y, sctx->delta));
     PetscCall(VecAXPY(sctx->delta, -1, sctx->mean));
@@ -202,8 +210,7 @@ int main(int argc, char *argv[])
 
   PetscCheck(params->measure_iact || params->measure_sampling_time, MPI_COMM_WORLD, PETSC_ERR_ARG_WRONG, "Pass at least one of -measure_sampling_time or -measure_iact");
 
-  PetscCall(PetscRandomCreate(MPI_COMM_WORLD, &pr));
-  PetscCall(PetscRandomSetType(pr, PARMGMC_ZIGGURAT));
+  PetscCall(ParMGMCGetPetscRandom(&pr));
   PetscCall(PetscOptionsGetBool(nullptr, nullptr, "-seed_from_dev_random", &seed_from_dev_random, nullptr));
   if (seed_from_dev_random) {
     int           dr = open("/dev/random", O_RDONLY);
@@ -219,6 +226,7 @@ int main(int argc, char *argv[])
     PetscCall(PetscRandomSetSeed(pr, seed + rank));
   }
   PetscCall(PetscRandomSeed(pr));
+  PetscCall(PetscRandomDestroy(&pr));
 
   PetscCall(PetscOptionsGetBool(nullptr, nullptr, "-mfem", &mfem, nullptr));
 
@@ -239,7 +247,7 @@ int main(int argc, char *argv[])
   if (!mfem) PetscCall(problem->GetDM(&dm));
   PetscCall(VecDuplicate(b, &x));
 
-  TIME(SamplerCreate(A, dm, pr, params, &ksp), "Setup sampler", &time);
+  TIME(SamplerCreate(A, dm, params, &ksp), "Setup sampler", &time);
   PetscCall(KSPGetPC(ksp, &pc));
 
   if (params->measure_sampling_time) {
@@ -300,5 +308,6 @@ int main(int argc, char *argv[])
   PetscCall(ParametersDestroy(&params));
   PetscCall(KSPDestroy(&ksp));
   PetscCall(VecDestroy(&x));
+  PetscCall(ParMGMCFinalize());
   PetscCall(PetscFinalize());
 }

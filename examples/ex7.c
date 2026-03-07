@@ -140,7 +140,7 @@ int main(int argc, char *argv[])
     PetscCall(KSPSetFromOptions(samplers[i]));
     PetscCall(KSPSetOperators(samplers[i], A, A));
     PetscCall(KSPSetDM(samplers[i], dm));
-    PetscCall(KSPSetDMActive(samplers[i], PETSC_FALSE));
+    PetscCall(KSPSetDMActive(samplers[i], KSP_DMACTIVE_OPERATOR, PETSC_FALSE));
     PetscCall(KSPSetUp(samplers[i]));
     PetscCall(KSPSetNormType(samplers[i], KSP_NORM_NONE));
     PetscCall(KSPSetConvergenceTest(samplers[i], KSPConvergedSkip, NULL, NULL));

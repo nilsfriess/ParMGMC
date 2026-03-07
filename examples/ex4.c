@@ -13,10 +13,10 @@
 
 /**************************** Test specification ****************************/
 // MGMC sampler with low-rank update
-// RUN: %cc %s -o %t %flags && %mpirun -np %NP %t -ksp_type richardson -pc_type gamgmc -gamgmc_mg_coarse_ksp_type richardson -gamgmc_mg_coarse_pc_type gibbs -gamgmc_mg_coarse_ksp_max_it 2 -dm_refine_hierarchy 3  %opts -ksp_norm_type none -with_lr -ksp_convergence_test skip 
+// RUN: %cc %s -o %t %flags && %mpirun -np %NP %t -ksp_type richardson -pc_type gamgmc -gamgmc_mg_coarse_ksp_type richardson -gamgmc_mg_coarse_pc_type mcgibbs -gamgmc_mg_coarse_ksp_max_it 2 -dm_refine_hierarchy 3  %opts -ksp_norm_type none -with_lr -ksp_convergence_test skip 
 
-// Gibbs sampler with low-rank update
-// RUN: %cc %s -o %t %flags && %mpirun -np %NP %t -ksp_type richardson -pc_type gibbs -pc_gibbs_symmetric -dm_refine_hierarchy 3 -with_lr %opts -ksp_max_it 50000 -ksp_norm_type none -ksp_convergence_test skip 
+// MulticolorGibbs sampler with low-rank update
+// RUN: %cc %s -o %t %flags && %mpirun -np %NP %t -ksp_type richardson -pc_type mcgibbs -pc_mcgibbs_symmetric -dm_refine_hierarchy 3 -with_lr %opts -ksp_max_it 50000 -ksp_norm_type none -ksp_convergence_test skip 
 
 // Cholesky sampler with low-rank update
 // RUN: %cc %s -o %t %flags && %mpirun -np %NP %t -ksp_type richardson -pc_type cholsampler -dm_refine 2 -with_lr  %opts -ksp_convergence_test skip 

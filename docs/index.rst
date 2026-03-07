@@ -14,7 +14,7 @@ ParMGMC is a parallel implementation of the Multigrid Monte Carlo method using t
 
 The implementation includes
 
-* a parallel Gibbs sampler,
+* a parallel MulticolorGibbs sampler,
   
 * a geometric Multigrid Monte Carlo sampler to generate samples on simple structured grids,
   

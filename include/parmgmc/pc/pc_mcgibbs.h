@@ -13,6 +13,6 @@
 #include <petscpctypes.h>
 #include <petscsystypes.h>
 
-PETSC_EXTERN PetscErrorCode PCCreate_Gibbs(PC);
-PETSC_EXTERN PetscErrorCode PCGibbsSetOmega(PC, PetscReal);
-PETSC_EXTERN PetscErrorCode PCGibbsSetSweepType(PC, MatSORType);
+PETSC_EXTERN PetscErrorCode PCCreate_MulticolorGibbs(PC);
+PETSC_EXTERN PetscErrorCode PCMulticolorGibbsSetOmega(PC, PetscReal);
+PETSC_EXTERN PetscErrorCode PCMulticolorGibbsSetSweepType(PC, MatSORType);

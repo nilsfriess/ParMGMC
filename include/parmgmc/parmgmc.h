@@ -25,7 +25,7 @@
 
 #define PARMGMC_ZIGGURAT "ziggurat"
 
-#define PCGIBBS       "gibbs"
+#define PCMCGIBBS     "mcgibbs"
 #define PCGAMGMC      "gamgmc"
 #define PCHOGWILD     "hogwild"
 #define PCCHOLSAMPLER "cholsampler"

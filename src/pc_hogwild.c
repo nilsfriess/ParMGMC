@@ -42,7 +42,7 @@ static PetscErrorCode PCApplyRichardson_Hogwild(PC pc, Vec b, Vec y, Vec w, Pets
     PetscCall(VecSetRandom(w, hw->prand));
     PetscCall(VecPointwiseMult(w, w, hw->sqrtdiag));
     PetscCall(VecAXPY(w, 1., b));
-    PetscCall(MatSOR(pc->pmat, w, 1., SOR_LOCAL_FORWARD_SWEEP, 0., 1., 1., y));
+    PetscCall(MatSOR(pc->pmat, w, 1., SOR_FORWARD_SWEEP, 0., 1., 1., y));
   }
   if (hw->scb) PetscCall(hw->scb(its, y, hw->cbctx));
 

@@ -9,7 +9,7 @@
 #include "parmgmc/parmgmc.h"
 #include "parmgmc/pc/pc_chols.h"
 #include "parmgmc/pc/pc_gamgmc.h"
-#include "parmgmc/pc/pc_gibbs.h"
+#include "parmgmc/pc/pc_mcgibbs.h"
 #include "parmgmc/pc/pc_hogwild.h"
 #include "parmgmc/random/ziggurat.h"
 
@@ -35,7 +35,7 @@ static PetscErrorCode ParMGMCRegisterPCAll(void)
 {
   PetscFunctionBeginUser;
   PetscCall(PCRegister(PCHOGWILD, PCCreate_Hogwild));
-  PetscCall(PCRegister(PCGIBBS, PCCreate_Gibbs));
+  PetscCall(PCRegister(PCMCGIBBS, PCCreate_MulticolorGibbs));
   PetscCall(PCRegister(PCGAMGMC, PCCreate_GAMGMC));
   PetscCall(PCRegister(PCCHOLSAMPLER, PCCreate_CholSampler));
   PetscFunctionReturn(PETSC_SUCCESS);

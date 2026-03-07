@@ -6,7 +6,7 @@ API Overview
    :caption: Samplers
 
    ms
-   pc_gibbs
+   pc_mcgibbs
    pc_gamgmc
    
 

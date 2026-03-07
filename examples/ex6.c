@@ -33,7 +33,7 @@
 #include <petscvec.h>
 #include <mpi.h>
 
-// RUN: %cc %s -o %t %flags && %mpirun -np %NP %t  %opts -ksp_type richardson -pc_type gamgmc -gamgmc_mg_levels_pc_gibbs_forward -chains 1000 -ksp_max_it 200 -kappa 1e-4 -gamgmc_pc_gamg_coarse_eq_limit 10 -skip_petscrc
+// RUN: %cc %s -o %t %flags && %mpirun -np %NP %t  %opts -ksp_type richardson -pc_type gamgmc -gamgmc_mg_levels_pc_mcgibbs_forward -chains 1000 -ksp_max_it 200 -kappa 1e-4 -gamgmc_pc_gamg_coarse_eq_limit 10 -skip_petscrc
 
 typedef struct {
   Vec            *samples;

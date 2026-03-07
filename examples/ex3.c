@@ -120,7 +120,7 @@ int main(int argc, char *argv[])
   PetscCall(KSPCreate(MPI_COMM_WORLD, &ksp));
   PetscCall(KSPSetOperators(ksp, Aop, Aop));
   PetscCall(KSPSetDM(ksp, dm));
-  PetscCall(KSPSetDMActive(ksp, PETSC_FALSE));
+  PetscCall(KSPSetDMActive(ksp, KSP_DMACTIVE_OPERATOR, PETSC_FALSE));
   PetscCall(KSPGetPC(ksp, &pc));
   PetscCall(PCSetType(pc, PCSHELL));
   PetscCall(PCShellSetApply(pc, apply));

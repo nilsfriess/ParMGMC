@@ -42,16 +42,16 @@
 
     The underyling multigrid `PC` can be configured using the options database by
     prepending the prefix `gamgmc_`. For example, a three-level MGMC sampler
-    to generate 100 samples with Gibbs samplers used as random smoothers on each
+    to generate 100 samples with MulticolorGibbs samplers used as random smoothers on each
     level using four iterations on the coarsest level and two iterations on the
     remaining levels can be configured with the following options:
 
         -ksp_type richardson -pc_type gamgmc
         -pc_gamgmc_mg_type gamg
         -gamgmc_mg_levels_ksp_type richardson
-        -gamgmc_mg_levels_pc_type gibbs
+        -gamgmc_mg_levels_pc_type mcgibbs
         -gamgmc_mg_coarse_ksp_type richardson
-        -gamgmc_mg_coarse_pc_type gibbs
+        -gamgmc_mg_coarse_pc_type mcgibbs
         -gamgmc_mg_levels_ksp_max_it 2
         -gamgmc_mg_coarse_ksp_max_it 4
         -gamgmc_pc_mg_levels 3
@@ -272,7 +272,7 @@ static PetscErrorCode PCSetUp_GAMGMC(PC pc)
     PetscCall(PCMGSetGalerkin(pg->mg, PC_MG_GALERKIN_BOTH));
   }
 
-  // Ugly way to set the default "smoother" (=sampler) to be Gibbs.
+  // Ugly way to set the default "smoother" (=sampler) to be MulticolorGibbs.
   // NOTE: PetscOptionsSetValue does NOT honour the PetscOptionsPrefixPush stack;
   // the option name must be fully qualified (prefix + suffix) manually.
   {
@@ -302,7 +302,7 @@ static PetscErrorCode PCSetUp_GAMGMC(PC pc)
     PetscCall(PetscOptionsHasName(NULL, prefix, "-mg_levels_pc_type", &flag));
     if (!flag) {
       PetscCall(PetscSNPrintf(opt, sizeof(opt), "-%smg_levels_pc_type", prefix ? prefix : ""));
-      PetscCall(PetscOptionsSetValue(NULL, opt, PCGIBBS));
+      PetscCall(PetscOptionsSetValue(NULL, opt, PCMCGIBBS));
     }
 
     PetscCall(PetscOptionsHasName(NULL, prefix, "-mg_coarse_pc_type", &flag));

@@ -330,7 +330,7 @@ PetscErrorCode MSSetUp(MS ms)
     PetscCall(KSPSetOperators(ctx->ksp, ctx->A, ctx->A));
     PetscCall(KSPSetType(ctx->ksp, KSPRICHARDSON));
     PetscCall(KSPSetDM(ctx->ksp, ctx->dm));
-    PetscCall(KSPSetDMActive(ctx->ksp, PETSC_FALSE));
+    PetscCall(KSPSetDMActive(ctx->ksp, KSP_DMACTIVE_OPERATOR, PETSC_FALSE));
     PetscCall(KSPGetPC(ctx->ksp, &pc));
     PetscCall(PCSetType(pc, PCGAMGMC));
     PetscCall(KSPSetOptionsPrefix(ctx->ksp, "ms_"));
