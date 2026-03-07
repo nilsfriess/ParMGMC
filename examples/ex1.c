@@ -87,7 +87,11 @@ int main(int argc, char *argv[])
   PetscCall(KSPCreate(MPI_COMM_WORLD, &ksp));
   PetscCall(KSPSetOperators(ksp, A, A));
   PetscCall(KSPSetDM(ksp, da));
+#if PETSC_VERSION_GT(3, 24, 5)
   PetscCall(KSPSetDMActive(ksp, KSP_DMACTIVE_OPERATOR, PETSC_FALSE));
+#else
+  PetscCall(KSPSetDMActive(ksp, PETSC_FALSE));
+#endif
   PetscCall(KSPSetNormType(ksp, KSP_NORM_NONE));
   PetscCall(KSPSetInitialGuessNonzero(ksp, PETSC_TRUE));
   PetscCall(KSPSetFromOptions(ksp));
