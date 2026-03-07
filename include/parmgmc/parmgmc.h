@@ -27,7 +27,7 @@
 
 #define PCMCGIBBS     "mcgibbs"
 #define PCGAMGMC      "gamgmc"
-#define PCHOGWILD     "hogwild"
+#define PCSORGIBBS    "sorgibbs"
 #define PCCHOLSAMPLER "cholsampler"
 #define KSPCGSAMPLER  "cgsampler"
 

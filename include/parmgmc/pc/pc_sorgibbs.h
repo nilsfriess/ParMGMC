@@ -12,4 +12,4 @@
 #include <petscpctypes.h>
 #include <petscsystypes.h>
 
-PETSC_EXTERN PetscErrorCode PCCreate_Hogwild(PC pc);
+PETSC_EXTERN PetscErrorCode PCCreate_SORGibbs(PC pc);

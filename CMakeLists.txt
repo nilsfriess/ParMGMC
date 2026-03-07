@@ -31,7 +31,7 @@ file(GLOB_RECURSE PARMGMC_INCLUDES "${CMAKE_CURRENT_SOURCE_DIR}/include/parmgmc/
 message(STATUS ${PARMGMC_INCLUDES})
 target_sources(parmgmc
 	PRIVATE
-	    src/pc_hogwild.c
+	    src/pc_sorgibbs.c
 	    src/pc_mcgibbs.c
 	    src/pc_gamgmc.c
 	    src/pc_chols.c

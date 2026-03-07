@@ -6,7 +6,7 @@
     license details.
 */
 
-#include "parmgmc/pc/pc_hogwild.h"
+#include "parmgmc/pc/pc_sorgibbs.h"
 #include "parmgmc/parmgmc.h"
 
 #include <petsc/private/pcimpl.h>
@@ -24,16 +24,16 @@ typedef struct {
   void *cbctx;
   PetscErrorCode (*scb)(PetscInt, Vec, void *);
   PetscErrorCode (*del_scb)(void *);
-} *PC_Hogwild;
+} *PC_SORGibbs;
 
-static PetscErrorCode PCApplyRichardson_Hogwild(PC pc, Vec b, Vec y, Vec w, PetscReal rtol, PetscReal abstol, PetscReal dtol, PetscInt its, PetscBool guesszero, PetscInt *outits, PCRichardsonConvergedReason *reason)
+static PetscErrorCode PCApplyRichardson_SORGibbs(PC pc, Vec b, Vec y, Vec w, PetscReal rtol, PetscReal abstol, PetscReal dtol, PetscInt its, PetscBool guesszero, PetscInt *outits, PCRichardsonConvergedReason *reason)
 {
   (void)rtol;
   (void)abstol;
   (void)dtol;
   (void)guesszero;
 
-  PC_Hogwild hw = pc->data;
+  PC_SORGibbs hw = pc->data;
 
   PetscFunctionBeginUser;
   for (PetscInt it = 0; it < its; ++it) {
@@ -51,9 +51,9 @@ static PetscErrorCode PCApplyRichardson_Hogwild(PC pc, Vec b, Vec y, Vec w, Pets
   PetscFunctionReturn(PETSC_SUCCESS);
 }
 
-static PetscErrorCode PCReset_Hogwild(PC pc)
+static PetscErrorCode PCReset_SORGibbs(PC pc)
 {
-  PC_Hogwild hw = pc->data;
+  PC_SORGibbs hw = pc->data;
 
   PetscFunctionBeginUser;
   PetscCall(PetscRandomDestroy(&hw->prand));
@@ -65,9 +65,9 @@ static PetscErrorCode PCReset_Hogwild(PC pc)
   PetscFunctionReturn(PETSC_SUCCESS);
 }
 
-static PetscErrorCode PCDestroy_Hogwild(PC pc)
+static PetscErrorCode PCDestroy_SORGibbs(PC pc)
 {
-  PC_Hogwild hw = pc->data;
+  PC_SORGibbs hw = pc->data;
 
   PetscFunctionBeginUser;
   PetscCall(PetscRandomDestroy(&hw->prand));
@@ -80,9 +80,9 @@ static PetscErrorCode PCDestroy_Hogwild(PC pc)
   PetscFunctionReturn(PETSC_SUCCESS);
 }
 
-static PetscErrorCode PCSetUp_Hogwild(PC pc)
+static PetscErrorCode PCSetUp_SORGibbs(PC pc)
 {
-  PC_Hogwild hw = pc->data;
+  PC_SORGibbs hw = pc->data;
 
   PetscFunctionBeginUser;
   PetscCall(MatCreateVecs(pc->pmat, &hw->sqrtdiag, NULL));
@@ -92,9 +92,9 @@ static PetscErrorCode PCSetUp_Hogwild(PC pc)
   PetscFunctionReturn(PETSC_SUCCESS);
 }
 
-static PetscErrorCode PCSetSampleCallback_Hogwild(PC pc, PetscErrorCode (*cb)(PetscInt, Vec, void *), void *ctx, PetscErrorCode (*deleter)(void *))
+static PetscErrorCode PCSetSampleCallback_SORGibbs(PC pc, PetscErrorCode (*cb)(PetscInt, Vec, void *), void *ctx, PetscErrorCode (*deleter)(void *))
 {
-  PC_Hogwild hw = pc->data;
+  PC_SORGibbs hw = pc->data;
 
   PetscFunctionBeginUser;
   if (hw->del_scb) {
@@ -107,18 +107,18 @@ static PetscErrorCode PCSetSampleCallback_Hogwild(PC pc, PetscErrorCode (*cb)(Pe
   PetscFunctionReturn(PETSC_SUCCESS);
 }
 
-PetscErrorCode PCCreate_Hogwild(PC pc)
+PetscErrorCode PCCreate_SORGibbs(PC pc)
 {
-  PC_Hogwild hw;
+  PC_SORGibbs hw;
 
   PetscFunctionBeginUser;
   PetscCall(PetscNew(&hw));
   pc->data = hw;
 
-  pc->ops->applyrichardson = PCApplyRichardson_Hogwild;
-  pc->ops->destroy         = PCDestroy_Hogwild;
-  pc->ops->reset           = PCReset_Hogwild;
-  pc->ops->setup           = PCSetUp_Hogwild;
-  PetscCall(PCRegisterSetSampleCallback(pc, PCSetSampleCallback_Hogwild));
+  pc->ops->applyrichardson = PCApplyRichardson_SORGibbs;
+  pc->ops->destroy         = PCDestroy_SORGibbs;
+  pc->ops->reset           = PCReset_SORGibbs;
+  pc->ops->setup           = PCSetUp_SORGibbs;
+  PetscCall(PCRegisterSetSampleCallback(pc, PCSetSampleCallback_SORGibbs));
   PetscFunctionReturn(PETSC_SUCCESS);
 }
