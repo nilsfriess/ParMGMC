@@ -20,6 +20,7 @@
 typedef struct {
   Vec         sqrtdiag;
   PetscRandom prand;
+  MatSORType  type;
 
   void *cbctx;
   PetscErrorCode (*scb)(PetscInt, Vec, void *);
@@ -33,18 +34,18 @@ static PetscErrorCode PCApplyRichardson_SORGibbs(PC pc, Vec b, Vec y, Vec w, Pet
   (void)dtol;
   (void)guesszero;
 
-  PC_SORGibbs hw = pc->data;
+  PC_SORGibbs sorgibbs = pc->data;
 
   PetscFunctionBeginUser;
   for (PetscInt it = 0; it < its; ++it) {
-    if (hw->scb) PetscCall(hw->scb(it, y, hw->cbctx));
+    if (sorgibbs->scb) PetscCall(sorgibbs->scb(it, y, sorgibbs->cbctx));
 
-    PetscCall(VecSetRandom(w, hw->prand));
-    PetscCall(VecPointwiseMult(w, w, hw->sqrtdiag));
+    PetscCall(VecSetRandom(w, sorgibbs->prand));
+    PetscCall(VecPointwiseMult(w, w, sorgibbs->sqrtdiag));
     PetscCall(VecAXPY(w, 1., b));
-    PetscCall(MatSOR(pc->pmat, w, 1., SOR_FORWARD_SWEEP, 0., 1., 1., y));
+    PetscCall(MatSOR(pc->pmat, w, 1., sorgibbs->type, 0., 1., 1., y));
   }
-  if (hw->scb) PetscCall(hw->scb(its, y, hw->cbctx));
+  if (sorgibbs->scb) PetscCall(sorgibbs->scb(its, y, sorgibbs->cbctx));
 
   *outits = its;
   *reason = PCRICHARDSON_CONVERGED_ITS;
@@ -53,72 +54,90 @@ static PetscErrorCode PCApplyRichardson_SORGibbs(PC pc, Vec b, Vec y, Vec w, Pet
 
 static PetscErrorCode PCReset_SORGibbs(PC pc)
 {
-  PC_SORGibbs hw = pc->data;
+  PC_SORGibbs sorgibbs = pc->data;
 
   PetscFunctionBeginUser;
-  PetscCall(PetscRandomDestroy(&hw->prand));
-  PetscCall(VecDestroy(&hw->sqrtdiag));
-  if (hw->del_scb) {
-    PetscCall(hw->del_scb(hw->cbctx));
-    hw->del_scb = NULL;
+  PetscCall(PetscRandomDestroy(&sorgibbs->prand));
+  PetscCall(VecDestroy(&sorgibbs->sqrtdiag));
+  if (sorgibbs->del_scb) {
+    PetscCall(sorgibbs->del_scb(sorgibbs->cbctx));
+    sorgibbs->del_scb = NULL;
   }
   PetscFunctionReturn(PETSC_SUCCESS);
 }
 
 static PetscErrorCode PCDestroy_SORGibbs(PC pc)
 {
-  PC_SORGibbs hw = pc->data;
+  PC_SORGibbs sorgibbs = pc->data;
 
   PetscFunctionBeginUser;
-  PetscCall(PetscRandomDestroy(&hw->prand));
-  PetscCall(VecDestroy(&hw->sqrtdiag));
-  if (hw->del_scb) {
-    PetscCall(hw->del_scb(hw->cbctx));
-    hw->del_scb = NULL;
+  PetscCall(PetscRandomDestroy(&sorgibbs->prand));
+  PetscCall(VecDestroy(&sorgibbs->sqrtdiag));
+  if (sorgibbs->del_scb) {
+    PetscCall(sorgibbs->del_scb(sorgibbs->cbctx));
+    sorgibbs->del_scb = NULL;
   }
-  PetscCall(PetscFree(hw));
+  PetscCall(PetscFree(sorgibbs));
   PetscFunctionReturn(PETSC_SUCCESS);
 }
 
 static PetscErrorCode PCSetUp_SORGibbs(PC pc)
 {
-  PC_SORGibbs hw = pc->data;
+  PC_SORGibbs sorgibbs = pc->data;
 
   PetscFunctionBeginUser;
-  PetscCall(MatCreateVecs(pc->pmat, &hw->sqrtdiag, NULL));
-  PetscCall(MatGetDiagonal(pc->pmat, hw->sqrtdiag));
-  PetscCall(VecSqrtAbs(hw->sqrtdiag));
-  if (!hw->prand) PetscCall(ParMGMCGetPetscRandom(&hw->prand));
+  PetscCall(MatCreateVecs(pc->pmat, &sorgibbs->sqrtdiag, NULL));
+  PetscCall(MatGetDiagonal(pc->pmat, sorgibbs->sqrtdiag));
+  PetscCall(VecSqrtAbs(sorgibbs->sqrtdiag));
+  if (!sorgibbs->prand) PetscCall(ParMGMCGetPetscRandom(&sorgibbs->prand));
+  PetscFunctionReturn(PETSC_SUCCESS);
+}
+
+static PetscErrorCode PCSetFromOptions_SORGibbs(PC pc, PetscOptionItems_ARG PetscOptionsObject)
+{
+  PC_SORGibbs sorgibbs = pc->data;
+  PetscBool   flag     = PETSC_FALSE;
+
+  PetscFunctionBegin;
+  PetscOptionsHeadBegin(PetscOptionsObject, "SOR Gibbs options");
+  PetscCall(PetscOptionsBool("-pc_sorgibbs_forward", "SOR Gibbs forward sweep", NULL, sorgibbs->type == SOR_FORWARD_SWEEP, &flag, NULL));
+  if (flag) sorgibbs->type = SOR_FORWARD_SWEEP;
+  flag = PETSC_FALSE;
+  PetscCall(PetscOptionsBool("-pc_sorgibbs_local_forward", "SOR Gibbs local forward sweep (Hogwild sampler)", NULL, sorgibbs->type == SOR_LOCAL_FORWARD_SWEEP, &flag, NULL));
+  if (flag) sorgibbs->type = SOR_LOCAL_FORWARD_SWEEP;
+  PetscOptionsHeadEnd();
   PetscFunctionReturn(PETSC_SUCCESS);
 }
 
 static PetscErrorCode PCSetSampleCallback_SORGibbs(PC pc, PetscErrorCode (*cb)(PetscInt, Vec, void *), void *ctx, PetscErrorCode (*deleter)(void *))
 {
-  PC_SORGibbs hw = pc->data;
+  PC_SORGibbs sorgibbs = pc->data;
 
   PetscFunctionBeginUser;
-  if (hw->del_scb) {
-    PetscCall(hw->del_scb(hw->cbctx));
-    hw->del_scb = NULL;
+  if (sorgibbs->del_scb) {
+    PetscCall(sorgibbs->del_scb(sorgibbs->cbctx));
+    sorgibbs->del_scb = NULL;
   }
-  hw->scb     = cb;
-  hw->cbctx   = ctx;
-  hw->del_scb = deleter;
+  sorgibbs->scb     = cb;
+  sorgibbs->cbctx   = ctx;
+  sorgibbs->del_scb = deleter;
   PetscFunctionReturn(PETSC_SUCCESS);
 }
 
 PetscErrorCode PCCreate_SORGibbs(PC pc)
 {
-  PC_SORGibbs hw;
+  PC_SORGibbs sorgibbs;
 
   PetscFunctionBeginUser;
-  PetscCall(PetscNew(&hw));
-  pc->data = hw;
+  PetscCall(PetscNew(&sorgibbs));
+  pc->data       = sorgibbs;
+  sorgibbs->type = SOR_FORWARD_SWEEP;
 
   pc->ops->applyrichardson = PCApplyRichardson_SORGibbs;
   pc->ops->destroy         = PCDestroy_SORGibbs;
   pc->ops->reset           = PCReset_SORGibbs;
   pc->ops->setup           = PCSetUp_SORGibbs;
+  pc->ops->setfromoptions  = PCSetFromOptions_SORGibbs;
   PetscCall(PCRegisterSetSampleCallback(pc, PCSetSampleCallback_SORGibbs));
   PetscFunctionReturn(PETSC_SUCCESS);
 }
