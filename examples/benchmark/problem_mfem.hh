@@ -277,23 +277,35 @@ private:
     mfem::Mesh serial_mesh;
     PetscInt   refine = 0, parRefine = 0;
 
-    (void)PetscOptionsGetString(nullptr, nullptr, "-mesh_file", mesh_file, 256, &flag);
+    PetscCallVoid(PetscOptionsGetString(nullptr, nullptr, "-mesh_file", mesh_file, 256, &flag));
 
     if (!flag) {
-      PetscInt faces_per_dim = 4;
+      PetscInt  faces_per_dim = 4;
+      PetscInt  faces_per_rank = 0;
+      PetscBool fpr_flag = PETSC_FALSE;
 
-      (void)PetscOptionsGetInt(nullptr, nullptr, "-box_faces", &faces_per_dim, nullptr);
+      PetscCallVoid(PetscOptionsGetInt(nullptr, nullptr, "-box_faces_per_rank", &faces_per_rank, &fpr_flag));
+      if (fpr_flag) {
+        PetscMPIInt nprocs;
+        MPI_Comm_size(MPI_COMM_WORLD, &nprocs);
+        double sqrt_nprocs = std::sqrt((double)nprocs);
+        if (std::round(sqrt_nprocs) * std::round(sqrt_nprocs) != nprocs)
+          PetscCallVoid(PetscPrintf(MPI_COMM_WORLD, "Warning: number of processes (%d) is not a perfect square; grid size will be approximated as %dx%d elements\n", nprocs, (PetscInt)std::round(faces_per_rank * sqrt_nprocs), (PetscInt)std::round(faces_per_rank * sqrt_nprocs)));
+        faces_per_dim = (PetscInt)std::round(faces_per_rank * sqrt_nprocs);
+      } else {
+        PetscCallVoid(PetscOptionsGetInt(nullptr, nullptr, "-box_faces", &faces_per_dim, nullptr));
+      }
       serial_mesh = mfem::Mesh::MakeCartesian2D(faces_per_dim, faces_per_dim, mfem::Element::Type::TRIANGLE);
     } else {
       serial_mesh = mfem::Mesh::LoadFromFile(mesh_file);
     }
-    (void)PetscOptionsGetInt(nullptr, nullptr, "-dm_refine", &refine, nullptr);
+    PetscCallVoid(PetscOptionsGetInt(nullptr, nullptr, "-dm_refine", &refine, nullptr));
     for (PetscInt i = 0; i < refine; ++i) serial_mesh.UniformRefinement();
 
     mesh = new mfem::ParMesh(MPI_COMM_WORLD, serial_mesh);
     serial_mesh.Clear();
 
-    (void)PetscOptionsGetInt(nullptr, nullptr, "-dm_par_refine", &parRefine, nullptr);
+    PetscCallVoid(PetscOptionsGetInt(nullptr, nullptr, "-dm_par_refine", &parRefine, nullptr));
     for (PetscInt i = 0; i < parRefine; ++i) mesh->UniformRefinement();
   }
 
