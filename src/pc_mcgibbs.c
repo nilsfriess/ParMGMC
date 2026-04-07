@@ -121,7 +121,7 @@ static PetscErrorCode PrepareRHS_Default(PC pc, Vec rhsin, Vec rhsout)
   PC_MulticolorGibbs *pg = pc->data;
 
   PetscFunctionBeginUser;
-  PetscCall(VecSetRandom(rhsout, pg->prand));
+  PetscCall(VecSetRandomStandardNormal(rhsout, pg->prand));
   PetscCall(VecPointwiseMult(rhsout, rhsout, pg->sqrtdiag));
   if (rhsin) PetscCall(VecAXPY(rhsout, 1., rhsin));
   PetscFunctionReturn(PETSC_SUCCESS);
@@ -133,7 +133,7 @@ static PetscErrorCode PrepareRHS_LRC(PC pc, Vec rhsin, Vec rhsout)
 
   PetscFunctionBeginUser;
   PetscCall(PrepareRHS_Default(pc, rhsin, rhsout));
-  PetscCall(VecSetRandom(pg->w, pg->prand));
+  PetscCall(VecSetRandomStandardNormal(pg->w, pg->prand));
   PetscCall(VecPointwiseMult(pg->w, pg->w, pg->sqrtS));
   PetscCall(MatMultAdd(pg->B, pg->w, rhsout, rhsout));
   PetscFunctionReturn(PETSC_SUCCESS);
@@ -165,8 +165,6 @@ static PetscErrorCode PCApplyRichardson_MulticolorGibbs(PC pc, Vec b, Vec y, Vec
   if (pg->omega_changed) PetscCall(PCMulticolorGibbsUpdateSqrtDiag(pc));
 
   for (PetscInt it = 0; it < its; ++it) {
-    if (pg->scb) PetscCall(pg->scb(it, y, pg->cbctx));
-
     if (pg->type == SOR_FORWARD_SWEEP || pg->type == SOR_BACKWARD_SWEEP) {
       PetscCall(pg->prepare_rhs(pc, b, w));
       PetscCall(MCSORApply(pg->mc, w, y));
@@ -182,8 +180,8 @@ static PetscErrorCode PCApplyRichardson_MulticolorGibbs(PC pc, Vec b, Vec y, Vec
       PetscCall(MCSORApply(pg->mc, w, y));
       /* PetscCall(MatSOR(pg->A, w, 1, SOR_BACKWARD_SWEEP, 0, 1, 1, y)); */
     }
+    if (pg->scb) PetscCall(pg->scb(it, y, pg->cbctx));
   }
-  if (pg->scb) PetscCall(pg->scb(its, y, pg->cbctx));
   *outits = its;
   *reason = PCRICHARDSON_CONVERGED_ITS;
   PetscFunctionReturn(PETSC_SUCCESS);
@@ -192,7 +190,7 @@ static PetscErrorCode PCApplyRichardson_MulticolorGibbs(PC pc, Vec b, Vec y, Vec
 static PetscErrorCode PCSetFromOptions_MulticolorGibbs(PC pc, PetscOptionItems_ARG PetscOptionsObject)
 {
   PC_MulticolorGibbs *pg = pc->data;
-  PetscBool flag;
+  PetscBool           flag;
 
   PetscFunctionBeginUser;
   PetscOptionsHeadBegin(PetscOptionsObject, "MulticolorGibbs options");
@@ -215,8 +213,8 @@ static PetscErrorCode PCSetFromOptions_MulticolorGibbs(PC pc, PetscOptionItems_A
 static PetscErrorCode PCSetUp_MulticolorGibbs(PC pc)
 {
   PC_MulticolorGibbs *pg = pc->data;
-  MatType   type;
-  Mat       P = pc->pmat;
+  MatType             type;
+  Mat                 P = pc->pmat;
 
   PetscFunctionBeginUser;
   if (pc->setupcalled) {
@@ -259,7 +257,7 @@ static PetscErrorCode PCSetUp_MulticolorGibbs(PC pc)
 static PetscErrorCode PCView_MulticolorGibbs(PC pc, PetscViewer viewer)
 {
   PC_MulticolorGibbs *pg = pc->data;
-  PetscInt  ncolors;
+  PetscInt            ncolors;
 
   PetscFunctionBeginUser;
   PetscCall(MCSORGetNumColors(pg->mc, &ncolors));

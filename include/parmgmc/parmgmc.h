@@ -28,7 +28,6 @@
 #define PCSORGIBBS    "sorgibbs"
 #define PCCHOLSAMPLER "cholsampler"
 #define PCPARSOR      "parsor"
-#define KSPCGSAMPLER  "cgsampler"
 
 PETSC_EXTERN PetscClassId  PARMGMC_CLASSID;
 PETSC_EXTERN PetscLogEvent MULTICOL_SOR;

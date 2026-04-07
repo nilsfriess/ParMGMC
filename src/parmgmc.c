@@ -10,8 +10,8 @@
 #include "parmgmc/pc/pc_chols.h"
 #include "parmgmc/pc/pc_gamgmc.h"
 #include "parmgmc/pc/pc_mcgibbs.h"
+#include "parmgmc/pc/pc_parsor.h"
 #include "parmgmc/pc/pc_sorgibbs.h"
-#include "parmgmc/random/ziggurat.h"
 
 #include <petsc/private/pcimpl.h>
 #include <petsc/private/petscimpl.h>
@@ -21,6 +21,7 @@
 #include <petscpc.h>
 #include <petscpctypes.h>
 #include <petscsys.h>
+#include <math.h>
 
 /** @file
     @brief This file contains general purpose functions for the ParMGMC library.
@@ -28,6 +29,7 @@
 
 PetscClassId  PARMGMC_CLASSID;
 PetscLogEvent MULTICOL_SOR;
+PetscLogEvent VEC_SET_RANDOM_NORMAL;
 
 PetscRandom parmgmc_rand = NULL;
 
@@ -38,13 +40,7 @@ static PetscErrorCode ParMGMCRegisterPCAll(void)
   PetscCall(PCRegister(PCMCGIBBS, PCCreate_MulticolorGibbs));
   PetscCall(PCRegister(PCGAMGMC, PCCreate_GAMGMC));
   PetscCall(PCRegister(PCCHOLSAMPLER, PCCreate_CholSampler));
-  PetscFunctionReturn(PETSC_SUCCESS);
-}
-
-static PetscErrorCode ParMGMCRegisterPetscRandomAll(void)
-{
-  PetscFunctionBeginUser;
-  PetscCall(PetscRandomRegister(PARMGMC_ZIGGURAT, PetscRandomCreate_Ziggurat));
+  PetscCall(PCRegister(PCPARSOR, PCCreate_PARSOR));
   PetscFunctionReturn(PETSC_SUCCESS);
 }
 
@@ -53,7 +49,7 @@ PetscErrorCode ParMGMCGetPetscRandom(PetscRandom *pr)
   PetscFunctionBegin;
   if (!parmgmc_rand) {
     PetscCall(PetscRandomCreate(MPI_COMM_WORLD, &parmgmc_rand));
-    PetscCall(PetscRandomSetType(parmgmc_rand, PARMGMC_ZIGGURAT));
+    PetscCall(PetscRandomSetFromOptions(parmgmc_rand));
   }
   /* Bump the reference count so that callers can call PetscRandomDestroy on
      the returned object independently of the global parmgmc_rand lifetime. */
@@ -62,14 +58,43 @@ PetscErrorCode ParMGMCGetPetscRandom(PetscRandom *pr)
   PetscFunctionReturn(PETSC_SUCCESS);
 }
 
+PetscErrorCode VecSetRandomStandardNormal(Vec v, PetscRandom r)
+{
+  PetscInt     n, i;
+  PetscScalar *array;
+  PetscReal    u1, u2, z0, z1;
+
+  PetscFunctionBegin;
+  PetscCall(PetscLogEventBegin(VEC_SET_RANDOM_NORMAL, v, r, 0, 0));
+  PetscCall(VecGetLocalSize(v, &n));
+  PetscCall(VecGetArray(v, &array));
+
+  for (i = 0; i < n; i += 2) {
+    PetscCall(PetscRandomGetValueReal(r, &u1));
+    PetscCall(PetscRandomGetValueReal(r, &u2));
+
+    z0       = sqrt(-2.0 * log(u1)) * cos(2.0 * PETSC_PI * u2);
+    array[i] = z0;
+
+    if (i + 1 < n) {
+      z1           = sqrt(-2.0 * log(u1)) * sin(2.0 * PETSC_PI * u2);
+      array[i + 1] = z1;
+    }
+  }
+
+  PetscCall(VecRestoreArray(v, &array));
+  PetscCall(PetscLogEventEnd(VEC_SET_RANDOM_NORMAL, v, r, 0, 0));
+  PetscFunctionReturn(PETSC_SUCCESS);
+}
+
 PetscErrorCode ParMGMCInitialize(void)
 {
   PetscFunctionBeginUser;
   PetscCall(ParMGMCRegisterPCAll());
-  PetscCall(ParMGMCRegisterPetscRandomAll());
 
   PetscCall(PetscClassIdRegister("ParMGMC", &PARMGMC_CLASSID));
   PetscCall(PetscLogEventRegister("MulticolSOR", PARMGMC_CLASSID, &MULTICOL_SOR));
+  PetscCall(PetscLogEventRegister("VecSetRandN", PARMGMC_CLASSID, &VEC_SET_RANDOM_NORMAL));
   PetscFunctionReturn(PETSC_SUCCESS);
 }
 
