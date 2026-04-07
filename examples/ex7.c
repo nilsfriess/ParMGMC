@@ -248,5 +248,6 @@ int main(int argc, char *argv[])
   PetscCall(PetscFree(samplers));
   PetscCall(MSDestroy(&ms));
   PetscCall(PetscRandomDestroy(&pr));
+  PetscCall(ParMGMCFinalize());
   PetscCall(PetscFinalize());
 }

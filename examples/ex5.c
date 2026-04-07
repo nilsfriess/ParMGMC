@@ -75,5 +75,6 @@ int main(int argc, char *argv[])
   PetscCall(MCSORDestroy(&mc));
   PetscCall(MatDestroy(&A));
   PetscCall(DMDestroy(&da));
+  PetscCall(ParMGMCFinalize());
   PetscCall(PetscFinalize());
 }

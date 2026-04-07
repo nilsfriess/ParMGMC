@@ -217,5 +217,6 @@ int main(int argc, char *argv[])
   PetscCall(MatDestroy(&A));
   PetscCall(KSPDestroy(&ksp));
   PetscCall(PetscRandomDestroy(&pr));
+  PetscCall(ParMGMCFinalize());
   PetscCall(PetscFinalize());
 }

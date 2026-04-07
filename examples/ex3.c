@@ -169,6 +169,7 @@ int main(int argc, char *argv[])
   }
   PetscCall(KSPDestroy(&ksp));
   PetscCall(MSDestroy(&ms));
+  PetscCall(ParMGMCFinalize());
   PetscCall(PetscFinalize());
   return 0;
 }

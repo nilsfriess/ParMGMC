@@ -136,6 +136,7 @@ int main(int argc, char *argv[])
   PetscCall(VecDestroy(&meas_vec));
   PetscCall(VecDestroy(&x));
   PetscCall(MSDestroy(&ms));
+  PetscCall(ParMGMCFinalize());
   PetscCall(PetscFinalize());
   return 0;
 }

@@ -21,6 +21,9 @@ PYBIND11_MODULE(pymgmc, m)
 {
   PetscCallVoid(ParMGMCInitialize());
 
+  // Register cleanup so ParMGMCFinalize is called when the module is unloaded.
+  m.add_object("_cleanup", py::capsule([]() { PetscCallVoid(ParMGMCFinalize()); }));
+
   m.def("PCSetSampleCallback", [&](PC pc, std::function<void(PetscInt, Vec)> &cb_) {
     PetscFunctionBegin;
     cb = new std::function<void(PetscInt, Vec)>(cb_); // TODO: This leaks memory but just copying didn't work and caused a segfault during Python runtime shutdown.
