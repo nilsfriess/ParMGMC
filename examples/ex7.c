@@ -128,7 +128,7 @@ int main(int argc, char *argv[])
 
   PetscCallMPI(MPI_Comm_rank(MPI_COMM_WORLD, &rank));
   PetscCall(PetscRandomCreate(MPI_COMM_WORLD, &pr));
-  PetscCall(PetscRandomSetType(pr, PARMGMC_ZIGGURAT));
+  PetscCall(PetscRandomSetFromOptions(pr));
   PetscCall(PetscRandomSetSeed(pr, seed + rank));
   PetscCall(PetscRandomSeed(pr));
 
@@ -164,14 +164,14 @@ int main(int argc, char *argv[])
   // Set up sample vectors
   PetscCall(MatCreateVecs(A, &ctx->meas_vec, NULL));
   PetscCall(VecDuplicate(ctx->meas_vec, &b));
-  PetscCall(VecSetRandom(ctx->meas_vec, pr));
+  PetscCall(VecSetRandomStandardNormal(ctx->meas_vec, pr));
   PetscCall(VecNormalize(ctx->meas_vec, NULL));
   PetscCall(PetscMalloc1(chains, &x));
   for (PetscInt i = 0; i < chains; ++i) {
     PetscReal scl;
 
     PetscCall(VecDuplicate(ctx->meas_vec, &x[i]));
-    PetscCall(VecSetRandom(x[i], pr));
+    PetscCall(VecSetRandomStandardNormal(x[i], pr));
     PetscCall(PetscRandomGetValue(pr, &scl));
     PetscCall(VecScale(x[i], 1e6 * scl)); // Initial samples should be overdispersed for GR diagnostic
   }

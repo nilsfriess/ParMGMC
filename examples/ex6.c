@@ -154,7 +154,7 @@ int main(int argc, char *argv[])
   PetscCall(PetscOptionsGetInt(NULL, NULL, "-chains", &chains, NULL));
 
   PetscCall(PetscRandomCreate(MPI_COMM_WORLD, &pr));
-  PetscCall(PetscRandomSetType(pr, PARMGMC_ZIGGURAT));
+  PetscCall(PetscRandomSetFromOptions(pr));
   PetscCall(PetscRandomSetSeed(pr, seed));
   PetscCall(PetscRandomSeed(pr));
 

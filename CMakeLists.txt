@@ -35,7 +35,7 @@ target_sources(parmgmc
 	    src/pc_mcgibbs.c
 	    src/pc_gamgmc.c
 	    src/pc_chols.c
-	    src/ziggurat.c
+	    src/pc_parsor.c
 	    src/mc_sor.c
 	    src/parmgmc.c
 	    src/problems.c

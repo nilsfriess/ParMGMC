@@ -219,7 +219,11 @@ int main(int argc, char *argv[])
   if (seed_from_dev_random) {
     int           dr = open("/dev/random", O_RDONLY);
     unsigned long seed;
-    read(dr, &seed, sizeof(seed));
+    auto          read_bytes = read(dr, &seed, sizeof(seed));
+    if (read_bytes != sizeof(seed)) {
+      PetscCall(PetscPrintf(MPI_COMM_WORLD, "WARNING: Could not read enough bytes from /dev/random to initialize seed, got %d bytes, expected %d. Falling back to default seed.\n", (int)read_bytes, (int)sizeof(seed)));
+      seed = 1;
+    }
     close(dr);
     PetscCall(PetscRandomSetSeed(pr, seed));
   } else {

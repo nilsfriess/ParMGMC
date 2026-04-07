@@ -23,16 +23,16 @@
   #define PetscOptionItems_ARG PetscOptionItems
 #endif
 
-#define PARMGMC_ZIGGURAT "ziggurat"
-
 #define PCMCGIBBS     "mcgibbs"
 #define PCGAMGMC      "gamgmc"
 #define PCSORGIBBS    "sorgibbs"
 #define PCCHOLSAMPLER "cholsampler"
+#define PCPARSOR      "parsor"
 #define KSPCGSAMPLER  "cgsampler"
 
 PETSC_EXTERN PetscClassId  PARMGMC_CLASSID;
 PETSC_EXTERN PetscLogEvent MULTICOL_SOR;
+PETSC_EXTERN PetscLogEvent VEC_SET_RANDOM_NORMAL;
 
 PETSC_EXTERN PetscErrorCode ParMGMCInitialize(void);
 PETSC_EXTERN PetscErrorCode ParMGMCFinalize(void);
@@ -41,3 +41,4 @@ PETSC_EXTERN PetscErrorCode PCRegisterSetSampleCallback(PC, PetscErrorCode (*)(P
 PETSC_EXTERN PetscErrorCode PCSetSampleCallback(PC, PetscErrorCode (*)(PetscInt, Vec, void *), void *, PetscErrorCode (*)(void *));
 
 PETSC_EXTERN PetscErrorCode ParMGMCGetPetscRandom(PetscRandom *);
+PETSC_EXTERN PetscErrorCode VecSetRandomStandardNormal(Vec, PetscRandom);
