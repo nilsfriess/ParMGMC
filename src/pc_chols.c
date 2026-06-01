@@ -11,7 +11,6 @@
 #include <petscsys.h>
 #include <petscvec.h>
 #include <petscviewer.h>
-#include <time.h>
 #include <mpi.h>
 
 #if defined(PETSC_HAVE_MKL_PARDISO)
@@ -27,38 +26,49 @@
 #endif
 
 typedef struct {
-  Vec           r, v, xl, yl;
+  Vec           r, v, v_cache, xl, yl;
   Mat           F;
   PetscRandom   prand;
   MatSolverType st;
   PetscBool     richardson, is_gamg_coarse; /* is_gamg_coarse should be set if the sampler is used as
-                                                                       coarse grid sampler in GAMGMC. GAMG reduces the number
-                                                                       of MPI ranks that participate on the coarser levels, down
-								       to 1 on the coarsest. However, it doesn't use sub-communicators
-								       for that but just leaves some values of the MPIAIJ matrices empty.
-								       It turns out that the Intel MKL C/Pardiso solver is horribly slow
-								       in this case, so what we do instead is extract the (sequential)
-								       matrix that contains the actual values and use a sequential
-								       sampler. This involves additional copies but scales much better.
+                                               coarse grid sampler in GAMGMC. GAMG reduces the number
+                                               of MPI ranks that participate on the coarser levels, down
+								                               to 1 on the coarsest. However, it doesn't use sub-communicators
+								                               for that but just leaves some values of the MPIAIJ matrices empty.
+								                               It turns out that the Intel MKL C/Pardiso solver is horribly slow
+								                               in this case, so what we do instead is extract the (sequential)
+								                               matrix that contains the actual values and use a sequential
+								                               sampler. This involves additional copies but scales much better.
 								     */
+  PetscBool     in_solve;
+  PetscInt      sample_index;
   void         *cbctx;
   PetscErrorCode (*scb)(PetscInt, Vec, void *);
   PetscErrorCode (*del_scb)(void *);
 } *PC_CholSampler;
+
+static PetscErrorCode PCCholSamplerNotifySample(PC pc, Vec y)
+{
+  PC_CholSampler chol = pc->data;
+
+  PetscFunctionBeginUser;
+  if (chol->scb) PetscCall(chol->scb(chol->sample_index++, y, chol->cbctx));
+  PetscFunctionReturn(PETSC_SUCCESS);
+}
 
 static PetscErrorCode PCDestroy_CholSampler(PC pc)
 {
   PC_CholSampler chol = pc->data;
 
   PetscFunctionBeginUser;
+  if (chol->del_scb) PetscCall(chol->del_scb(chol->cbctx));
   PetscCall(PetscRandomDestroy(&chol->prand));
   PetscCall(MatDestroy(&chol->F));
   PetscCall(VecDestroy(&chol->r));
   PetscCall(VecDestroy(&chol->v));
-  if (chol->is_gamg_coarse) {
-    PetscCall(VecDestroy(&chol->xl));
-    PetscCall(VecDestroy(&chol->yl));
-  }
+  PetscCall(VecDestroy(&chol->v_cache));
+  PetscCall(VecDestroy(&chol->xl));
+  PetscCall(VecDestroy(&chol->yl));
   PetscCall(PetscFree(chol));
   PetscFunctionReturn(PETSC_SUCCESS);
 }
@@ -72,10 +82,10 @@ static PetscErrorCode PCReset_CholSampler(PC pc)
   PetscCall(MatDestroy(&chol->F));
   PetscCall(VecDestroy(&chol->r));
   PetscCall(VecDestroy(&chol->v));
-  if (chol->is_gamg_coarse) {
-    PetscCall(VecDestroy(&chol->xl));
-    PetscCall(VecDestroy(&chol->yl));
-  }
+  PetscCall(VecDestroy(&chol->v_cache));
+  PetscCall(VecDestroy(&chol->xl));
+  PetscCall(VecDestroy(&chol->yl));
+  chol->sample_index = 0;
   PetscFunctionReturn(PETSC_SUCCESS);
 }
 
@@ -83,15 +93,17 @@ static PetscErrorCode PCSetUp_CholSampler(PC pc)
 {
   PC_CholSampler chol = pc->data;
   Mat            S, P;
-  PetscMPIInt    size, rank, grank;
+  MPI_Comm       comm;
+  PetscMPIInt    size, rank;
   MatType        type;
   PetscBool      flag;
   IS             rowperm, colperm;
   MatFactorInfo  info;
 
   PetscFunctionBeginUser;
-  PetscCallMPI(MPI_Comm_rank(PetscObjectComm((PetscObject)pc), &rank));
-  PetscCallMPI(MPI_Comm_rank(MPI_COMM_WORLD, &grank));
+  comm = PetscObjectComm((PetscObject)pc);
+  PetscCallMPI(MPI_Comm_rank(comm, &rank));
+  PetscCall(MatFactorInfoInitialize(&info));
   if (!chol->prand) PetscCall(ParMGMCGetPetscRandom(&chol->prand));
 
   PetscCall(MatGetType(pc->pmat, &type));
@@ -111,7 +123,7 @@ static PetscErrorCode PCSetUp_CholSampler(PC pc)
       VecScatter sct;
 
       PetscCall(VecGetSize(D, &sctsize));
-      PetscCall(ISCreateStride(MPI_COMM_WORLD, sctsize, 0, 1, &sctis));
+      PetscCall(ISCreateStride(comm, sctsize, 0, 1, &sctis));
       PetscCall(MatCreateVecs(Bs_S, &Sd, NULL));
       PetscCall(VecScatterCreate(D, sctis, Sd, NULL, &sct));
       PetscCall(VecScatterBegin(sct, D, Sd, INSERT_VALUES, SCATTER_FORWARD));
@@ -133,20 +145,26 @@ static PetscErrorCode PCSetUp_CholSampler(PC pc)
     P = pc->pmat;
   }
 
-  PetscCallMPI(MPI_Comm_size(PetscObjectComm((PetscObject)pc), &size));
+  PetscCallMPI(MPI_Comm_size(comm, &size));
+
+  // Set symmetric flag to allow conversion and help with factorization
+  PetscCall(MatSetOption(P, MAT_SYMMETRIC, PETSC_TRUE));
+
   if (size != 1) {
     if (chol->is_gamg_coarse) PetscCall(MatMPIAIJGetSeqAIJ(P, &S, NULL, NULL));
     else PetscCall(MatConvert(P, MATSBAIJ, MAT_INITIAL_MATRIX, &S));
   } else {
+    // For sequential, keep as AIJ but mark as symmetric
     S = P;
   }
   PetscCall(MatSetOption(S, MAT_SPD, PETSC_TRUE));
   PetscCall(MatCreateVecs(S, &chol->r, &chol->v));
+  PetscCall(VecDuplicate(chol->v, &chol->v_cache));
   PetscCall(MatGetFactor(S, chol->st, MAT_FACTOR_CHOLESKY, &chol->F));
 
   if (size == 1 || chol->is_gamg_coarse) PetscCall(MatGetOrdering(S, MATORDERINGMETISND, &rowperm, &colperm));
   else PetscCall(MatGetOrdering(S, MATORDERINGEXTERNAL, &rowperm, &colperm));
-  if (!chol->is_gamg_coarse || (chol->is_gamg_coarse && rank == 0)) {
+  if (!chol->is_gamg_coarse || rank == 0) {
     PetscCall(MatCholeskyFactorSymbolic(chol->F, S, rowperm, &info));
     PetscCall(MatCholeskyFactorNumeric(chol->F, S, &info));
   }
@@ -170,25 +188,28 @@ static PetscErrorCode PCApply_CholSampler(PC pc, Vec x, Vec y)
   PetscMPIInt    rank;
 
   PetscFunctionBeginUser;
-  PetscCheck(chol->richardson || !chol->scb, PetscObjectComm((PetscObject)pc), PETSC_ERR_SUP, "Setting a sample callback is not supported for Cholesky sampler in PREONLY mode. Use KSPRICHARDSON instead");
+  PetscCheck(chol->richardson || !chol->scb || chol->in_solve, PetscObjectComm((PetscObject)pc), PETSC_ERR_SUP, "Setting a sample callback is only supported for Cholesky sampler during KSPSolve");
 
   PetscCallMPI(MPI_Comm_rank(PetscObjectComm((PetscObject)pc), &rank));
 
   if (chol->is_gamg_coarse) {
-    PetscCall(VecGetLocalVectorRead(x, chol->xl));
-    if (rank == 0) PetscCall(MatForwardSolve(chol->F, chol->xl, chol->v));
-    PetscCall(VecRestoreLocalVectorRead(x, chol->xl));
-    PetscCall(VecSetRandom(chol->r, chol->prand));
-    PetscCall(VecAXPY(chol->v, 1., chol->r));
-    PetscCall(VecGetLocalVector(y, chol->yl));
-    if (rank == 0) PetscCall(MatBackwardSolve(chol->F, chol->v, chol->yl));
-    PetscCall(VecRestoreLocalVector(y, chol->yl));
+    if (rank == 0) {
+      PetscCall(VecGetLocalVectorRead(x, chol->xl));
+      PetscCall(MatForwardSolve(chol->F, chol->xl, chol->v));
+      PetscCall(VecRestoreLocalVectorRead(x, chol->xl));
+      PetscCall(VecSetRandomStandardNormal(chol->r, chol->prand));
+      PetscCall(VecAXPY(chol->v, 1., chol->r));
+      PetscCall(VecGetLocalVector(y, chol->yl));
+      PetscCall(MatBackwardSolve(chol->F, chol->v, chol->yl));
+      PetscCall(VecRestoreLocalVector(y, chol->yl));
+    }
   } else {
     PetscCall(MatForwardSolve(chol->F, x, chol->v));
-    PetscCall(VecSetRandom(chol->r, chol->prand));
+    PetscCall(VecSetRandomStandardNormal(chol->r, chol->prand));
     PetscCall(VecAXPY(chol->v, 1., chol->r));
     PetscCall(MatBackwardSolve(chol->F, chol->v, y));
   }
+  PetscCall(PCCholSamplerNotifySample(pc, y));
   PetscFunctionReturn(PETSC_SUCCESS);
 }
 
@@ -201,17 +222,72 @@ static PetscErrorCode PCApplyRichardson_CholSampler(PC pc, Vec b, Vec y, Vec w, 
   (void)w;
 
   PC_CholSampler chol = pc->data;
+  PetscMPIInt    rank;
 
   PetscFunctionBeginUser;
   chol->richardson = PETSC_TRUE;
-  for (PetscInt it = 0; it < its; ++it) {
-    if (chol->scb) PetscCall(chol->scb(it, y, chol->cbctx));
+  if (its == 1) {
     PetscCall(PCApply_CholSampler(pc, b, y));
+  } else {
+    PetscCallMPI(MPI_Comm_rank(PetscObjectComm((PetscObject)pc), &rank));
+    if (chol->is_gamg_coarse) {
+      if (rank == 0) {
+        PetscCall(VecGetLocalVectorRead(b, chol->xl));
+        PetscCall(MatForwardSolve(chol->F, chol->xl, chol->v_cache));
+        PetscCall(VecRestoreLocalVectorRead(b, chol->xl));
+      }
+    } else {
+      PetscCall(MatForwardSolve(chol->F, b, chol->v_cache));
+    }
+    for (PetscInt it = 0; it < its; ++it) {
+      if (chol->is_gamg_coarse) {
+        if (rank == 0) {
+          PetscCall(VecCopy(chol->v_cache, chol->v));
+          PetscCall(VecSetRandomStandardNormal(chol->r, chol->prand));
+          PetscCall(VecAXPY(chol->v, 1., chol->r));
+          PetscCall(VecGetLocalVector(y, chol->yl));
+          PetscCall(MatBackwardSolve(chol->F, chol->v, chol->yl));
+          PetscCall(VecRestoreLocalVector(y, chol->yl));
+        }
+      } else {
+        PetscCall(VecCopy(chol->v_cache, chol->v));
+        PetscCall(VecSetRandomStandardNormal(chol->r, chol->prand));
+        PetscCall(VecAXPY(chol->v, 1., chol->r));
+        PetscCall(MatBackwardSolve(chol->F, chol->v, y));
+      }
+      PetscCall(PCCholSamplerNotifySample(pc, y));
+    }
   }
-  if (chol->scb) PetscCall(chol->scb(its, y, chol->cbctx));
   *outits          = its;
   *reason          = PCRICHARDSON_CONVERGED_ITS;
   chol->richardson = PETSC_FALSE;
+  PetscFunctionReturn(PETSC_SUCCESS);
+}
+
+static PetscErrorCode PCPreSolve_CholSampler(PC pc, KSP ksp, Vec b, Vec x)
+{
+  (void)ksp;
+  (void)b;
+  (void)x;
+
+  PC_CholSampler chol = pc->data;
+
+  PetscFunctionBeginUser;
+  chol->in_solve     = PETSC_TRUE;
+  chol->sample_index = 0;
+  PetscFunctionReturn(PETSC_SUCCESS);
+}
+
+static PetscErrorCode PCPostSolve_CholSampler(PC pc, KSP ksp, Vec b, Vec x)
+{
+  (void)ksp;
+  (void)b;
+  (void)x;
+
+  PC_CholSampler chol = pc->data;
+
+  PetscFunctionBeginUser;
+  chol->in_solve = PETSC_FALSE;
   PetscFunctionReturn(PETSC_SUCCESS);
 }
 
@@ -233,8 +309,10 @@ static PetscErrorCode PCView_CholSampler(PC pc, PetscViewer viewer)
   MatInfo        info;
 
   PetscFunctionBeginUser;
-  PetscCall(MatGetInfo(chol->F, MAT_GLOBAL_SUM, &info));
-  PetscCall(PetscViewerASCIIPrintf(viewer, "Nonzeros in factored matrix: allocated %f\n", info.nz_allocated));
+  if (chol && chol->F) {
+    PetscCall(MatGetInfo(chol->F, MAT_GLOBAL_SUM, &info));
+    PetscCall(PetscViewerASCIIPrintf(viewer, "Nonzeros in factored matrix: allocated %f\n", info.nz_allocated));
+  }
   PetscFunctionReturn(PETSC_SUCCESS);
 }
 
@@ -280,6 +358,8 @@ PetscErrorCode PCCreate_CholSampler(PC pc)
   pc->ops->applyrichardson = PCApplyRichardson_CholSampler;
   pc->ops->view            = PCView_CholSampler;
   pc->ops->setfromoptions  = PCSetFromOptions_CholSampler;
+  pc->ops->presolve        = PCPreSolve_CholSampler;
+  pc->ops->postsolve       = PCPostSolve_CholSampler;
   chol->is_gamg_coarse     = PETSC_FALSE;
   PetscCall(PCRegisterSetSampleCallback(pc, PCSetSampleCallback_Cholsampler));
   PetscFunctionReturn(PETSC_SUCCESS);
