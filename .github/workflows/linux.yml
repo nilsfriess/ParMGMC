@@ -38,7 +38,7 @@ jobs:
       - name: Build ParMGMC
         run: |
           mkdir build && cd build
-          cmake .. -DCMAKE_C_COMPILER=${GITHUB_WORKSPACE}/petsc/arch-linux-c-opt/bin/mpicc -DCMAKE_CXX_COMPILER=${GITHUB_WORKSPACE}/petsc/arch-linux-c-opt/bin/mpic++ -DCMAKE_PREFIX_PATH=${GITHUB_WORKSPACE}/petsc/arch-linux-c-opt -DCMAKE_INSTALL_PREFIX=${GITHUB_WORKSPACE}/install
+          cmake .. -DCMAKE_C_COMPILER=mpicc -DCMAKE_CXX_COMPILER=mpic++ -DCMAKE_PREFIX_PATH=${GITHUB_WORKSPACE}/petsc/arch-linux-c-opt -DCMAKE_INSTALL_PREFIX=${GITHUB_WORKSPACE}/install
           make
 
       - name: Install ParMGMC
