@@ -11,7 +11,7 @@ jobs:
         run: |
           export DEBIAN_FRONTEND=noninteractive
           apt update
-          apt install -y wget gpg-agent build-essential cmake pipx flex bison gfortran pkg-config libfftw3-dev
+          apt install -y wget gpg-agent build-essential cmake pipx flex bison gfortran pkg-config libfftw3-dev openmpi-bin libopenmpi-dev
           wget -4 -O- https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB | gpg --dearmor | tee /usr/share/keyrings/oneapi-archive-keyring.gpg > /dev/null
           echo "deb [signed-by=/usr/share/keyrings/oneapi-archive-keyring.gpg] https://apt.repos.intel.com/oneapi all main" | tee /etc/apt/sources.list.d/oneAPI.list
           apt update
@@ -32,7 +32,7 @@ jobs:
         run: |
           git clone --depth 1 --branch v3.25.1 https://gitlab.com/petsc/petsc.git petsc
           cd petsc
-          ./configure --with-debugging=no --download-mpich --with-fortran-bindings=0 --with-blas-lapack-dir=/opt/intel/oneapi/mkl/latest/lib --with-mkl_cpardiso --with-mkl_pardiso --with-scalapack-dir=/opt/intel/oneapi/mkl/latest --download-triangle --download-ctetgen --download-parmetis --download-metis --download-mmg --download-ptscotch COPTFLAGS="-O3 -march=native" CXXOPTFLAGS="-O3 -march=native"
+          ./configure --with-debugging=no --with-fortran-bindings=0 --with-blas-lapack-dir=/opt/intel/oneapi/mkl/latest/lib --with-mkl_cpardiso --with-mkl_pardiso --with-scalapack-dir=/opt/intel/oneapi/mkl/latest --download-triangle --download-ctetgen --download-parmetis --download-metis --download-mmg --download-ptscotch COPTFLAGS="-O3 -march=native" CXXOPTFLAGS="-O3 -march=native"
           make PETSC_DIR=${GITHUB_WORKSPACE}/petsc PETSC_ARCH=arch-linux-c-opt all
 
       - name: Build ParMGMC
