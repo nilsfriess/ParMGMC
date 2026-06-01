@@ -32,7 +32,7 @@ jobs:
         run: |
           git clone --depth 1 --branch v3.25.1 https://gitlab.com/petsc/petsc.git petsc
           cd petsc
-          ./configure --with-debugging=no --download-mpich --with-fortran-bindings=0 --with-blas-lapack-dir=/opt/intel/oneapi/mkl/latest/lib --with-mkl_cpardiso --with-mkl_pardiso --download-scalapack --download-triangle --download-ctetgen --download-parmetis --download-metis --download-mmg --download-ptscotch COPTFLAGS="-O3 -march=native" CXXOPTFLAGS="-O3 -march=native"
+          ./configure --with-debugging=no --download-mpich --with-fortran-bindings=0 --with-blas-lapack-dir=/opt/intel/oneapi/mkl/latest/lib --with-mkl_cpardiso --with-mkl_pardiso --with-scalapack-dir=/opt/intel/oneapi/mkl/latest --download-triangle --download-ctetgen --download-parmetis --download-metis --download-mmg --download-ptscotch COPTFLAGS="-O3 -march=native" CXXOPTFLAGS="-O3 -march=native"
           make PETSC_DIR=${GITHUB_WORKSPACE}/petsc PETSC_ARCH=arch-linux-c-opt all
 
       - name: Build ParMGMC
@@ -60,5 +60,4 @@ jobs:
       - name: Run parallel tests
         run: |
           cd ${GITHUB_WORKSPACE}/examples/build
-          export LD_PRELOAD=/opt/intel/oneapi/mkl/latest/lib/libmkl_blacs_intelmpi_lp64.so
           OMP_NUM_THREADS=1 make check-par
