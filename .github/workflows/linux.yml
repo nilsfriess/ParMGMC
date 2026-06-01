@@ -30,7 +30,7 @@ jobs:
       - name: Build PETSc
         if: steps.cache-petsc.outputs.cache-hit != 'true'
         run: |
-          git clone --depth 1 --branch v3.21.5 https://gitlab.com/petsc/petsc.git petsc
+          git clone --depth 1 --branch v3.25.1 https://gitlab.com/petsc/petsc.git petsc
           cd petsc
           ./configure --with-debugging=no --download-mpich --with-fortran-bindings=0 --with-blas-lapack-dir=/opt/intel/oneapi/mkl/latest/lib --with-mkl_cpardiso --with-mkl_pardiso --download-scalapack --download-triangle --download-ctetgen --download-parmetis --download-metis --download-mmg --download-ptscotch COPTFLAGS="-O3 -march=native" CXXOPTFLAGS="-O3 -march=native"
           make PETSC_DIR=${GITHUB_WORKSPACE}/petsc PETSC_ARCH=arch-linux-c-opt all
