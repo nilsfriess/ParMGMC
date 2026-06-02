@@ -15,3 +15,4 @@
 PETSC_EXTERN PetscErrorCode PCGAMGMCSetLevels(PC, PetscInt);
 PETSC_EXTERN PetscErrorCode PCCreate_GAMGMC(PC);
 PETSC_EXTERN PetscErrorCode PCGAMGMCGetInternalPC(PC, PC *);
+PETSC_EXTERN PetscErrorCode PCGAMGMCSetInternalPC(PC, PC);

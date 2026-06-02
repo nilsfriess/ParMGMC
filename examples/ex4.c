@@ -12,14 +12,44 @@
  */
 
 /**************************** Test specification ****************************/
-// MGMC sampler with low-rank update
-// RUN: %cc %s -o %t %flags && %mpirun -np %NP %t -ksp_type richardson -pc_type gamgmc -gamgmc_mg_coarse_ksp_type richardson -gamgmc_mg_coarse_pc_type mcgibbs -gamgmc_mg_coarse_ksp_max_it 2 -dm_refine_hierarchy 3  %opts -ksp_norm_type none -with_lr -ksp_convergence_test skip 
+// All samplers run with the low-rank update (-with_lr) except the Cholesky
+// reference: a direct factorisation of A + B Sigma^-1 B^T would assemble the
+// dense low-rank term, which is exactly what the LR machinery avoids, so that
+// combination is intentionally omitted.  -nburnin discards the initial
+// transient (the chain starts at x = 0); -tol is sized to the converged
+// sample-mean error at the given -ksp_max_it with some margin.
+//
+// -box_faces 2 keeps the coarsest mesh (8 cells) large enough to distribute
+// across the MPI ranks: the geometric hierarchy is built by refining the
+// distributed coarse mesh, so a coarse mesh with fewer cells than ranks would
+// leave ranks empty.  These tolerances are calibrated for both np 1 and np 4.
+
+// Geometric MGMC, low-rank update, SOR-Gibbs coarse sampler
+// RUN: %cc %s -o %t %flags && %mpirun -np %NP %t -ksp_type richardson -pc_type gamgmc -pc_gamgmc_mg_type mg -gamgmc_mg_coarse_pc_type sorgibbs -box_faces 2 -dm_refine_hierarchy 2 -with_lr -nburnin 500 -ksp_max_it 2000 -tol 0.10 %opts -ksp_norm_type none -ksp_convergence_test skip
+
+// Geometric MGMC, low-rank update, MulticolorGibbs coarse sampler
+// RUN: %cc %s -o %t %flags && %mpirun -np %NP %t -ksp_type richardson -pc_type gamgmc -pc_gamgmc_mg_type mg -gamgmc_mg_coarse_pc_type mcgibbs -box_faces 2 -dm_refine_hierarchy 2 -with_lr -nburnin 500 -ksp_max_it 2000 -tol 0.10 %opts -ksp_norm_type none -ksp_convergence_test skip
+
+// Geometric MGMC, low-rank update, Cholesky coarse sampler (coarse grid only -- cheap)
+// RUN: %cc %s -o %t %flags && %mpirun -np %NP %t -ksp_type richardson -pc_type gamgmc -pc_gamgmc_mg_type mg -gamgmc_mg_coarse_pc_type cholsampler -box_faces 2 -dm_refine_hierarchy 2 -with_lr -nburnin 500 -ksp_max_it 2000 -tol 0.10 %opts -ksp_norm_type none -ksp_convergence_test skip
+
+// Geometric MGMC, NO low-rank update, SOR-Gibbs coarse sampler.  Without the LR
+// term (which conditions the operator) the kappa=1 Matern system mixes too slowly
+// for the weaker parallel smoother, so use a larger kappa to keep it diagonally
+// dominant; np 1 and np 4 then agree.
+// RUN: %cc %s -o %t %flags && %mpirun -np %NP %t -ksp_type richardson -pc_type gamgmc -pc_gamgmc_mg_type mg -gamgmc_mg_coarse_pc_type sorgibbs -box_faces 2 -dm_refine_hierarchy 2 -matern_kappa 10 -nburnin 500 -ksp_max_it 2000 -tol 0.05 %opts -ksp_norm_type none -ksp_convergence_test skip
+
+// Algebraic MGMC (GAMG), low-rank update -- aggressive coarsening needs more smoothing to mix
+// RUN: %cc %s -o %t %flags && %mpirun -np %NP %t -ksp_type richardson -pc_type gamgmc -pc_gamgmc_mg_type gamg -gamgmc_mg_levels_ksp_max_it 10 -box_faces 2 -dm_refine_hierarchy 2 -with_lr -nburnin 500 -ksp_max_it 5000 -tol 0.05 %opts -ksp_norm_type none -ksp_convergence_test skip
 
 // MulticolorGibbs sampler with low-rank update
-// RUN: %cc %s -o %t %flags && %mpirun -np %NP %t -ksp_type richardson -pc_type mcgibbs -pc_mcgibbs_symmetric -dm_refine_hierarchy 3 -with_lr %opts -ksp_max_it 50000 -ksp_norm_type none -ksp_convergence_test skip 
+// RUN: %cc %s -o %t %flags && %mpirun -np %NP %t -ksp_type richardson -pc_type mcgibbs -pc_mcgibbs_symmetric -box_faces 2 -dm_refine_hierarchy 2 -with_lr -nburnin 2000 -ksp_max_it 20000 -tol 0.05 %opts -ksp_norm_type none -ksp_convergence_test skip
 
-// Cholesky sampler with low-rank update
-// RUN: %cc %s -o %t %flags && %mpirun -np %NP %t -ksp_type richardson -pc_type cholsampler -dm_refine 2 -with_lr  %opts -ksp_convergence_test skip 
+// SOR-Gibbs sampler with low-rank update
+// RUN: %cc %s -o %t %flags && %mpirun -np %NP %t -ksp_type richardson -pc_type sorgibbs -box_faces 2 -dm_refine_hierarchy 2 -with_lr -nburnin 2000 -ksp_max_it 20000 -tol 0.05 %opts -ksp_norm_type none -ksp_convergence_test skip
+
+// Cholesky sampler (exact reference, no low-rank update -- see note above)
+// RUN: %cc %s -o %t %flags && %mpirun -np %NP %t -ksp_type richardson -pc_type cholsampler -box_faces 2 -dm_refine 2 -nburnin 200 -ksp_max_it 5000 -tol 0.05 %opts -ksp_norm_type none -ksp_convergence_test skip
 /****************************************************************************/
 
 #include <parmgmc/mc_sor.h>
@@ -48,6 +78,7 @@
 typedef struct _SampleCtx {
   Vec         mean, y, mean_exact, tmp;
   PetscScalar mean_exact_norm;
+  PetscInt    nburnin; /* number of initial samples to discard before averaging */
 } *SampleCtx;
 
 static PetscErrorCode SampleCtxCreate(DM dm, SampleCtx *ctx)
@@ -77,13 +108,19 @@ static PetscErrorCode SampleCtxDestroy(void *sctx)
 
 static PetscErrorCode SampleCallbackKSP(PetscInt it, Vec y, void *ctx)
 {
-  SampleCtx *sctx = ctx;
-  Vec        mean = (*sctx)->mean;
+  SampleCtx *sctx    = ctx;
+  Vec        mean    = (*sctx)->mean;
+  PetscInt   nburnin = (*sctx)->nburnin;
+  PetscInt   k;
 
   PetscFunctionBeginUser;
-  PetscCall(VecScale(mean, it));
+  /* Discard the first nburnin samples: the chain starts from x = 0, so early
+     samples are far from stationarity and would skew the running mean. */
+  if (it < nburnin) PetscFunctionReturn(PETSC_SUCCESS);
+  k = it - nburnin;
+  PetscCall(VecScale(mean, k));
   PetscCall(VecAXPY(mean, 1., y));
-  PetscCall(VecScale(mean, 1. / (it + 1)));
+  PetscCall(VecScale(mean, 1. / (k + 1)));
   PetscFunctionReturn(PETSC_SUCCESS);
 }
 
@@ -98,6 +135,8 @@ int main(int argc, char *argv[])
   MS             ms;
   PetscBool      with_lr = PETSC_FALSE;
   const PetscInt nobs    = 3;
+  PetscInt       nburnin = 0;
+  PetscReal      tol     = 0.1;
   PetscScalar    obs[3 * nobs], radii[nobs], obsvals[nobs], err, exact_mean_norm;
 
   PetscCall(PetscInitialize(&argc, &argv, NULL, NULL));
@@ -134,6 +173,12 @@ int main(int argc, char *argv[])
   } else Aop = A;
 
   PetscCall(KSPCreate(MPI_COMM_WORLD, &ksp));
+  PetscCall(KSPSetDM(ksp, dm));
+#if PETSC_VERSION_GT(3, 24, 5)
+  PetscCall(KSPSetDMActive(ksp, KSP_DMACTIVE_OPERATOR, PETSC_FALSE));
+#else
+  PetscCall(KSPSetDMActive(ksp, PETSC_FALSE));
+#endif
   PetscCall(KSPSetOperators(ksp, Aop, Aop));
   PetscCall(KSPSetFromOptions(ksp));
   PetscCall(KSPSetNormType(ksp, KSP_NORM_NONE));
@@ -153,6 +198,9 @@ int main(int argc, char *argv[])
   }
 
   PetscCall(SampleCtxCreate(dm, &samplectx));
+  PetscCall(PetscOptionsGetInt(NULL, NULL, "-nburnin", &nburnin, NULL));
+  PetscCall(PetscOptionsGetReal(NULL, NULL, "-tol", &tol, NULL));
+  samplectx->nburnin = nburnin;
   {
     KSP ksp2;
 
@@ -194,7 +242,7 @@ int main(int argc, char *argv[])
   PetscCall(VecNorm(samplectx->mean_exact, NORM_2, &exact_mean_norm));
   err /= exact_mean_norm;
   PetscCall(PetscPrintf(MPI_COMM_WORLD, "Relative mean norm: %.5f\n", err));
-  /* PetscCheck(PetscIsCloseAtTol(err, 0, 0.05, 0.05), MPI_COMM_WORLD, PETSC_ERR_NOT_CONVERGED, "Sample mean has not converged: got %.4f, expected %.4f", err, 0.f); */
+  PetscCheck(PetscRealPart(err) <= tol, MPI_COMM_WORLD, PETSC_ERR_NOT_CONVERGED, "Sample mean has not converged: got %.4f, expected <= %.4f", (double)PetscRealPart(err), (double)tol);
 
   PetscCall(VecDestroy(&x));
   PetscCall(VecDestroy(&b));

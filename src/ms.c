@@ -67,7 +67,7 @@ PetscErrorCode MSDestroy(MS *ms)
   PetscCall(PetscFree(ctx->qois));
   PetscCall(PetscFree(ctx));
   PetscCall(PetscFree(*ms));
-  ms = NULL;
+  *ms = NULL;
   PetscFunctionReturn(PETSC_SUCCESS);
 }
 
@@ -230,6 +230,7 @@ static PetscErrorCode MS_ComputeMeanAndVar(MS ms)
     PetscCall(VecDuplicate(ctx->mean, &ctx->var));
   }
   PetscCall(KSPGetTolerances(ctx->ksp, NULL, NULL, NULL, &nsamples));
+  PetscCheck(nsamples > 1, PetscObjectComm((PetscObject)ctx->ksp), PETSC_ERR_ARG_OUTOFRANGE, "Need at least 2 samples for variance computation");
   PetscCall(VecZeroEntries(ctx->mean));
   for (PetscInt i = 0; i < nsamples; ++i) PetscCall(VecAXPY(ctx->mean, 1. / nsamples, ctx->samples[i]));
 
@@ -306,12 +307,19 @@ static PetscErrorCode CreateMeshDefault(MPI_Comm comm, DM *dm)
 #else
   PetscCall(DMPlexCreateBoxMesh(comm, 2, PETSC_TRUE, faces, NULL, NULL, NULL, PETSC_TRUE, 0, PETSC_FALSE, dm));
 #endif
-  PetscCall(DMSetFromOptions(*dm));
+  /* Distribute the base mesh BEFORE DMSetFromOptions: -dm_refine_hierarchy
+     builds the geometric multigrid levels during DMSetFromOptions, and
+     DMPlexDistribute returns a fresh DM that does not carry that hierarchy.
+     Doing it in the other order silently drops the hierarchy in parallel
+     (PCMG then sees a single level), so geometric MGMC loses all coarse
+     correction. Refining the already-distributed mesh keeps the transfers
+     parallel-consistent. */
   PetscCall(DMPlexDistribute(*dm, 0, NULL, &distdm));
   if (distdm) {
     PetscCall(DMDestroy(dm));
     *dm = distdm;
   }
+  PetscCall(DMSetFromOptions(*dm));
   PetscCall(DMViewFromOptions(*dm, NULL, "-dm_view"));
   PetscFunctionReturn(PETSC_SUCCESS);
 }

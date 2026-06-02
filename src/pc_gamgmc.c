@@ -71,8 +71,6 @@ typedef struct _PC_GAMGMC {
   Mat      *As; // The actual matrices used (in case of A+LR this differs from the matrices used to setup the multigrid hierarchy).
   PetscBool setup_called;
 
-  KSP ksp;
-
   void *cbctx;
   PetscErrorCode (*scb)(PetscInt, Vec, void *);
   PetscErrorCode (*del_scb)(void *);
@@ -84,6 +82,7 @@ static PetscErrorCode PCDestroy_GAMGMC(PC pc)
   PetscInt  levels;
 
   PetscFunctionBeginUser;
+  if (pg->del_scb) PetscCall(pg->del_scb(pg->cbctx));
   if (pg->As) {
     PetscCall(PCMGGetLevels(pg->mg, &levels));
     for (PetscInt l = 0; l < levels - 1; ++l) PetscCall(MatDestroy(&(pg->As[l])));
@@ -94,12 +93,40 @@ static PetscErrorCode PCDestroy_GAMGMC(PC pc)
   PetscFunctionReturn(PETSC_SUCCESS);
 }
 
+static PetscErrorCode PCReset_GAMGMC(PC pc)
+{
+  PC_GAMGMC pg = pc->data;
+  PetscInt  levels;
+
+  PetscFunctionBeginUser;
+  if (pg->As) {
+    PetscCall(PCMGGetLevels(pg->mg, &levels));
+    for (PetscInt l = 0; l < levels - 1; ++l) PetscCall(MatDestroy(&(pg->As[l])));
+    PetscCall(PetscFree(pg->As));
+    pg->As = NULL;
+  }
+  PetscCall(PCReset(pg->mg));
+  pg->setup_called = PETSC_FALSE;
+  PetscFunctionReturn(PETSC_SUCCESS);
+}
+
 PetscErrorCode PCGAMGMCGetInternalPC(PC pc, PC *mg)
 {
   PC_GAMGMC pg = pc->data;
 
   PetscFunctionBeginUser;
   if (mg) *mg = pg->mg;
+  PetscFunctionReturn(PETSC_SUCCESS);
+}
+
+PetscErrorCode PCGAMGMCSetInternalPC(PC pc, PC mg)
+{
+  PC_GAMGMC pg = pc->data;
+
+  PetscFunctionBeginUser;
+  PetscCall(PCDestroy(&pg->mg));
+  pg->mg = mg;
+  PetscCall(PetscObjectReference((PetscObject)mg));
   PetscFunctionReturn(PETSC_SUCCESS);
 }
 
@@ -154,6 +181,14 @@ static PetscErrorCode PCGAMGMC_SetUpHierarchy(PC pc)
       PetscCall(KSPReset(ksps));
       PetscCall(KSPSetOperators(ksps, pg->As[l], pg->As[l]));
       PetscCall(KSPSetUp(ksps));
+      /* The hierarchy was assembled from the base matrix A, so PCMG cached
+         each level's residual operator (mglevels->A) as A.  Swapping only the
+         smoother above leaves the V-cycle computing residuals/coarse
+         corrections with A while sampling with A_post = A + B Sigma^-1 B^T,
+         which biases the chain (the bias compounds per level).  Point the
+         residual operator at the LRC matrix too so the whole V-cycle is
+         consistent with A_post. */
+      PetscCall(PCMGSetResidual(pg->mg, l, PCMGResidualDefault, pg->As[l]));
     }
   }
 
@@ -186,8 +221,14 @@ static PetscErrorCode PCGAMGMC_SetUpHierarchy(PC pc)
   PetscFunctionReturn(PETSC_SUCCESS);
 }
 
-static PetscErrorCode PCApply_GAMGMC(PC pc, Vec x, Vec y)
+static PetscErrorCode PCApplyRichardson_GAMGMC(PC pc, Vec b, Vec y, Vec w, PetscReal rtol, PetscReal abstol, PetscReal dtol, PetscInt its, PetscBool guesszero, PetscInt *outits, PCRichardsonConvergedReason *reason)
 {
+  (void)rtol;
+  (void)abstol;
+  (void)dtol;
+  (void)guesszero;
+  (void)w;
+
   PC_GAMGMC pg = pc->data;
 
   PetscFunctionBeginUser;
@@ -195,49 +236,16 @@ static PetscErrorCode PCApply_GAMGMC(PC pc, Vec x, Vec y)
     PetscCall(PCGAMGMC_SetUpHierarchy(pc));
     pg->setup_called = PETSC_TRUE;
   }
-  PetscCall(PCApply(pg->mg, x, y));
 
-  if (pg->scb) {
-    /* For some weird and annoying reason, using the PCApplyRichardson function below (which would be faster (because it avoids
-     the computation of the residual r = b - Ax) does not work. I don't understand why but just grabbing the solution vector
-     from the KSP directly seems to work. */
-    PetscInt it;
-    Vec      z;
-
-    PetscCall(KSPGetIterationNumber(pg->ksp, &it));
-    PetscCall(KSPGetSolution(pg->ksp, &z));
-    PetscCall(pg->scb(it, z, pg->cbctx));
+  for (PetscInt it = 0; it < its; ++it) {
+    PetscCall(PCApply(pg->mg, b, y));
+    if (pg->scb) PetscCall(pg->scb(it, y, pg->cbctx));
   }
+
+  *outits = its;
+  *reason = PCRICHARDSON_CONVERGED_ITS;
   PetscFunctionReturn(PETSC_SUCCESS);
 }
-
-/* static PetscErrorCode PCApplyRichardson_GAMGMC(PC pc, Vec b, Vec y, Vec w, PetscReal rtol, PetscReal abstol, PetscReal dtol, PetscInt its, PetscBool guesszero, PetscInt *outits, PCRichardsonConvergedReason *reason) */
-/* { */
-/*   (void)rtol; */
-/*   (void)abstol; */
-/*   (void)dtol; */
-/*   (void)guesszero; */
-/*   (void)w; */
-
-/*   PC_GAMGMC pg = pc->data; */
-/*   PetscInt  it = 0; */
-
-/*   PetscFunctionBeginUser; */
-/*   if (!pg->setup_called) { */
-/*     PetscCall(PCGAMGMC_SetUpHierarchy(pc)); */
-/*     pg->setup_called = PETSC_TRUE; */
-/*   } */
-
-/*   if (pg->scb) PetscCall(pg->scb(it, y, pg->cbctx)); */
-/*   for (it = 1; it < its; ++it) { */
-/*     PetscCall(PCApply(pg->mg, b, y)); */
-/*     if (pg->scb) PetscCall(pg->scb(it, y, pg->cbctx)); */
-/*   } */
-
-/*   *outits = its; */
-/*   *reason = PCRICHARDSON_CONVERGED_ITS; */
-/*   PetscFunctionReturn(PETSC_SUCCESS); */
-/* } */
 
 static PetscErrorCode PCView_GAMGMC(PC pc, PetscViewer v)
 {
@@ -267,10 +275,7 @@ static PetscErrorCode PCSetUp_GAMGMC(PC pc)
   else P = pc->pmat;
 
   PetscCall(PCSetOperators(pg->mg, P, P));
-  if (strcmp(pg->mgtype, PCMG) == 0) {
-    PetscCall(PCSetDM(pg->mg, pc->dm));
-    PetscCall(PCMGSetGalerkin(pg->mg, PC_MG_GALERKIN_BOTH));
-  }
+  if (strcmp(pg->mgtype, PCMG) == 0) { PetscCall(PCSetDM(pg->mg, pc->dm)); }
 
   // Ugly way to set the default "smoother" (=sampler) to be MulticolorGibbs.
   // NOTE: PetscOptionsSetValue does NOT honour the PetscOptionsPrefixPush stack;
@@ -281,11 +286,18 @@ static PetscErrorCode PCSetUp_GAMGMC(PC pc)
 
     PetscCall(PCGetOptionsPrefix(pg->mg, &prefix));
 
-    // Always force Richardson iteration so the PC is called as a pure sampler.
-    PetscCall(PetscSNPrintf(opt, sizeof(opt), "-%smg_levels_ksp_type", prefix ? prefix : ""));
-    PetscCall(PetscOptionsSetValue(NULL, opt, KSPRICHARDSON));
-    PetscCall(PetscSNPrintf(opt, sizeof(opt), "-%smg_coarse_ksp_type", prefix ? prefix : ""));
-    PetscCall(PetscOptionsSetValue(NULL, opt, KSPRICHARDSON));
+    // Default to Richardson iteration so the PC is called as a pure sampler,
+    // but allow the user to override via the options database.
+    PetscCall(PetscOptionsHasName(NULL, prefix, "-mg_levels_ksp_type", &flag));
+    if (!flag) {
+      PetscCall(PetscSNPrintf(opt, sizeof(opt), "-%smg_levels_ksp_type", prefix ? prefix : ""));
+      PetscCall(PetscOptionsSetValue(NULL, opt, KSPRICHARDSON));
+    }
+    PetscCall(PetscOptionsHasName(NULL, prefix, "-mg_coarse_ksp_type", &flag));
+    if (!flag) {
+      PetscCall(PetscSNPrintf(opt, sizeof(opt), "-%smg_coarse_ksp_type", prefix ? prefix : ""));
+      PetscCall(PetscOptionsSetValue(NULL, opt, KSPRICHARDSON));
+    }
 
     PetscCall(PetscOptionsHasName(NULL, prefix, "-mg_levels_ksp_max_it", &flag));
     if (!flag) {
@@ -302,7 +314,7 @@ static PetscErrorCode PCSetUp_GAMGMC(PC pc)
     PetscCall(PetscOptionsHasName(NULL, prefix, "-mg_levels_pc_type", &flag));
     if (!flag) {
       PetscCall(PetscSNPrintf(opt, sizeof(opt), "-%smg_levels_pc_type", prefix ? prefix : ""));
-      PetscCall(PetscOptionsSetValue(NULL, opt, PCMCGIBBS));
+      PetscCall(PetscOptionsSetValue(NULL, opt, PCSORGIBBS));
     }
 
     PetscCall(PetscOptionsHasName(NULL, prefix, "-mg_coarse_pc_type", &flag));
@@ -311,6 +323,13 @@ static PetscErrorCode PCSetUp_GAMGMC(PC pc)
       PetscCall(PetscOptionsSetValue(NULL, opt, PCCHOLSAMPLER));
       PetscCall(PetscSNPrintf(opt, sizeof(opt), "-%smg_coarse_pc_cholsampler_coarse_gamg", prefix ? prefix : ""));
       PetscCall(PetscOptionsSetValue(NULL, opt, ""));
+    }
+
+    /* MGMC requires that the coarse grid operators are assembled via Galerkin projection. We can't just unconditionally set the necessary flag though, because e.g. in firedrake, the prolongation operators are matrix-free Python objects, so that MatGalerkin would fail. In this case, we assume the user knows what they're doing. */
+    PetscCall(PetscOptionsHasName(NULL, prefix, "-pc_mg_galerkin", &flag));
+    if (!flag) {
+      PetscCall(PetscSNPrintf(opt, sizeof(opt), "-%spc_mg_galerkin", prefix ? prefix : ""));
+      PetscCall(PetscOptionsSetValue(NULL, opt, "both"));
     }
   }
 
@@ -337,22 +356,10 @@ static PetscErrorCode PCSetSampleCallback_GAMGMC(PC pc, PetscErrorCode (*cb)(Pet
 
   PetscFunctionBeginUser;
   if (pg->scb && pg->del_scb) PetscCall(pg->del_scb(pg->cbctx));
-  PetscCheck(cb, MPI_COMM_WORLD, PETSC_ERR_SUP, "Must pass callback function");
+  PetscCheck(cb, PetscObjectComm((PetscObject)pc), PETSC_ERR_SUP, "Must pass callback function");
   pg->scb = cb;
   if (ctx) pg->cbctx = ctx;
   if (deleter) pg->del_scb = deleter;
-  PetscFunctionReturn(PETSC_SUCCESS);
-}
-
-static PetscErrorCode PCPreSolve_GAMGMC(PC pc, KSP ksp, Vec b, Vec x)
-{
-  (void)b;
-  (void)x;
-
-  PC_GAMGMC pg = pc->data;
-
-  PetscFunctionBeginUser;
-  pg->ksp = ksp;
   PetscFunctionReturn(PETSC_SUCCESS);
 }
 
@@ -371,21 +378,20 @@ PetscErrorCode PCCreate_GAMGMC(PC pc)
 
   PetscFunctionBeginUser;
   PetscCall(PetscNew(&pg));
-  PetscCall(PCCreate(MPI_COMM_WORLD, &pg->mg));
-  strcpy(pg->mgtype, PCGAMG);
+  PetscCall(PCCreate(PetscObjectComm((PetscObject)pc), &pg->mg));
+  PetscCall(PetscStrncpy(pg->mgtype, PCGAMG, sizeof(pg->mgtype)));
   pg->As      = NULL;
   pg->cbctx   = NULL;
   pg->scb     = NULL;
   pg->del_scb = NULL;
 
-  pc->data       = pg;
-  pc->ops->setup = PCSetUp_GAMGMC;
-  /* pc->ops->applyrichardson = PCApplyRichardson_GAMGMC; */
-  pc->ops->apply          = PCApply_GAMGMC;
-  pc->ops->view           = PCView_GAMGMC;
-  pc->ops->destroy        = PCDestroy_GAMGMC;
-  pc->ops->setfromoptions = PCSetFromOptions_GAMGMC;
-  pc->ops->presolve       = PCPreSolve_GAMGMC;
+  pc->data                 = pg;
+  pc->ops->setup           = PCSetUp_GAMGMC;
+  pc->ops->reset           = PCReset_GAMGMC;
+  pc->ops->applyrichardson = PCApplyRichardson_GAMGMC;
+  pc->ops->view            = PCView_GAMGMC;
+  pc->ops->destroy         = PCDestroy_GAMGMC;
+  pc->ops->setfromoptions  = PCSetFromOptions_GAMGMC;
   PetscCall(PCRegisterSetSampleCallback(pc, PCSetSampleCallback_GAMGMC));
 
   PetscCall(PetscObjectComposeFunction((PetscObject)pc, "PCMGGetLevels_C", PCGAMGMCGetLevels));
