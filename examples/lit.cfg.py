@@ -8,6 +8,12 @@ config.suffixes = ['.c']
 config.test_source_root = os.path.dirname(__file__)
 config.test_exec_root = os.path.join(config.my_obj_root)
 
+# lit sanitizes the environment; forward the variables Open MPI needs.
+# Without HOME, opal_init aborts with "Unable to get the user home directory".
+for var in ['HOME', 'TMPDIR', 'OMP_NUM_THREADS']:
+    if var in os.environ:
+        config.environment[var] = os.environ[var]
+
 config.substitutions.append(('%cc', config.parmgmc_cc))
 config.substitutions.append(('%flags', config.parmgmc_comp))
 config.substitutions.append(('%mpirun', config.parmgmc_mpirun))
