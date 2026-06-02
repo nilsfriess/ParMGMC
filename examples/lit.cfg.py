@@ -10,7 +10,7 @@ config.test_exec_root = os.path.join(config.my_obj_root)
 
 # lit sanitizes the environment; forward the variables Open MPI needs.
 # Without HOME, opal_init aborts with "Unable to get the user home directory".
-for var in ['HOME', 'TMPDIR', 'OMP_NUM_THREADS']:
+for var in ['HOME', 'TMPDIR', 'OMP_NUM_THREADS', 'OMPI_ALLOW_RUN_AS_ROOT', 'OMPI_ALLOW_RUN_AS_ROOT_CONFIRM', 'OMPI_MCA_rmaps_base_oversubscribe', 'PRTE_MCA_rmaps_default_mapping_policy']:
     if var in os.environ:
         config.environment[var] = os.environ[var]
 
