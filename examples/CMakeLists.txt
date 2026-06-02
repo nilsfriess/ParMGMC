@@ -6,12 +6,28 @@ if (PROJECT_IS_TOP_LEVEL)
    find_package(PkgConfig REQUIRED)
    pkg_search_module(parmgmc parmgmc>=0.0.1 REQUIRED)
    pkg_search_module(PETSc PETSc>=3.19 REQUIRED)
-   pkg_search_module(MPICH mpich REQUIRED)
 
-   pkg_get_variable(MPIRUN_PREFIX ${MPICH_MODULE_NAME} prefix)
-   set(MPIRUN_PATH "${MPIRUN_PREFIX}/bin/mpirun")
-   set(PARMGMC_CC  "${MPIRUN_PREFIX}/bin/mpicc")
-   message(STATUS "MPI prefix: ${MPIRUN_PREFIX}")
+   # Recent PETSc exposes the mpiexec it was configured against directly in
+   # petsc.pc; use it to launch the parallel tests so they run against the same
+   # MPI implementation PETSc was built with. Older petsc.pc files don't carry
+   # this variable, in which case we fall back to a plain mpirun on PATH.
+   pkg_get_variable(PETSC_MPIEXEC PETSc mpiexec)
+   if(PETSC_MPIEXEC)
+      set(MPIRUN_PATH "${PETSC_MPIEXEC}")
+      get_filename_component(MPI_BIN_DIR "${PETSC_MPIEXEC}" DIRECTORY)
+   else()
+      set(MPIRUN_PATH "mpirun")
+   endif()
+
+   # Compile the tests with the matching mpicc when we can locate it next to
+   # mpiexec, otherwise rely on a plain mpicc on PATH.
+   if(MPI_BIN_DIR AND EXISTS "${MPI_BIN_DIR}/mpicc")
+      set(PARMGMC_CC "${MPI_BIN_DIR}/mpicc")
+   else()
+      set(PARMGMC_CC "mpicc")
+   endif()
+   message(STATUS "MPI launcher: ${MPIRUN_PATH}")
+   message(STATUS "MPI C compiler: ${PARMGMC_CC}")
 
    set(PARMGMC_CFLAGS "${parmgmc_CFLAGS} ${PETSc_CFLAGS}")
    set(PARMGMC_CFLAGS "${PARMGMC_CFLAGS} -Wl,-rpath,${parmgmc_LIBRARY_DIRS},-rpath,${PETSc_LIBRARY_DIRS}")
