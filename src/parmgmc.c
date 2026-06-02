@@ -21,7 +21,6 @@
 #include <petscpc.h>
 #include <petscpctypes.h>
 #include <petscsys.h>
-#include <math.h>
 
 /** @file
     @brief This file contains general purpose functions for the ParMGMC library.
@@ -62,24 +61,25 @@ PetscErrorCode VecSetRandomStandardNormal(Vec v, PetscRandom r)
 {
   PetscInt     n, i;
   PetscScalar *array;
-  PetscReal    u1, u2, z0, z1;
+  PetscReal    u1, u2;
 
   PetscFunctionBegin;
   PetscCall(PetscLogEventBegin(VEC_SET_RANDOM_NORMAL, v, r, 0, 0));
   PetscCall(VecGetLocalSize(v, &n));
   PetscCall(VecGetArray(v, &array));
 
+  /* Box-Muller: each (u1, u2) pair yields two independent normals that share
+     the radius sqrt(-2 ln u1), so it is computed once per pair, not twice. */
   for (i = 0; i < n; i += 2) {
+    PetscReal radius, theta;
+
     PetscCall(PetscRandomGetValueReal(r, &u1));
     PetscCall(PetscRandomGetValueReal(r, &u2));
 
-    z0       = sqrt(-2.0 * log(u1)) * cos(2.0 * PETSC_PI * u2);
-    array[i] = z0;
-
-    if (i + 1 < n) {
-      z1           = sqrt(-2.0 * log(u1)) * sin(2.0 * PETSC_PI * u2);
-      array[i + 1] = z1;
-    }
+    radius   = PetscSqrtReal(-2.0 * PetscLogReal(u1));
+    theta    = 2.0 * PETSC_PI * u2;
+    array[i] = radius * PetscCosReal(theta);
+    if (i + 1 < n) array[i + 1] = radius * PetscSinReal(theta);
   }
 
   PetscCall(VecRestoreArray(v, &array));
