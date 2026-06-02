@@ -2,6 +2,7 @@
 #include "parmgmc/parmgmc.h"
 
 #include <petsc/private/pcimpl.h>
+#include <petscblaslapack.h>
 #include <petscerror.h>
 #include <petscis.h>
 #include <petscistypes.h>
@@ -28,6 +29,10 @@
 typedef struct {
   Vec           r, v, v_cache, xl, yl;
   Mat           F;
+  PetscScalar  *dense_L;       /* Lower Cholesky factor (column-major, leading dimension dense_n)
+                                  used for small sequential blocks, e.g. ASM patch smoothers. */
+  PetscBLASInt  dense_n;       /* Size of the dense factor; 0 if the dense fast path is not used. */
+  PetscInt      dense_threshold; /* Blocks of size <= this are factored and solved densely. */
   PetscRandom   prand;
   MatSolverType st;
   PetscBool     richardson, is_gamg_coarse; /* is_gamg_coarse should be set if the sampler is used as
@@ -64,6 +69,7 @@ static PetscErrorCode PCDestroy_CholSampler(PC pc)
   if (chol->del_scb) PetscCall(chol->del_scb(chol->cbctx));
   PetscCall(PetscRandomDestroy(&chol->prand));
   PetscCall(MatDestroy(&chol->F));
+  PetscCall(PetscFree(chol->dense_L));
   PetscCall(VecDestroy(&chol->r));
   PetscCall(VecDestroy(&chol->v));
   PetscCall(VecDestroy(&chol->v_cache));
@@ -80,11 +86,13 @@ static PetscErrorCode PCReset_CholSampler(PC pc)
   PetscFunctionBeginUser;
   PetscCall(PetscRandomDestroy(&chol->prand));
   PetscCall(MatDestroy(&chol->F));
+  PetscCall(PetscFree(chol->dense_L));
   PetscCall(VecDestroy(&chol->r));
   PetscCall(VecDestroy(&chol->v));
   PetscCall(VecDestroy(&chol->v_cache));
   PetscCall(VecDestroy(&chol->xl));
   PetscCall(VecDestroy(&chol->yl));
+  chol->dense_n      = 0;
   chol->sample_index = 0;
   PetscFunctionReturn(PETSC_SUCCESS);
 }
@@ -95,6 +103,7 @@ static PetscErrorCode PCSetUp_CholSampler(PC pc)
   Mat            S, P;
   MPI_Comm       comm;
   PetscMPIInt    size, rank;
+  PetscInt       N = 0;
   MatType        type;
   PetscBool      flag;
   IS             rowperm, colperm;
@@ -160,25 +169,93 @@ static PetscErrorCode PCSetUp_CholSampler(PC pc)
   PetscCall(MatSetOption(S, MAT_SPD, PETSC_TRUE));
   PetscCall(MatCreateVecs(S, &chol->r, &chol->v));
   PetscCall(VecDuplicate(chol->v, &chol->v_cache));
-  PetscCall(MatGetFactor(S, chol->st, MAT_FACTOR_CHOLESKY, &chol->F));
 
-  if (size == 1 || chol->is_gamg_coarse) PetscCall(MatGetOrdering(S, MATORDERINGMETISND, &rowperm, &colperm));
-  else PetscCall(MatGetOrdering(S, MATORDERINGEXTERNAL, &rowperm, &colperm));
-  if (!chol->is_gamg_coarse || rank == 0) {
-    PetscCall(MatCholeskyFactorSymbolic(chol->F, S, rowperm, &info));
-    PetscCall(MatCholeskyFactorNumeric(chol->F, S, &info));
-  }
-  if (chol->is_gamg_coarse) {
-    PetscCall(MatCreateVecs(chol->F, &chol->xl, NULL));
-    PetscCall(MatCreateVecs(chol->F, &chol->yl, NULL));
+  if (size == 1 && chol->is_gamg_coarse == PETSC_FALSE) PetscCall(MatGetSize(S, &N, NULL));
+  if (N > 0 && N <= chol->dense_threshold) {
+    /* Small sequential block (e.g. an ASM star/patch smoother block): factor and
+       solve densely.  These blocks are tiny and structurally near-dense, so a
+       LAPACK Cholesky plus BLAS triangular solves avoids the sparse-factor
+       indirection and is markedly faster than the sparse path. */
+    Mat                D;
+    const PetscScalar *darr;
+    PetscBLASInt       n, linfo;
+
+    PetscCall(MatConvert(S, MATSEQDENSE, MAT_INITIAL_MATRIX, &D));
+    PetscCall(PetscBLASIntCast(N, &n));
+    PetscCall(PetscMalloc1((size_t)N * N, &chol->dense_L));
+    PetscCall(MatDenseGetArrayRead(D, &darr));
+    PetscCall(PetscArraycpy(chol->dense_L, darr, (size_t)N * N));
+    PetscCall(MatDenseRestoreArrayRead(D, &darr));
+    PetscCall(PetscFPTrapPush(PETSC_FP_TRAP_OFF));
+    PetscCallBLAS("LAPACKpotrf", LAPACKpotrf_("L", &n, chol->dense_L, &n, &linfo));
+    PetscCall(PetscFPTrapPop());
+    PetscCheck(linfo == 0, comm, PETSC_ERR_MAT_CH_ZRPVT, "Dense Cholesky failed: leading minor of order %" PetscBLASInt_FMT " is not positive definite", linfo);
+    chol->dense_n = n;
+    PetscCall(MatDestroy(&D));
+  } else {
+    PetscCall(MatGetFactor(S, chol->st, MAT_FACTOR_CHOLESKY, &chol->F));
+    if (size == 1 || chol->is_gamg_coarse) PetscCall(MatGetOrdering(S, MATORDERINGMETISND, &rowperm, &colperm));
+    else PetscCall(MatGetOrdering(S, MATORDERINGEXTERNAL, &rowperm, &colperm));
+    if (!chol->is_gamg_coarse || rank == 0) {
+      PetscCall(MatCholeskyFactorSymbolic(chol->F, S, rowperm, &info));
+      PetscCall(MatCholeskyFactorNumeric(chol->F, S, &info));
+    }
+    if (chol->is_gamg_coarse) {
+      PetscCall(MatCreateVecs(chol->F, &chol->xl, NULL));
+      PetscCall(MatCreateVecs(chol->F, &chol->yl, NULL));
+    }
+    PetscCall(ISDestroy(&rowperm));
+    PetscCall(ISDestroy(&colperm));
   }
   if (size != 1 && !chol->is_gamg_coarse) PetscCall(MatDestroy(&S));
   if (flag) PetscCall(MatDestroy(&P));
-  PetscCall(ISDestroy(&rowperm));
-  PetscCall(ISDestroy(&colperm));
 
   /* pc->setupcalled         = PETSC_TRUE; */
   /* pc->reusepreconditioner = PETSC_TRUE; */
+  PetscFunctionReturn(PETSC_SUCCESS);
+}
+
+/* Solve L w = in for w (forward substitution).  Uses the dense LAPACK factor
+   for small sequential blocks and the sparse factor otherwise. */
+static PetscErrorCode CholSamplerForwardSolve(PC_CholSampler chol, Vec in, Vec out)
+{
+  PetscFunctionBeginUser;
+  if (chol->dense_n) {
+    const PetscScalar *ina;
+    PetscScalar       *outa;
+    PetscBLASInt       one = 1;
+
+    PetscCall(VecGetArrayRead(in, &ina));
+    PetscCall(VecGetArray(out, &outa));
+    PetscCall(PetscArraycpy(outa, ina, chol->dense_n));
+    PetscCallBLAS("BLAStrsv", BLAStrsv_("L", "N", "N", &chol->dense_n, chol->dense_L, &chol->dense_n, outa, &one));
+    PetscCall(VecRestoreArray(out, &outa));
+    PetscCall(VecRestoreArrayRead(in, &ina));
+  } else {
+    PetscCall(MatForwardSolve(chol->F, in, out));
+  }
+  PetscFunctionReturn(PETSC_SUCCESS);
+}
+
+/* Solve L^T y = in for y (backward substitution), the transpose counterpart of
+   CholSamplerForwardSolve(). */
+static PetscErrorCode CholSamplerBackwardSolve(PC_CholSampler chol, Vec in, Vec out)
+{
+  PetscFunctionBeginUser;
+  if (chol->dense_n) {
+    const PetscScalar *ina;
+    PetscScalar       *outa;
+    PetscBLASInt       one = 1;
+
+    PetscCall(VecGetArrayRead(in, &ina));
+    PetscCall(VecGetArray(out, &outa));
+    PetscCall(PetscArraycpy(outa, ina, chol->dense_n));
+    PetscCallBLAS("BLAStrsv", BLAStrsv_("L", "T", "N", &chol->dense_n, chol->dense_L, &chol->dense_n, outa, &one));
+    PetscCall(VecRestoreArray(out, &outa));
+    PetscCall(VecRestoreArrayRead(in, &ina));
+  } else {
+    PetscCall(MatBackwardSolve(chol->F, in, out));
+  }
   PetscFunctionReturn(PETSC_SUCCESS);
 }
 
@@ -204,10 +281,10 @@ static PetscErrorCode PCApply_CholSampler(PC pc, Vec x, Vec y)
       PetscCall(VecRestoreLocalVector(y, chol->yl));
     }
   } else {
-    PetscCall(MatForwardSolve(chol->F, x, chol->v));
+    PetscCall(CholSamplerForwardSolve(chol, x, chol->v));
     PetscCall(VecSetRandomStandardNormal(chol->r, chol->prand));
     PetscCall(VecAXPY(chol->v, 1., chol->r));
-    PetscCall(MatBackwardSolve(chol->F, chol->v, y));
+    PetscCall(CholSamplerBackwardSolve(chol, chol->v, y));
   }
   PetscCall(PCCholSamplerNotifySample(pc, y));
   PetscFunctionReturn(PETSC_SUCCESS);
@@ -237,7 +314,7 @@ static PetscErrorCode PCApplyRichardson_CholSampler(PC pc, Vec b, Vec y, Vec w, 
         PetscCall(VecRestoreLocalVectorRead(b, chol->xl));
       }
     } else {
-      PetscCall(MatForwardSolve(chol->F, b, chol->v_cache));
+      PetscCall(CholSamplerForwardSolve(chol, b, chol->v_cache));
     }
     for (PetscInt it = 0; it < its; ++it) {
       if (chol->is_gamg_coarse) {
@@ -253,7 +330,7 @@ static PetscErrorCode PCApplyRichardson_CholSampler(PC pc, Vec b, Vec y, Vec w, 
         PetscCall(VecCopy(chol->v_cache, chol->v));
         PetscCall(VecSetRandomStandardNormal(chol->r, chol->prand));
         PetscCall(VecAXPY(chol->v, 1., chol->r));
-        PetscCall(MatBackwardSolve(chol->F, chol->v, y));
+        PetscCall(CholSamplerBackwardSolve(chol, chol->v, y));
       }
       PetscCall(PCCholSamplerNotifySample(pc, y));
     }
@@ -309,7 +386,9 @@ static PetscErrorCode PCView_CholSampler(PC pc, PetscViewer viewer)
   MatInfo        info;
 
   PetscFunctionBeginUser;
-  if (chol && chol->F) {
+  if (chol && chol->dense_n) {
+    PetscCall(PetscViewerASCIIPrintf(viewer, "Dense Cholesky factor for sequential block of size %" PetscBLASInt_FMT "\n", chol->dense_n));
+  } else if (chol && chol->F) {
     PetscCall(MatGetInfo(chol->F, MAT_GLOBAL_SUM, &info));
     PetscCall(PetscViewerASCIIPrintf(viewer, "Nonzeros in factored matrix: allocated %f\n", info.nz_allocated));
   }
@@ -328,12 +407,14 @@ PetscErrorCode PCCholSamplerSetIsCoarseGAMG(PC pc, PetscBool flag)
 
 static PetscErrorCode PCSetFromOptions_CholSampler(PC pc, PetscOptionItems_ARG PetscOptionsObject)
 {
-  PetscBool flag = PETSC_FALSE;
+  PC_CholSampler chol = pc->data;
+  PetscBool      flag = PETSC_FALSE;
 
   PetscFunctionBeginUser;
   PetscOptionsHeadBegin(PetscOptionsObject, "Cholesky options");
   PetscCall(PetscOptionsBool("-pc_cholsampler_coarse_gamg", "Sampler is coarse GAMGMC sampler", NULL, flag, &flag, NULL));
   if (flag) PetscCall(PCCholSamplerSetIsCoarseGAMG(pc, PETSC_TRUE));
+  PetscCall(PetscOptionsInt("-pc_cholsampler_dense_threshold", "Sequential blocks of size <= this are factored and solved densely", NULL, chol->dense_threshold, &chol->dense_threshold, NULL));
   PetscOptionsHeadEnd();
   PetscFunctionReturn(PETSC_SUCCESS);
 }
@@ -349,6 +430,7 @@ PetscErrorCode PCCreate_CholSampler(PC pc)
   PetscCallMPI(MPI_Comm_size(PetscObjectComm((PetscObject)pc), &size));
   if (size == 1) chol->st = PARMGMC_DEFAULT_SEQ_CHOLESKY;
   else chol->st = PARMGMC_DEFAULT_PAR_CHOLESKY;
+  chol->dense_threshold = 64;
 
   pc->data                 = chol;
   pc->ops->destroy         = PCDestroy_CholSampler;
