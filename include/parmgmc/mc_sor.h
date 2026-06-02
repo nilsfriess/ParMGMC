@@ -27,3 +27,4 @@ PETSC_EXTERN PetscErrorCode MCSORSetSweepType(MCSOR, MatSORType);
 PETSC_EXTERN PetscErrorCode MCSORGetSweepType(MCSOR, MatSORType *);
 PETSC_EXTERN PetscErrorCode MCSORGetISColoring(MCSOR, ISColoring *);
 PETSC_EXTERN PetscErrorCode MCSORGetNumColors(MCSOR, PetscInt *);
+PETSC_EXTERN PetscErrorCode MCSORBuildLRCCorrection(PetscErrorCode (*det_sor)(void *, Vec, Vec), void *, Mat, Mat, Vec, Mat *);

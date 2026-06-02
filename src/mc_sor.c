@@ -74,9 +74,9 @@ PetscErrorCode MCSORDestroy(MCSOR *mc)
     }
     PetscCall(VecDestroy(&ctx->idiag));
 
-    if (ctx->z) PetscCall(VecDestroy(&ctx->z));
-    if (ctx->w) PetscCall(VecDestroy(&ctx->w));
-    if (ctx->u) PetscCall(VecDestroy(&ctx->u));
+    PetscCall(VecDestroy(&ctx->z));
+    PetscCall(VecDestroy(&ctx->w));
+    PetscCall(VecDestroy(&ctx->u));
 
     PetscCall(MatDestroy(&ctx->Bb));
     PetscCall(MatDestroy(&ctx->Bb_bk));
@@ -453,56 +453,69 @@ static PetscErrorCode MCSORSetupSOR(MCSOR mc)
   PetscFunctionReturn(PETSC_SUCCESS);
 }
 
-static PetscErrorCode MCSORCreateUpdateMat(MCSOR mc, MatSORType direction, Mat A, Mat *C)
+/*  Build the rank-k Woodbury post-correction matrix used by samplers on
+    `MATLRC` operators of the form `A_post = A + B Sigma^{-1} B^T`.
+
+    The caller supplies `det_sor(ctx, b, y)` which must apply **one
+    deterministic sweep of the same iteration operator the sampler will
+    use** to a vector `b`, starting from `y = 0`, i.e. compute
+    `y := M_A^{-1} b`.  Examples:
+      - MCGibbs supplies a wrapper around `MCSORApply`.
+      - SORGibbs supplies `MatSOR(Asor, b, ..., type, ..., y)` on SEQAIJ
+        / local-forward, or `PCPARSORApplySOR` on MPIAIJ+forward.
+
+    Inputs
+      `Asor` - the base AIJ matrix (used only for shape; column sweeps go
+               through the supplied `det_sor`).
+      `B`    - dense factor of size n x k.
+      `S`    - diagonal vector of length k (= Sigma^{-1}).
+
+    Output
+      `Bb`   - newly allocated dense matrix of size n x k equal to
+               `M_A^{-1} B (S^{-1} + B^T M_A^{-1} B)^{-1}`.  Caller owns
+               it and must `MatDestroy` when done.
+
+    The sampler then applies `y -= Bb * (B^T y)` after each deterministic
+    sweep to enact the Sherman-Morrison-Woodbury correction.  */
+PetscErrorCode MCSORBuildLRCCorrection(PetscErrorCode (*det_sor)(void *, Vec, Vec), void *ctx, Mat Asor, Mat B, Vec S, Mat *Bb)
 {
-  MCSOR_Ctx ctx = mc->ctx;
-
-  PetscFunctionBeginUser;
-  PetscAssert(direction == SOR_FORWARD_SWEEP || direction == SOR_BACKWARD_SWEEP, MPI_COMM_WORLD, PETSC_ERR_PLIB, "Symmetric sweep type should be handled outside this function");
-  PetscCall(MatDuplicate(ctx->B, MAT_DO_NOT_COPY_VALUES, C));
-  {
-    MCSOR    mca;
-    PetscInt cols;
-    Vec      x;
-
-    PetscCall(MatGetSize(ctx->B, NULL, &cols));
-    PetscCall(MCSORCreate(ctx->Asor, &mca));
-    PetscCall(MCSORSetSweepType(mca, direction));
-    PetscCall(MCSORSetUp(mca));
-    PetscCall(MatCreateVecs(A, &x, NULL));
-    for (PetscInt i = 0; i < cols; ++i) {
-      Vec b, c;
-
-      PetscCall(VecZeroEntries(x));
-      PetscCall(MatDenseGetColumnVecRead(ctx->B, i, &b));
-      PetscCall(MCSORApply(mca, b, x));
-      PetscCall(MatDenseRestoreColumnVecRead(ctx->B, i, &b));
-
-      PetscCall(MatDenseGetColumnVecWrite(*C, i, &c));
-      PetscCall(VecCopy(x, c));
-      PetscCall(MatDenseRestoreColumnVecWrite(*C, i, &c));
-    }
-    PetscCall(VecDestroy(&x));
-    PetscCall(MCSORDestroy(&mca));
-  }
-  PetscFunctionReturn(PETSC_SUCCESS);
-}
-
-static PetscErrorCode MCSORCreateBbarMat(MCSOR mc, Mat C, Vec S, Mat *Bb)
-{
-  MCSOR_Ctx  ctx = mc->ctx;
-  Mat        tmp, Id, Sb;
+  Mat        C, tmp, Id, Sb;
   KSP        ksp;
-  Vec        Si;
+  Vec        x, Si;
   IS         sctis;
   VecScatter sct;
-  PetscInt   sctsize;
+  PetscInt   cols, sctsize;
+  MPI_Comm   comm;
 
   PetscFunctionBeginUser;
-  PetscCall(MatTransposeMatMult(ctx->B, C, MAT_INITIAL_MATRIX, 1, &tmp)); // tmp = B^T P^T M_P^-1 B
+  PetscCall(PetscObjectGetComm((PetscObject)Asor, &comm));
 
+  // Step 1: C = M_A^-1 B, column by column.  The caller-supplied det_sor
+  // applies one deterministic sweep of the appropriate iteration matrix
+  // (multicolour SOR, parallel-Gauss-Seidel, local forward, ...).
+  PetscCall(MatDuplicate(B, MAT_DO_NOT_COPY_VALUES, &C));
+  PetscCall(MatGetSize(B, NULL, &cols));
+  PetscCall(MatCreateVecs(Asor, &x, NULL));
+  for (PetscInt i = 0; i < cols; ++i) {
+    Vec b, c;
+
+    PetscCall(VecZeroEntries(x));
+    PetscCall(MatDenseGetColumnVecRead(B, i, &b));
+    PetscCall(det_sor(ctx, b, x));
+    PetscCall(MatDenseRestoreColumnVecRead(B, i, &b));
+
+    PetscCall(MatDenseGetColumnVecWrite(C, i, &c));
+    PetscCall(VecCopy(x, c));
+    PetscCall(MatDenseRestoreColumnVecWrite(C, i, &c));
+  }
+  PetscCall(VecDestroy(&x));
+
+  // Step 2: form tmp = S^-1 + B^T C and invert (k x k).
+  PetscCall(MatTransposeMatMult(B, C, MAT_INITIAL_MATRIX, 1, &tmp)); // tmp = B^T M_A^-1 B
+
+  // Scatter S into a vec compatible with C's column layout.
   PetscCall(VecGetSize(S, &sctsize));
-  PetscCall(ISCreateStride(MPI_COMM_WORLD, sctsize, 0, 1, &sctis));
+  PetscCall(ISCreateStride(comm, sctsize, 0, 1, &sctis));
   PetscCall(MatCreateVecs(C, &Si, NULL));
   PetscCall(VecScatterCreate(S, sctis, Si, NULL, &sct));
   PetscCall(VecScatterBegin(sct, S, Si, INSERT_VALUES, SCATTER_FORWARD));
@@ -511,21 +524,29 @@ static PetscErrorCode MCSORCreateBbarMat(MCSOR mc, Mat C, Vec S, Mat *Bb)
   PetscCall(ISDestroy(&sctis));
   PetscCall(VecReciprocal(Si));
 
-  PetscCall(MatDiagonalSet(tmp, Si, ADD_VALUES)); // tmp = S^-1 +  B^T M_P^-1 B
-  PetscCall(KSPCreate(MPI_COMM_WORLD, &ksp));
+  PetscCall(MatDiagonalSet(tmp, Si, ADD_VALUES)); // tmp = S^-1 + B^T M_A^-1 B
+  PetscCall(KSPCreate(comm, &ksp));
   PetscCall(KSPSetOperators(ksp, tmp, tmp));
   PetscCall(MatDuplicate(tmp, MAT_DO_NOT_COPY_VALUES, &Id));
   PetscCall(MatShift(Id, 1));
   PetscCall(MatDuplicate(tmp, MAT_DO_NOT_COPY_VALUES, &Sb));
-  PetscCall(KSPMatSolve(ksp, Id, Sb)); // ctx->Sb = ( S^-1 +  B^T M_P^-1 B )^-1
+  PetscCall(KSPMatSolve(ksp, Id, Sb)); // Sb = (S^-1 + B^T M_A^-1 B)^-1
 
-  PetscCall(MatMatMult(C, Sb, MAT_INITIAL_MATRIX, 1, Bb));
+  PetscCall(MatMatMult(C, Sb, MAT_INITIAL_MATRIX, 1, Bb)); // Bb = C * Sb
 
   PetscCall(KSPDestroy(&ksp));
   PetscCall(VecDestroy(&Si));
   PetscCall(MatDestroy(&Id));
   PetscCall(MatDestroy(&Sb));
   PetscCall(MatDestroy(&tmp));
+  PetscCall(MatDestroy(&C));
+  PetscFunctionReturn(PETSC_SUCCESS);
+}
+
+static PetscErrorCode MCSORApplyAsDetSOR(void *ctx, Vec b, Vec y)
+{
+  PetscFunctionBeginUser;
+  PetscCall(MCSORApply((MCSOR)ctx, b, y));
   PetscFunctionReturn(PETSC_SUCCESS);
 }
 
@@ -549,21 +570,24 @@ PetscErrorCode MCSORSetUp(MCSOR mc)
   PetscCall(MCSORSetupSOR(mc));
 
   if (strcmp(type, MATLRC) == 0) {
-    Mat C;
-    Vec S;
+    Vec   S;
+    MCSOR mca;
 
     PetscCall(MatLRCGetMats(A, &ctx->Asor, &ctx->B, &S, NULL));
 
-    // Compute C = M_P^-1 B, where M_P is the lower triangular part of PAP^T.
-    // We compute this column-by-column using multicolour Gauss-Seidel.
-    // This way, we don't need to explicitly permute A and get M_P.
-    PetscCall(MCSORCreateUpdateMat(mc, SOR_FORWARD_SWEEP, A, &C));
-    PetscCall(MCSORCreateBbarMat(mc, C, S, &ctx->Bb));
-    PetscCall(MatDestroy(&C));
+    // For each direction build Bb = M_A^-1 B (S^-1 + B^T M_A^-1 B)^-1, with
+    // M_A^-1 supplied by a temporary deterministic MCSOR on the base AIJ.
+    PetscCall(MCSORCreate(ctx->Asor, &mca));
+    PetscCall(MCSORSetSweepType(mca, SOR_FORWARD_SWEEP));
+    PetscCall(MCSORSetUp(mca));
+    PetscCall(MCSORBuildLRCCorrection(MCSORApplyAsDetSOR, mca, ctx->Asor, ctx->B, S, &ctx->Bb));
+    PetscCall(MCSORDestroy(&mca));
 
-    PetscCall(MCSORCreateUpdateMat(mc, SOR_BACKWARD_SWEEP, A, &C));
-    PetscCall(MCSORCreateBbarMat(mc, C, S, &ctx->Bb_bk));
-    PetscCall(MatDestroy(&C));
+    PetscCall(MCSORCreate(ctx->Asor, &mca));
+    PetscCall(MCSORSetSweepType(mca, SOR_BACKWARD_SWEEP));
+    PetscCall(MCSORSetUp(mca));
+    PetscCall(MCSORBuildLRCCorrection(MCSORApplyAsDetSOR, mca, ctx->Asor, ctx->B, S, &ctx->Bb_bk));
+    PetscCall(MCSORDestroy(&mca));
 
     PetscCall(MatCreateVecs(ctx->Bb, &ctx->w, &ctx->z));
 
