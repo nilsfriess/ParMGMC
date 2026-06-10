@@ -39,6 +39,12 @@
 // dominant; np 1 and np 4 then agree.
 // RUN: %cc %s -o %t %flags && %mpirun -np %NP %t -ksp_type richardson -pc_type gamgmc -pc_gamgmc_mg_type mg -gamgmc_mg_coarse_pc_type sorgibbs -box_faces 2 -dm_refine_hierarchy 2 -matern_kappa 10 -nburnin 500 -ksp_max_it 2000 -tol 0.05 %opts -ksp_norm_type none -ksp_convergence_test skip
 
+// Geometric MGMC, NO low-rank update, Cholesky coarse sampler reduced to a single
+// rank via PCTELESCOPE (reduction_factor=%NP), so it factors sequentially instead of
+// via parallel CPARDISO.  ignore_dm is needed (telescope rejects the coarse DMPlex);
+// -with_lr is omitted as MATLRC has no MatCreateSubMatrices for telescope.
+// RUN: %cc %s -o %t %flags && %mpirun -np %NP %t -ksp_type richardson -pc_type gamgmc -pc_gamgmc_mg_type mg -gamgmc_mg_coarse_pc_type telescope -gamgmc_mg_coarse_pc_telescope_reduction_factor %NP -gamgmc_mg_coarse_pc_telescope_ignore_dm -gamgmc_mg_coarse_telescope_ksp_type richardson -gamgmc_mg_coarse_telescope_ksp_max_it 1 -gamgmc_mg_coarse_telescope_pc_type cholsampler -box_faces 2 -dm_refine_hierarchy 2 -matern_kappa 10 -nburnin 500 -ksp_max_it 2000 -tol 0.05 %opts -ksp_norm_type none -ksp_convergence_test skip
+
 // Algebraic MGMC (GAMG), low-rank update -- aggressive coarsening needs more smoothing to mix
 // RUN: %cc %s -o %t %flags && %mpirun -np %NP %t -ksp_type richardson -pc_type gamgmc -pc_gamgmc_mg_type gamg -gamgmc_mg_levels_ksp_max_it 10 -box_faces 2 -dm_refine_hierarchy 2 -with_lr -nburnin 500 -ksp_max_it 5000 -tol 0.05 %opts -ksp_norm_type none -ksp_convergence_test skip
 
