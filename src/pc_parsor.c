@@ -423,7 +423,6 @@ static PetscErrorCode ParallelSORPartitionNodes(Mat matin, ParallelSORData *pars
   PetscCall(PetscCalloc1(size, &mid_send_ranks));
   PetscCall(PetscCalloc1(nmid, &cnt_arr));
 
-  PetscCall(MatCreateVecs(matin, &xcol, NULL));
   PetscCall(VecZeroEntries(xcol));
   PetscCall(VecZeroEntries(lvec));
   PetscCall(VecGetArray(xcol, &xarr));
@@ -582,7 +581,6 @@ static PetscErrorCode ParallelSORPartitionNodes(Mat matin, ParallelSORData *pars
   for (PetscInt m = 0; m < nmid; ++m) parsor->mid_local_dep_count[m] = local_cursor[m];
   PetscCall(PetscFree(local_cursor));
   PetscCall(PetscFree(row_to_mid));
-
   PetscCall(PetscFree(n_mid_recv_buf_size));
   PetscCall(PetscFree(mid_send_ranks));
   PetscCall(PetscFree(cnt_arr));
