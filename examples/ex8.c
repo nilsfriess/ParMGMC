@@ -13,7 +13,7 @@
  */
 
 // Gibbs sampler
-// RUN: %cc %s -o %t %flags && %mpirun -np %NP %t -ksp_type richardson -pc_type sorgibbs
+// RUN: %cc %s -o %t %flags && %mpirun -np %NP %t -ksp_type richardson -pc_type sorgibbs -ksp_max_it 100
 
 // MGMC sampler, set up manually using GAMG
 // RUN: %cc %s -o %t %flags && %mpirun -np %NP %t -ksp_type richardson -ksp_max_it 100 -pc_type gamg -prefix_push mg_levels_ -ksp_type richardson -ksp_max_it 1 -pc_type sorgibbs -prefix_pop -prefix_push mg_coarse_ -ksp_type richardson -ksp_max_it 1 -pc_type cholsampler -prefix_pop
