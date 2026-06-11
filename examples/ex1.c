@@ -17,7 +17,7 @@
 
 /**************************** Test specification ****************************/
 // MulticolorGibbs with default omega
-// RUN: %cc %s -o %t %flags && %mpirun -np %NP %t -ksp_type richardson -pc_type mcgibbs -skip_petscrc
+// RUN: %cc %s -o %t %flags && %mpirun -np %NP %t -ksp_type richardson -pc_type mcgibbs -skip_petscrc -samples 1000000 -burnin 10000
 
 // MulticolorGibbs with backward sweep
 // RUN: %cc %s -o %t %flags && %mpirun -np %NP %t -ksp_type richardson -pc_type mcgibbs -pc_mcgibbs_backward -skip_petscrc
@@ -26,7 +26,7 @@
 // RUN: %cc %s -o %t %flags && %mpirun -np %NP %t -ksp_type richardson -pc_type mcgibbs -pc_mcgibbs_symmetric -skip_petscrc
 
 // Cholesky
-// RUN: %cc %s -o %t %flags && %mpirun -np %NP %t -ksp_type richardson -pc_type cholsampler -skip_petscrc
+// RUN: %cc %s -o %t %flags && %mpirun -np %NP %t -ksp_type richardson -pc_type cholsampler -skip_petscrc -burnin 1
 
 // Algebraic MGMC using PCGAMGMC with coarse MulticolorGibbs
 // RUN: %cc %s -o %t %flags && %mpirun -np %NP %t -ksp_type richardson -pc_type gamgmc -da_grid_x 3 -da_grid_y 3 -gamgmc_mg_levels_ksp_type richardson -gamgmc_mg_levels_pc_type mcgibbs -gamgmc_mg_coarse_ksp_type richardson -gamgmc_mg_coarse_pc_type mcgibbs -gamgmc_mg_coarse_ksp_max_it 2 -gamgmc_mg_levels_ksp_max_it 2 -da_refine 2 -gamgmc_pc_mg_galerkin both -skip_petscrc
