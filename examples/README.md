@@ -2,15 +2,17 @@
 
 This directory contains some examples (that also function as the test suite for the ParMGMC library, see below). Currently, there are the following examples:
 
-| Example | Description                                                                                                                                              |
-|---------|----------------------------------------------------------------------------------------------------------------------------------------------------------|
+| Example | Description                                                                                                                                                                               |
+|---------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | ex1.c   | Sample from Gaussian random fields with Matern covariance using PETSc's KSP interface and custom "preconditioners" (=samplers). Works with stand-alone MulticolorGibbs samplers and MGMC. |
-| ex2.c   | Sample from Gaussian random fields with Matern covariance using the MS (Matern Sampler) interface. |
-| ex3.c   | Tests the multicolour SOR solver. |
-| ex4.c   | Tests the samplers with low-rank updated precision matrices (i.e., linear Bayesian inverse problems). |
-| ex5.c   | Verifies for the multicolour Gauss-Seidel solver that a symmetric sweep is the same as a forward followed by a backward sweep.  |
-| ex6.c   | Checks convergence to the target distribution by computing the relative error of the sample covariance compared to the exact covariance matrix.  |
-| ex7.c   | Measures convergence speed using the Gelman-Rubin diagnostic.  |
+| ex2.c   | Sample from Gaussian random fields with Matern covariance using the MS (Matern Sampler) interface.                                                                                        |
+| ex3.c   | Tests the multicolour SOR solver.                                                                                                                                                         |
+| ex4.c   | Tests the samplers with low-rank updated precision matrices (i.e., linear Bayesian inverse problems).                                                                                     |
+| ex5.c   | Verifies for the multicolour Gauss-Seidel solver that a symmetric sweep is the same as a forward followed by a backward sweep.                                                            |
+| ex6.c   | Checks convergence to the target distribution by computing the relative error of the sample covariance compared to the exact covariance matrix.                                           |
+| ex7.c   | Measures convergence speed using the Gelman-Rubin diagnostic.                                                                                                                             |
+| ex8.c   | Provides the full code for the first code listing in the Algebraic MGMC paper                                                                                                             |
+| ex9.py  | Provides the full code for the firedrake example in the Algebraic MGMC paper                                                                                                              |
 
 # Test suite
 
