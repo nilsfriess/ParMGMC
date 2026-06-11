@@ -23,10 +23,10 @@
 // RUN: %cc %s -o %t %flags && %mpirun -np %NP %t -ksp_type richardson -pc_type sorgibbs -skip_petscrc -samples 1000000 -burnin 10000
 
 // MulticolorGibbs with backward sweep
-// RUN: %cc %s -o %t %flags && %mpirun -np %NP %t -ksp_type richardson -pc_type mcgibbs -pc_mcgibbs_backward -skip_petscrc
+// RUN: %cc %s -o %t %flags && %mpirun -np %NP %t -ksp_type richardson -pc_type mcgibbs -pc_mcgibbs_backward -skip_petscrc -samples 1000000 -burnin 10000
 
 // MulticolorGibbs with symmetric sweep
-// RUN: %cc %s -o %t %flags && %mpirun -np %NP %t -ksp_type richardson -pc_type mcgibbs -pc_mcgibbs_symmetric -skip_petscrc
+// RUN: %cc %s -o %t %flags && %mpirun -np %NP %t -ksp_type richardson -pc_type mcgibbs -pc_mcgibbs_symmetric -skip_petscrc -samples 1000000 -burnin 10000
 
 // Cholesky
 // RUN: %cc %s -o %t %flags && %mpirun -np %NP %t -ksp_type richardson -pc_type cholsampler -skip_petscrc -burnin 1
