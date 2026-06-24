@@ -18,15 +18,34 @@ endif()
 find_package(MPI REQUIRED)
 message(STATUS "mpiexec executable located at ${MPIEXEC_EXECUTABLE}")
 
+find_package(MKL CONFIG)
+if(MKL_FOUND)
+  message(STATUS "Found Intel MKL — VSL random number generation enabled")
+else()
+  message(STATUS "Intel MKL not found — Box-Muller fallback used for random number generation")
+endif()
+
 find_package(FFTW)
 message(STATUS ${FFTW_INCLUDE_DIRS} ${FFTW_LIBRARIES})
 if (DEFINED FFTW_INCLUDE_DIRS AND NOT DEFINED FFTW_LIBRARIES)
   message(STATUS "Found FFTW include dirs but no libs, assuming that Intel MKL FFTW is used")
-  find_package(MKL CONFIG REQUIRED)
-  set(FFTW_DOUBLE_LIB "") # TODO: If we set this to $<LINK_ONLY:MKL::MKL> or MKL::MKL, then the program segfaults. Just leaving it empty seems to work (maybe because PETSc is linked against MKL already?).
+  if(NOT MKL_FOUND)
+    message(FATAL_ERROR "FFTW headers found without FFTW libs but MKL was not detected. Install Intel MKL or provide FFTW libraries.")
+  endif()
+  set(FFTW_DOUBLE_LIB "") # Linking MKL::MKL directly segfaults; PETSc's transitive MKL dep resolves symbols.
 endif()
 
 add_library(parmgmc SHARED)
+
+if(MKL_FOUND)
+  target_compile_definitions(parmgmc PRIVATE PARMGMC_HAVE_MKL)
+  # Only pull in headers; PETSc is already linked against MKL so we rely on
+  # its transitive link for symbol resolution (direct MKL::MKL linkage causes
+  # double-init segfaults in PETSc builds that bundle MKL).
+  target_include_directories(parmgmc SYSTEM PRIVATE
+    $<TARGET_PROPERTY:MKL::MKL,INTERFACE_INCLUDE_DIRECTORIES>)
+endif()
+
 file(GLOB_RECURSE PARMGMC_INCLUDES "${CMAKE_CURRENT_SOURCE_DIR}/include/parmgmc/*.h")
 message(STATUS ${PARMGMC_INCLUDES})
 target_sources(parmgmc
@@ -37,6 +56,8 @@ target_sources(parmgmc
 	    src/pc_chols.c
 	    src/pc_parsor.c
 	    src/mc_sor.c
+            src/woodbury.c
+	    src/pc_samplewrap.c
 	    src/parmgmc.c
 	    src/problems.c
 	    src/ms.c
@@ -123,4 +144,3 @@ endif()
 if(${PARMGMC_BUILD_EXAMPLES})
   add_subdirectory(examples)
 endif()
-

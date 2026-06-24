@@ -22,6 +22,10 @@
 #include <petscpctypes.h>
 #include <petscsys.h>
 
+#ifdef PARMGMC_HAVE_MKL
+  #include <mkl_vsl.h>
+#endif
+
 /** @file
     @brief This file contains general purpose functions for the ParMGMC library.
 */
@@ -31,6 +35,10 @@ PetscLogEvent MULTICOL_SOR;
 PetscLogEvent VEC_SET_RANDOM_NORMAL;
 
 PetscRandom parmgmc_rand = NULL;
+
+#ifdef PARMGMC_HAVE_MKL
+static VSLStreamStatePtr parmgmc_vsl_stream = NULL;
+#endif
 
 static PetscErrorCode ParMGMCRegisterPCAll(void)
 {
@@ -59,19 +67,36 @@ PetscErrorCode ParMGMCGetPetscRandom(PetscRandom *pr)
 
 PetscErrorCode VecSetRandomStandardNormal(Vec v, PetscRandom r)
 {
-  PetscInt     n, i;
+  PetscInt     n;
   PetscScalar *array;
-  PetscReal    u1, u2;
 
   PetscFunctionBegin;
   PetscCall(PetscLogEventBegin(VEC_SET_RANDOM_NORMAL, v, r, 0, 0));
   PetscCall(VecGetLocalSize(v, &n));
   PetscCall(VecGetArray(v, &array));
 
-  /* Box-Muller: each (u1, u2) pair yields two independent normals that share
-     the radius sqrt(-2 ln u1), so it is computed once per pair, not twice. */
-  for (i = 0; i < n; i += 2) {
-    PetscReal radius, theta;
+#if defined(PARMGMC_HAVE_MKL) && !defined(PETSC_USE_COMPLEX)
+  if (!parmgmc_vsl_stream) {
+    PetscInt64 seed;
+    int        rank;
+    PetscCall(PetscRandomGetSeed(r, &seed));
+    MPI_Comm_rank(PETSC_COMM_WORLD, &rank);
+    MKL_INT err = vslNewStream(&parmgmc_vsl_stream, VSL_BRNG_MT19937, (MKL_UINT)((unsigned long)seed ^ (unsigned long)rank));
+    PetscCheck(err == VSL_ERROR_OK, PETSC_COMM_SELF, PETSC_ERR_LIB, "vslNewStream failed (error %d)", (int)err);
+  }
+  {
+    MKL_INT err;
+  #ifdef PETSC_USE_REAL_SINGLE
+    err = vsRngGaussian(VSL_RNG_METHOD_GAUSSIAN_ICDF, parmgmc_vsl_stream, (MKL_INT)n, array, 0.0f, 1.0f);
+  #else
+    err = vdRngGaussian(VSL_RNG_METHOD_GAUSSIAN_ICDF, parmgmc_vsl_stream, (MKL_INT)n, array, 0.0, 1.0);
+  #endif
+    PetscCheck(err == VSL_ERROR_OK, PETSC_COMM_SELF, PETSC_ERR_LIB, "vdRngGaussian failed (error %d)", (int)err);
+  }
+#else
+  /* Box-Muller: each (u1, u2) pair yields two independent normals */
+  for (PetscInt i = 0; i < n; i += 2) {
+    PetscReal u1, u2, radius, theta;
 
     PetscCall(PetscRandomGetValueReal(r, &u1));
     PetscCall(PetscRandomGetValueReal(r, &u2));
@@ -81,6 +106,7 @@ PetscErrorCode VecSetRandomStandardNormal(Vec v, PetscRandom r)
     array[i] = radius * PetscCosReal(theta);
     if (i + 1 < n) array[i + 1] = radius * PetscSinReal(theta);
   }
+#endif
 
   PetscCall(VecRestoreArray(v, &array));
   PetscCall(PetscLogEventEnd(VEC_SET_RANDOM_NORMAL, v, r, 0, 0));
@@ -102,6 +128,9 @@ PetscErrorCode ParMGMCFinalize(void)
 {
   PetscFunctionBeginUser;
   if (parmgmc_rand) PetscCall(PetscRandomDestroy(&parmgmc_rand));
+#if defined(PARMGMC_HAVE_MKL) && !defined(PETSC_USE_COMPLEX)
+  if (parmgmc_vsl_stream) vslDeleteStream(&parmgmc_vsl_stream);
+#endif
   PetscFunctionReturn(PETSC_SUCCESS);
 }
 

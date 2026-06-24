@@ -43,7 +43,7 @@ jobs:
       - name: Build ParMGMC
         run: |
           mkdir build && cd build
-          cmake .. -DCMAKE_C_COMPILER=mpicc -DCMAKE_CXX_COMPILER=mpic++ -DCMAKE_PREFIX_PATH=${GITHUB_WORKSPACE}/petsc/arch-linux-c-opt -DCMAKE_INSTALL_PREFIX=${GITHUB_WORKSPACE}/install
+          cmake .. -DCMAKE_C_COMPILER=mpicc -DCMAKE_CXX_COMPILER=mpic++ -DCMAKE_PREFIX_PATH=${GITHUB_WORKSPACE}/petsc/arch-linux-c-opt -DCMAKE_INSTALL_PREFIX=${GITHUB_WORKSPACE}/install -DMKL_DIR=/opt/intel/oneapi/mkl/latest/lib/cmake/mkl
           make
 
       - name: Install ParMGMC
