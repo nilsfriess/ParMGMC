@@ -56,8 +56,8 @@ target_sources(parmgmc
 	    src/pc_chols.c
 	    src/pc_parsor.c
 	    src/mc_sor.c
-            src/woodbury.c
-	    src/pc_samplewrap.c
+            # src/woodbury.c
+	    # src/pc_samplewrap.c
 	    src/parmgmc.c
 	    src/problems.c
 	    src/ms.c
