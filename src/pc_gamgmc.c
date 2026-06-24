@@ -69,6 +69,7 @@ typedef struct _PC_GAMGMC {
   char      mgtype[64];
   PC        mg;
   Mat      *As; // The actual matrices used (in case of A+LR this differs from the matrices used to setup the multigrid hierarchy).
+  Vec       work; // Holds the cycle correction M(b - A y) during the Richardson iteration.
   PetscBool setup_called;
 
   void *cbctx;
@@ -88,6 +89,7 @@ static PetscErrorCode PCDestroy_GAMGMC(PC pc)
     for (PetscInt l = 0; l < levels - 1; ++l) PetscCall(MatDestroy(&(pg->As[l])));
     PetscCall(PetscFree(pg->As));
   }
+  PetscCall(VecDestroy(&pg->work));
   PetscCall(PCDestroy(&pg->mg));
   PetscCall(PetscFree(pg));
   PetscFunctionReturn(PETSC_SUCCESS);
@@ -105,6 +107,7 @@ static PetscErrorCode PCReset_GAMGMC(PC pc)
     PetscCall(PetscFree(pg->As));
     pg->As = NULL;
   }
+  PetscCall(VecDestroy(&pg->work));
   PetscCall(PCReset(pg->mg));
   pg->setup_called = PETSC_FALSE;
   PetscFunctionReturn(PETSC_SUCCESS);
@@ -226,8 +229,6 @@ static PetscErrorCode PCApplyRichardson_GAMGMC(PC pc, Vec b, Vec y, Vec w, Petsc
   (void)rtol;
   (void)abstol;
   (void)dtol;
-  (void)guesszero;
-  (void)w;
 
   PC_GAMGMC pg = pc->data;
 
@@ -236,9 +237,24 @@ static PetscErrorCode PCApplyRichardson_GAMGMC(PC pc, Vec b, Vec y, Vec w, Petsc
     PetscCall(PCGAMGMC_SetUpHierarchy(pc));
     pg->setup_called = PETSC_TRUE;
   }
+  if (!pg->work) PetscCall(MatCreateVecs(pc->mat, &pg->work, NULL));
 
   for (PetscInt it = 0; it < its; ++it) {
-    PetscCall(PCApply(pg->mg, b, y));
+    if (it == 0 && guesszero) {
+      /* From a zero initial guess the residual is just b, so one cycle gives
+         y = M b directly. */
+      PetscCall(PCApply(pg->mg, b, y));
+    } else {
+      /* Richardson sampling update carrying the state forward:
+             y <- y + M (b - A y).
+         Applying the cycle to the raw rhs b every iteration (y <- M b) instead
+         leaves the chain at a single cycle's approximation of A^{-1} b, which
+         biases the sample mean (most visibly in the smooth modes). */
+      PetscCall(MatMult(pc->mat, y, w));
+      PetscCall(VecAYPX(w, -1., b));
+      PetscCall(PCApply(pg->mg, w, pg->work));
+      PetscCall(VecAXPY(y, 1., pg->work));
+    }
     if (pg->scb) PetscCall(pg->scb(it, y, pg->cbctx));
   }
 
@@ -302,7 +318,7 @@ static PetscErrorCode PCSetUp_GAMGMC(PC pc)
     PetscCall(PetscOptionsHasName(NULL, prefix, "-mg_levels_ksp_max_it", &flag));
     if (!flag) {
       PetscCall(PetscSNPrintf(opt, sizeof(opt), "-%smg_levels_ksp_max_it", prefix ? prefix : ""));
-      PetscCall(PetscOptionsSetValue(NULL, opt, "2"));
+      PetscCall(PetscOptionsSetValue(NULL, opt, "1"));
     }
 
     PetscCall(PetscOptionsHasName(NULL, prefix, "-mg_coarse_ksp_max_it", &flag));
