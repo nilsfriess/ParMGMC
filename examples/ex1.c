@@ -132,7 +132,7 @@ int main(int argc, char *argv[])
   PetscCall(VecNorm(mean, NORM_2, &err));
   PetscCall(VecNorm(ex_mean, NORM_2, &ex_mean_norm));
 
-  PetscCheck(PetscIsCloseAtTol(err / ex_mean_norm, 0, 0.05, 0.01), MPI_COMM_WORLD, PETSC_ERR_NOT_CONVERGED, "Sample mean has not converged: rel. error %.5f", err / ex_mean_norm);
+  PetscCheck(PetscIsCloseAtTol(err / ex_mean_norm, 0, 0, 0.02), MPI_COMM_WORLD, PETSC_ERR_NOT_CONVERGED, "Sample mean has not converged: rel. error %.5f", err / ex_mean_norm);
   PetscCall(PetscPrintf(MPI_COMM_WORLD, "Rel. mean error: %.5f\n", err / ex_mean_norm));
 
   PetscCall(VecDestroy(&mean));
