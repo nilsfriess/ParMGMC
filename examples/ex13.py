@@ -35,6 +35,7 @@ Options:
     -nburnin <int>     burn-in samples discarded       (default 1000)
     -nsamples <int>    production samples timed         (default 10000)
     -posterior         switch to posterior sampling     (default off)
+    -visualise         write ex13_visualisation.pvd     (default off)
     -seed <int>        RNG seed                         (default 20260625)
 """
 
@@ -55,10 +56,9 @@ import assembled_transfer
 
 MESH_FILE = "../data/wrench2.msh"
 
-# QOI: L^2 integral of the field over a ball near one end of the wrench (wrench
-# coordinates span x in [-18, 15], y in [-24, 252], z in [-5, 5]).
-QOI_CENTER = (0.0, 116.0, 0.0)
-QOI_RADIUS = 5.0
+# QOI: L^2 integral of the field over a ball near one end of the wrench
+QOI_CENTER = (0.0, 10.0, 0.0)
+QOI_RADIUS = 70.0
 
 # Posterior observations: an abstract list of balls (centre, radius) along the
 # shaft, each with an observed value -- the field's volume-average over the ball
@@ -66,14 +66,15 @@ QOI_RADIUS = 5.0
 # O(0.1) values are sensible volume-averages, and the noise std (sqrt(sigma2) =
 # 0.05) sits well below the signal, making the observations informative.
 OBS_CENTERS = np.array([
-    (0.0,  40.0, 0.0),
-    (0.0,  90.0, 0.0),
-    (0.0, 140.0, 0.0),
-    (0.0, 190.0, 0.0),
-    (0.0, 228.0, 0.0),
+    (18.0,  15.0, 0.0),
+    (2.0,  40.0, 0.0),
+    (-2.0,  90.0, 0.0),
+    (2.0, 140.0, 0.0),
+    (-2.0, 190.0, 0.0),
+    (0.0, 210.0, 0.0),
 ])
 OBS_RADII = np.full(len(OBS_CENTERS), 6.0)
-OBS_VALUES = np.array([0.10, -0.15, 0.05, -0.10, 0.12])
+OBS_VALUES = np.array([-0.3, 0.10, -0.15, 0.05, -0.10, 0.12])
 OBS_SIGMA2 = 2.5e-3
 
 
@@ -196,6 +197,7 @@ def main():
     nburnin   = opts.getInt("nburnin", 1000)
     nsamples  = opts.getInt("nsamples", 10000)
     posterior = opts.getBool("posterior", False)
+    visualise = opts.getBool("visualise", False)
     seed      = opts.getInt("seed", 20260625)
 
     pymgmc.seed(seed)
@@ -276,6 +278,49 @@ def main():
     tau = float(emcee.autocorr.integrated_time(qois, quiet=True)[0])
     qoi_mean = float(np.mean(qois))
     qoi_var = float(np.var(qois))
+
+    # Visualisation (collective: every rank must take part in the write).
+    if visualise:
+        out_file = "ex13_visualisation.pvd"
+        if rank == 0:
+            print(f"writing {out_file} ...")
+        xsym = fd.SpatialCoordinate(mesh)
+
+        # Last production sample (already sitting in x.dat after the solve).
+        x.rename("sample")
+        outputs = [x]
+
+        # QOI ball indicator -- the region the scalar QOI integrates over.
+        r_sq = sum((xsym[i] - QOI_CENTER[i]) ** 2 for i in range(len(QOI_CENTER)))
+        qoi_fn = fd.Function(V, name="qoi_region")
+        qoi_fn.interpolate(fd.conditional(fd.lt(r_sq, QOI_RADIUS ** 2), 1.0, 0.0))
+        outputs.append(qoi_fn)
+
+        # MPI partitioning: each rank stamps its own rank into every DOF it
+        # touches; at shared (ghost) DOFs the owning rank's value wins, so the
+        # field visualises the domain decomposition.
+        rank_fn = fd.Function(V, name="mpi_rank")
+        rank_fn.assign(float(rank))
+        outputs.append(rank_fn)
+
+        # Observations: each ball filled with its observed value (posterior only).
+        if posterior:
+            gdim = mesh.geometric_dimension
+            expr = fd.Constant(0.0)
+            for i in range(len(OBS_CENTERS)):
+                c = fd.as_vector(
+                    [fd.Constant(float(OBS_CENTERS[i, k])) for k in range(gdim)]
+                )
+                r = float(OBS_RADII[i])
+                expr = expr + fd.conditional(
+                    fd.lt(fd.dot(xsym - c, xsym - c), r * r),
+                    float(OBS_VALUES[i]), 0.0,
+                )
+            obs_fn = fd.Function(V, name="observations")
+            obs_fn.interpolate(expr)
+            outputs.append(obs_fn)
+
+        fd.VTKFile(out_file).write(*outputs)
 
     del keep  # references held until here
 
