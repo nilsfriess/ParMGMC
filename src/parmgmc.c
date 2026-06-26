@@ -12,6 +12,7 @@
 #include "parmgmc/pc/pc_mcgibbs.h"
 #include "parmgmc/pc/pc_parsor.h"
 #include "parmgmc/pc/pc_sorgibbs.h"
+#include "parmgmc/pc/woodbury.h"
 
 #include <petsc/private/pcimpl.h>
 #include <petsc/private/petscimpl.h>
