@@ -1,5 +1,5 @@
 /*  ParMGMC - Implementation of the Multigrid Monte Carlo method in PETSc.
-    Copyright (C) 2024  Nils Friess
+    Copyright (C) 2026  Nils Schiefer-Friess
 
     This file is part of ParMGMC which is released under the GNU LESSER GENERAL
     PUBLIC LICENSE (LGPL). See file LICENSE in the project root folder for full
@@ -48,6 +48,7 @@ static PetscErrorCode ParMGMCRegisterPCAll(void)
   PetscCall(PCRegister(PCGAMGMC, PCCreate_GAMGMC));
   PetscCall(PCRegister(PCCHOLSAMPLER, PCCreate_CholSampler));
   PetscCall(PCRegister(PCPARSOR, PCCreate_PARSOR));
+  PetscCall(PCRegister(PCWOODBURY, PCCreate_Woodbury));
   PetscFunctionReturn(PETSC_SUCCESS);
 }
 

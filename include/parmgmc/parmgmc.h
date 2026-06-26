@@ -28,6 +28,7 @@
 #define PCSORGIBBS    "sorgibbs"
 #define PCCHOLSAMPLER "cholsampler"
 #define PCPARSOR      "parsor"
+#define PCWOODBURY    "woodbury"
 
 PETSC_EXTERN PetscClassId  PARMGMC_CLASSID;
 PETSC_EXTERN PetscLogEvent MULTICOL_SOR;
