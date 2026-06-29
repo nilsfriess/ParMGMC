@@ -54,7 +54,7 @@ import pymgmc
 import assembled_transfer
 
 
-MESH_FILE = "../data/wrench2.msh"
+MESH_FILE = "../data/wrench.msh"
 
 # QOI: L^2 integral of the field over a ball near one end of the wrench
 QOI_CENTER = (0.0, 10.0, 0.0)
