@@ -46,7 +46,33 @@ endif()
 # iact.c needs a double-precision FFTW.
 find_package(FFTW COMPONENTS DOUBLE_LIB REQUIRED)
 
+# PETSc changed the signature of KSPSetDMActive() in some version. Previously we used
+# PETSC_VERSION_GT to check but that unconditionally returns `true` for non-release
+# builds (e.g. builds from a PETSc main branch). So here we try to compile a program
+# with the new signature and set a compile definition that can then be checked in the
+# code. This is ugly and we can of course not do this for every function that PETSc
+# decides to change; arguably this is a flaw in PETSc's PETSC_VERSION_GT macro.
+include(CheckCSourceCompiles)
+set(CMAKE_REQUIRED_LIBRARIES PkgConfig::PETSC MPI::MPI_C)
+check_c_source_compiles("
+#include <petscksp.h>
+int main(void){ KSP ksp; return KSPSetDMActive(ksp, KSP_DMACTIVE_OPERATOR, PETSC_FALSE); }
+" PARMGMC_PETSC_KSP_DMACTIVE_3ARG)
+unset(CMAKE_REQUIRED_LIBRARIES)
+
+# Injected into parmgmc.pc so the standalone lit test builds (which compile the
+# examples via pkg-config rather than by linking the parmgmc target) see it too.
+set(PARMGMC_PC_CFLAGS "")
+if(PARMGMC_PETSC_KSP_DMACTIVE_3ARG)
+  set(PARMGMC_PC_CFLAGS "-DPARMGMC_PETSC_KSP_DMACTIVE_3ARG")
+endif()
+
 add_library(parmgmc SHARED)
+
+if(PARMGMC_PETSC_KSP_DMACTIVE_3ARG)
+  # PUBLIC so it also reaches the in-tree example/benchmark targets that link parmgmc.
+  target_compile_definitions(parmgmc PUBLIC PARMGMC_PETSC_KSP_DMACTIVE_3ARG)
+endif()
 
 if(MKL_FOUND)
   target_compile_definitions(parmgmc PRIVATE PARMGMC_HAVE_MKL)

@@ -140,7 +140,7 @@ int main(int argc, char *argv[])
     PetscCall(KSPSetFromOptions(samplers[i]));
     PetscCall(KSPSetOperators(samplers[i], A, A));
     PetscCall(KSPSetDM(samplers[i], dm));
-#if PETSC_VERSION_GT(3, 24, 5)
+#ifdef PARMGMC_PETSC_KSP_DMACTIVE_3ARG
     PetscCall(KSPSetDMActive(samplers[i], KSP_DMACTIVE_OPERATOR, PETSC_FALSE));
 #else
     PetscCall(KSPSetDMActive(samplers[i], PETSC_FALSE));

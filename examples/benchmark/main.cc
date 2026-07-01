@@ -117,7 +117,7 @@ static PetscErrorCode SamplerCreate(Mat A, DM dm, Parameters params, KSP *ksp)
   PetscCall(KSPSetOperators(*ksp, A, A));
   if (dm) {
     PetscCall(KSPSetDM(*ksp, dm));
-#if PETSC_VERSION_GT(3, 24, 5)
+#ifdef PARMGMC_PETSC_KSP_DMACTIVE_3ARG
     PetscCall(KSPSetDMActive(*ksp, KSP_DMACTIVE_OPERATOR, PETSC_FALSE));
 #else
     PetscCall(KSPSetDMActive(*ksp, PETSC_FALSE));
