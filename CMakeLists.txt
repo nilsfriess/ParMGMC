@@ -43,9 +43,6 @@ else()
   set(PARMGMC_BLAS_LINK BLAS::BLAS)
 endif()
 
-# iact.c needs a double-precision FFTW.
-find_package(FFTW COMPONENTS DOUBLE_LIB REQUIRED)
-
 # PETSc changed the signature of KSPSetDMActive() in some version. Previously we used
 # PETSC_VERSION_GT to check but that unconditionally returns `true` for non-release
 # builds (e.g. builds from a PETSc main branch). So here we try to compile a program
