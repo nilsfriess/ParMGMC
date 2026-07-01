@@ -261,7 +261,7 @@ static PetscErrorCode PCSetUp_SORGibbs(PC pc)
   PetscFunctionReturn(PETSC_SUCCESS);
 }
 
-static PetscErrorCode PCSetFromOptions_SORGibbs(PC pc, PetscOptionItems_ARG PetscOptionsObject)
+static PetscErrorCode PCSetFromOptions_SORGibbs(PC pc, PetscOptionItems PetscOptionsObject)
 {
   PC_SORGibbs sorgibbs = pc->data;
   PetscBool   flag     = PETSC_FALSE;
