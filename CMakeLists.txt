@@ -25,15 +25,8 @@ else()
   message(STATUS "Intel MKL not found — Box-Muller fallback used for random number generation")
 endif()
 
-find_package(FFTW)
-message(STATUS ${FFTW_INCLUDE_DIRS} ${FFTW_LIBRARIES})
-if (DEFINED FFTW_INCLUDE_DIRS AND NOT DEFINED FFTW_LIBRARIES)
-  message(STATUS "Found FFTW include dirs but no libs, assuming that Intel MKL FFTW is used")
-  if(NOT MKL_FOUND)
-    message(FATAL_ERROR "FFTW headers found without FFTW libs but MKL was not detected. Install Intel MKL or provide FFTW libraries.")
-  endif()
-  set(FFTW_DOUBLE_LIB "") # Linking MKL::MKL directly segfaults; PETSc's transitive MKL dep resolves symbols.
-endif()
+# iact.c needs a double-precision FFTW.
+find_package(FFTW COMPONENTS DOUBLE_LIB REQUIRED)
 
 add_library(parmgmc SHARED)
 
@@ -72,12 +65,12 @@ target_sources(parmgmc
 target_include_directories(parmgmc SYSTEM PUBLIC ${PETSC_INCLUDE_DIRS} ${FFTW_INCLUDE_DIRS})
 target_compile_options(parmgmc PRIVATE -Wall -Wextra -Wpedantic -pedantic -Wshadow -Wpointer-arith -Wcast-qual -Wstrict-prototypes -Wmissing-prototypes)
 target_compile_options(parmgmc PUBLIC ${PETSC_CFLAGS})
-target_link_libraries(parmgmc PUBLIC PkgConfig::PETSC MPI::MPI_C )
+target_link_libraries(parmgmc PUBLIC PkgConfig::PETSC MPI::MPI_C FFTW::Double)
 
 add_executable(benchmark examples/benchmark/main.cc)
 target_include_directories(benchmark PRIVATE include)
 target_compile_options(benchmark PRIVATE -Wall -Wextra -Wpedantic -pedantic)
-target_link_libraries(benchmark PRIVATE parmgmc m MPI::MPI_CXX MPI::MPI_C ${FFTW_DOUBLE_LIB})
+target_link_libraries(benchmark PRIVATE parmgmc m MPI::MPI_CXX MPI::MPI_C)
 
 # add_executable(test test.c)
 # target_include_directories(test PRIVATE include)
