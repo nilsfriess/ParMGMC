@@ -1,0 +1,53 @@
+name: macos
+on: [push]
+jobs:
+  run-tests:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        run: |
+          brew install open-mpi fftw pkg-config bison flex pipx
+          pipx install lit
+          pipx ensurepath
+          echo "${HOME}/.local/bin" >> $GITHUB_PATH
+          echo "$(brew --prefix bison)/bin" >> $GITHUB_PATH
+          echo "$(brew --prefix flex)/bin" >> $GITHUB_PATH
+
+      - name: Cache PETSc
+        id: cache-petsc
+        uses: actions/cache@v4
+        with:
+          path: ${{github.workspace}}/petsc
+          key: ${{runner.os}}-petsc-accelerate
+
+      - name: Build PETSc
+        if: steps.cache-petsc.outputs.cache-hit != 'true'
+        run: |
+          git clone --depth 1 --branch v3.25.1 https://gitlab.com/petsc/petsc.git petsc
+          cd petsc
+          # No Intel MKL on macOS: PETSc uses the Accelerate framework for BLAS/LAPACK.
+          ./configure --with-debugging=no --with-fortran-bindings=0 --with-fc=0 --with-cc=mpicc --with-cxx=mpicxx --download-triangle --download-ctetgen --download-parmetis --download-metis --download-mmg --download-ptscotch COPTFLAGS="-O3" CXXOPTFLAGS="-O3"
+          make PETSC_DIR=${GITHUB_WORKSPACE}/petsc PETSC_ARCH=arch-darwin-c-opt all
+
+      - name: Build ParMGMC
+        run: |
+          mkdir build && cd build
+          cmake .. -DCMAKE_C_COMPILER=mpicc -DCMAKE_CXX_COMPILER=mpicxx -DCMAKE_PREFIX_PATH=${GITHUB_WORKSPACE}/petsc/arch-darwin-c-opt -DCMAKE_INSTALL_PREFIX=${GITHUB_WORKSPACE}/install
+          make
+
+      - name: Install ParMGMC
+        run: |
+          cd ${GITHUB_WORKSPACE}/build
+          make install
+
+      - name: Configure tests
+        run: |
+          cd ${GITHUB_WORKSPACE}/examples
+          mkdir build && cd build
+          cmake .. -DCMAKE_PREFIX_PATH="${GITHUB_WORKSPACE}/petsc/arch-darwin-c-opt;${GITHUB_WORKSPACE}/install"
+
+      - name: Run sequential tests
+        run: |
+          cd ${GITHUB_WORKSPACE}/examples/build
+          OMP_NUM_THREADS=1 make check-seq
