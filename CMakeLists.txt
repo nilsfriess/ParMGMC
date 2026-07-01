@@ -25,6 +25,24 @@ else()
   message(STATUS "Intel MKL not found — Box-Muller fallback used for random number generation")
 endif()
 
+# pc_chols.c calls BLAS/LAPACK; link the same one PETSc uses (read from
+# petscvariables) so it resolves at link time on macOS without an ABI mismatch.
+pkg_get_variable(PETSC_PREFIX PETSc prefix)
+set(PETSC_BLASLAPACK_LIB "")
+if(PETSC_PREFIX AND EXISTS "${PETSC_PREFIX}/lib/petsc/conf/petscvariables")
+  file(STRINGS "${PETSC_PREFIX}/lib/petsc/conf/petscvariables" _blas_line REGEX "^BLASLAPACK_LIB = ")
+  string(REGEX REPLACE "^BLASLAPACK_LIB = " "" _blas_line "${_blas_line}")
+  separate_arguments(PETSC_BLASLAPACK_LIB UNIX_COMMAND "${_blas_line}")
+endif()
+if(PETSC_BLASLAPACK_LIB)
+  message(STATUS "Using PETSc's BLAS/LAPACK: ${PETSC_BLASLAPACK_LIB}")
+  set(PARMGMC_BLAS_LINK ${PETSC_BLASLAPACK_LIB})
+else()
+  message(STATUS "PETSc BLAS/LAPACK not recorded; falling back to find_package(BLAS)")
+  find_package(BLAS REQUIRED)
+  set(PARMGMC_BLAS_LINK BLAS::BLAS)
+endif()
+
 # iact.c needs a double-precision FFTW.
 find_package(FFTW COMPONENTS DOUBLE_LIB REQUIRED)
 
@@ -65,7 +83,7 @@ target_sources(parmgmc
 target_include_directories(parmgmc SYSTEM PUBLIC ${PETSC_INCLUDE_DIRS} ${FFTW_INCLUDE_DIRS})
 target_compile_options(parmgmc PRIVATE -Wall -Wextra -Wpedantic -pedantic -Wshadow -Wpointer-arith -Wcast-qual -Wstrict-prototypes -Wmissing-prototypes)
 target_compile_options(parmgmc PUBLIC ${PETSC_CFLAGS})
-target_link_libraries(parmgmc PUBLIC PkgConfig::PETSC MPI::MPI_C FFTW::Double)
+target_link_libraries(parmgmc PUBLIC PkgConfig::PETSC MPI::MPI_C FFTW::Double ${PARMGMC_BLAS_LINK})
 
 add_executable(benchmark examples/benchmark/main.cc)
 target_include_directories(benchmark PRIVATE include)
