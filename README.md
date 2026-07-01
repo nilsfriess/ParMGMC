@@ -4,18 +4,10 @@ ParMGMC is a C library implementation of the Multigrid Monte Carlo method in PET
 ## Dependencies
 ParMGMC has the following dependencies:
 - An MPI installation (e.g., [OpenMPI](https://www.open-mpi.org/) or [MPICH](https://www.mpich.org/))
-- [PETSc](https://petsc.org/)  (tested with version 3.21, anything >= 3.19 should work) built with C/Pardiso enabled
-- [Intel MKL](https://www.intel.com/content/www/us/en/developer/tools/oneapi/onemkl-download.html)
+- [PETSc](https://petsc.org/)  (requires at least version >= 3.23)
+- Optionally, but recommended: [Intel MKL](https://www.intel.com/content/www/us/en/developer/tools/oneapi/onemkl-download.html). Needed for the parallel Cholesky solver.
 
-After Intel MKL has been installed can be configured by running
-```bash
-./configure --with-mkl_cpardiso   \
-            --with-mkl_pardiso    \
-            --with-blas-lapack-dir=/opt/intel/oneapi/mkl/latest/lib
-```
-in the PETSc directory (the path to the Intel MKL might differ depending on the platform). For details, see [PETSc documentation](https://petsc.org/release/install/).
-
-If the Python bindings should be enabled, pybind11 and `petsc4py` are also required. `petsc4py` can be built by passing `--with-petsc4py` during configure.
+If the Python bindings should be enabled, pybind11 and `petsc4py` are also required. `petsc4py` can be built by passing `--with-petsc4py` when configuring PETSc.
 
 ## Building the library
 To build the ParMGMC library CMake is required. Run

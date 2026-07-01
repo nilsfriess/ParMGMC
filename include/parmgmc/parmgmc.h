@@ -15,14 +15,6 @@
 #include <petscvec.h>
 #include <petscversion.h>
 
-/* In PETSc >= 3.23, PetscOptionItems became an opaque pointer typedef;
-   before that it was a plain struct and callbacks received a pointer. */
-#if PETSC_VERSION_LT(3, 23, 0)
-  #define PetscOptionItems_ARG PetscOptionItems *
-#else
-  #define PetscOptionItems_ARG PetscOptionItems
-#endif
-
 #define PCMCGIBBS     "mcgibbs"
 #define PCGAMGMC      "gamgmc"
 #define PCSORGIBBS    "sorgibbs"
