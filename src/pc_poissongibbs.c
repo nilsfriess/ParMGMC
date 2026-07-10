@@ -95,6 +95,7 @@ static PetscErrorCode PCPoissonGibbsSample(PC pc, Vec b, Vec y, Vec w)
   PC_PoissonGibbs poissongibbs = pc->data;
 
   PetscFunctionBeginUser;
+  printf("Sampling...\n");
   PetscCall(VecCopy(y,w));
   PetscFunctionReturn(PETSC_SUCCESS);
 }

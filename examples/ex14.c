@@ -41,7 +41,7 @@ int main(int argc, char *argv[])
 {
   DM             dm;
   Mat            A;
-  Vec            f;
+  Vec            x, f;
   KSP            ksp;
   PC             pc;
   MS             ms;
@@ -49,24 +49,41 @@ int main(int argc, char *argv[])
 
   PetscCall(PetscInitialize(&argc, &argv, NULL, NULL));
   PetscCall(ParMGMCInitialize());
-
   PetscCall(MSCreate(MPI_COMM_WORLD, &ms));
   PetscCall(MSSetFromOptions(ms));
   PetscCall(MSSetAssemblyOnly(ms, PETSC_TRUE));
   PetscCall(MSSetUp(ms));
   PetscCall(MSGetPrecisionMatrix(ms, &A));
   PetscCall(MSGetDM(ms, &dm));
-}
-/*
+  PetscInt ndof,m;
+  PetscCall(MatGetSize(A,&ndof,&m));
+  printf("Matrix size = %d x %d\n",ndof,m);
   PetscCall(KSPCreate(MPI_COMM_WORLD, &ksp));
   PetscCall(KSPSetDM(ksp, dm));
-
   // Observations
   PoissonGibbsCtx ctx;
+  PetscCall(VecCreate(MPI_COMM_WORLD, &ctx.event_counts));
+  PetscCall(VecSetSizes(ctx.event_counts, PETSC_DECIDE, nobs));
+  PetscCall(VecSetFromOptions(ctx.event_counts));
+  PetscCall(VecSet(ctx.event_counts,2));
   PetscCall(VecCreate(MPI_COMM_WORLD, &ctx.nu));
   PetscCall(VecSetSizes(ctx.nu, PETSC_DECIDE, nobs));
   PetscCall(VecSetFromOptions(ctx.nu));
-  PetscCall(VecCreate(MPI_COMM_WORLD, &ctx.nu));
+  PetscCall(MatCreateSeqAIJ(MPI_COMM_WORLD,ndof,nobs,nobs,NULL,&ctx.B));
+  for (PetscInt j=0; j<nobs; ++j) {
+    PetscInt i = (PetscInt) ndof*(1.0*j/nobs);
+    PetscCall(MatSetValue(ctx.B, i, j, 1.0, INSERT_VALUES));
+  }
+  PetscCall(MatAssemblyBegin(ctx.B, MAT_FINAL_ASSEMBLY));
+  PetscCall(MatAssemblyEnd(ctx.B, MAT_FINAL_ASSEMBLY));
+  // Create vectors
+  PetscCall(VecCreate(MPI_COMM_WORLD, &x));
+  PetscCall(VecSetSizes(x, PETSC_DECIDE, ndof));
+  PetscCall(VecSetFromOptions(x));
+  PetscCall(VecCreate(MPI_COMM_WORLD, &f));
+  PetscCall(VecSetSizes(f, PETSC_DECIDE, ndof));
+  PetscCall(VecSetFromOptions(f));
+
 #ifdef PARMGMC_PETSC_KSP_DMACTIVE_3ARG
   PetscCall(KSPSetDMActive(ksp, KSP_DMACTIVE_OPERATOR, PETSC_FALSE));
 #else
@@ -98,12 +115,12 @@ int main(int argc, char *argv[])
 
   PetscCall(VecDestroy(&x));
   PetscCall(VecDestroy(&f));
-  PetscCall(MatDestroy(&B));
-  PetscCall(MatDestroy(&A));
+  PetscCall(VecDestroy(&ctx.event_counts));
+  PetscCall(VecDestroy(&ctx.nu));
+  PetscCall(MatDestroy(&ctx.B));
   PetscCall(KSPDestroy(&ksp));
   PetscCall(MSDestroy(&ms));
   PetscCall(ParMGMCFinalize());
   PetscCall(PetscFinalize());
   return 0;
 }
-*/
