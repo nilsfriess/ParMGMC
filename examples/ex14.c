@@ -87,6 +87,7 @@ int main(int argc, char *argv[])
   PetscCall(VecSetSizes(ctx.nu, PETSC_DECIDE, nobs));
   PetscCall(VecSetFromOptions(ctx.nu));
   PetscCall(MatCreateSeqAIJ(MPI_COMM_WORLD,ndof,nobs,nobs,NULL,&ctx.B));
+  #include "petscmat.h" 
   for (PetscInt j=0; j<nobs; ++j) {
     PetscInt i = (PetscInt) ndof*(1.0*j/nobs);
     PetscCall(MatSetValue(ctx.B, i, j, 1.0, INSERT_VALUES));
@@ -115,6 +116,7 @@ int main(int argc, char *argv[])
   PetscCall(DMCreateGlobalVector(dm, &x));
 
   PetscCall(KSPGetPC(ksp, &pc));
+  PetscCall(PCSetApplicationContext(pc, &ctx));
   PetscCall(KSPSolve(ksp, f, x));
 
   {
