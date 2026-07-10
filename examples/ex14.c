@@ -11,7 +11,24 @@
  *  Tests Poisson Gibbs sampler
  */
 
-// ex14 -ksp_type richardson -pc_type gamgmc -pc_gamgmc_mg_type mg -gamgmc_mg_coarse_pc_type sorgibbs -box_faces 2 -dm_refine_hierarchy 2 -with_lr -nburnin 500 -ksp_max_it 2000 -tol 0.10
+// RUN: %cc %s -o %t %flags && %mpirun -np %NP %t -ksp_type richardson -pc_type gamgmc -pc_gamgmc_mg_type mg -gamgmc_mg_coarse_pc_type poissongibbs -dm_refine_hierarchy 2 -ksp_max_it 10 -ksp_min_it 10 -ksp_norm_type none -ksp_convergence_test skip
+
+/*
+Command line options:
+
+  ./build/examples/ex14 \
+      -ksp_type richardson \
+      -pc_type gamgmc \
+      -pc_gamgmc_mg_type mg \
+      -gamgmc_mg_coarse_pc_type poissongibbs \
+      -dm_refine_hierarchy 2 \
+      -ksp_max_it 10 \
+      -ksp_min_it 10 \
+      -ksp_norm_type none \
+      -ksp_convergence_test skip \
+      -ksp_view :ksp_view.txt
+
+*/
 
 #include <parmgmc/mc_sor.h>
 #include <parmgmc/ms.h>
