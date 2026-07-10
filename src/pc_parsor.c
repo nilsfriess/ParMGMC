@@ -967,7 +967,7 @@ static PetscErrorCode PCSetUp_PARSOR(PC pc)
   PetscFunctionReturn(PETSC_SUCCESS);
 }
 
-static PetscErrorCode PCSetFromOptions_PARSOR(PC pc, PetscOptionItems_ARG PetscOptionsObject)
+static PetscErrorCode PCSetFromOptions_PARSOR(PC pc, PetscOptionItems PetscOptionsObject)
 {
   PC_PARSOR parsor = (PC_PARSOR)pc->data;
 

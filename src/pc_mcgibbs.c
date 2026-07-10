@@ -187,7 +187,7 @@ static PetscErrorCode PCApplyRichardson_MulticolorGibbs(PC pc, Vec b, Vec y, Vec
   PetscFunctionReturn(PETSC_SUCCESS);
 }
 
-static PetscErrorCode PCSetFromOptions_MulticolorGibbs(PC pc, PetscOptionItems_ARG PetscOptionsObject)
+static PetscErrorCode PCSetFromOptions_MulticolorGibbs(PC pc, PetscOptionItems PetscOptionsObject)
 {
   PC_MulticolorGibbs *pg = pc->data;
   PetscBool           flag;

@@ -399,7 +399,7 @@ static PetscErrorCode PCSetUp_GAMGMC(PC pc)
   PetscFunctionReturn(PETSC_SUCCESS);
 }
 
-static PetscErrorCode PCSetFromOptions_GAMGMC(PC pc, PetscOptionItems_ARG PetscOptionsObject)
+static PetscErrorCode PCSetFromOptions_GAMGMC(PC pc, PetscOptionItems PetscOptionsObject)
 {
   PC_GAMGMC pg = pc->data;
 

@@ -405,7 +405,7 @@ PetscErrorCode PCCholSamplerSetIsCoarseGAMG(PC pc, PetscBool flag)
   PetscFunctionReturn(PETSC_SUCCESS);
 }
 
-static PetscErrorCode PCSetFromOptions_CholSampler(PC pc, PetscOptionItems_ARG PetscOptionsObject)
+static PetscErrorCode PCSetFromOptions_CholSampler(PC pc, PetscOptionItems PetscOptionsObject)
 {
   PC_CholSampler chol = pc->data;
   PetscBool      flag = PETSC_FALSE;

@@ -165,7 +165,7 @@ static PetscErrorCode PCSetUp_PoissonGibbs(PC pc)
   PetscFunctionReturn(PETSC_SUCCESS);
 }
 
-static PetscErrorCode PCSetFromOptions_PoissonGibbs(PC pc, PetscOptionItems_ARG PetscOptionsObject)
+static PetscErrorCode PCSetFromOptions_PoissonGibbs(PC pc, PetscOptionItems PetscOptionsObject)
 {
   PC_PoissonGibbs poissongibbs = pc->data;
   PetscFunctionBegin;
