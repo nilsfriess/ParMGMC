@@ -19,13 +19,11 @@
 #include <petscpc.h>
 #include <petscsys.h>
 #include <petscsystypes.h>
-#include <petscvec.h>
 #include <stddef.h>
 #include <string.h>
 
 typedef struct {
   PetscRandom prand; // Random numbers
-  Mat A;
   PetscInt  sample_index;
   void *cbctx;
   PetscErrorCode (*scb)(PetscInt, Vec, void *);
@@ -92,11 +90,74 @@ static PetscErrorCode PoissonGibbsPostSolveImpl(KSP ksp, Vec x, Vec res, PetscCt
 /* Generate a new sample (computational routine) */
 static PetscErrorCode PCPoissonGibbsSample(PC pc, Vec b, Vec y, Vec w)
 {
-  PC_PoissonGibbs poissongibbs = pc->data;
+  PetscInt nrow, ncol, ncols_A, ncols_B, nnz, nnz_per_row_A, nnz_per_row_B;
+  PetscInt *cols_A;
+  PetscScalar *vals_A;
+  PetscInt *cols_B;
+  PetscScalar *vals_B;
+  PetscScalar A_ii;
+  PetscScalar sigma;
+  PetscScalar mu_bar;
+  PetscScalar* y_local;
+  PetscScalar* n_local;
+  PetscInt* row_ptr;
+  PetscBool done;
+  Vec diag;
+  PoissonGibbsCtx* ctx;
 
   PetscFunctionBeginUser;
-  printf("Sampling...\n");
+  PC_PoissonGibbs poissongibbs = pc->data;
+  PetscCall(PCGetApplicationContext(pc, &ctx));
+  Mat A = pc->pmat;
+  Mat B = ctx->B;
+
+  // Work out maximum number of entries per row for A and B
+  nnz_per_row_A = 0;
+  PetscCall(MatGetRowIJ(A, 0, PETSC_FALSE, PETSC_FALSE, &nnz, &row_ptr, NULL, &done));
+  for (PetscInt i=1; i<nnz; ++i) {
+    nnz_per_row_A = PetscMax(nnz_per_row_A,row_ptr[i]-row_ptr[i-1]);
+  }
+  PetscCall(MatRestoreRowIJ(A, 0, PETSC_FALSE, PETSC_FALSE, &nnz, &row_ptr, NULL, &done));
+  nnz_per_row_B = 0;
+  PetscCall(MatGetRowIJ(B, 0, PETSC_FALSE, PETSC_FALSE, &nnz, &row_ptr, NULL, &done));
+  for (PetscInt i=1; i<nnz; ++i) {
+    nnz_per_row_B = PetscMax(nnz_per_row_B,row_ptr[i]-row_ptr[i-1]);
+  }
+  PetscCall(MatRestoreRowIJ(B, 0, PETSC_FALSE, PETSC_FALSE, &nnz, &row_ptr, NULL, &done));
+  PetscCall(PetscMalloc1(nnz_per_row_A, &y_local));
+  PetscCall(PetscMalloc1(nnz_per_row_B, &n_local));
+
+  Vec event_counts = ctx->event_counts;
+  PetscCall(VecDuplicate(y, &diag));
+  PetscCall(MatGetDiagonal(A, diag));
+  PetscCall(MatGetSize(A, &nrow, &ncol));
+  for (PetscInt i=0; i<nrow; ++i) {
+    PetscCall(VecGetValues(diag, 1, &i, &A_ii));
+    sigma = 1./sqrt(A_ii);
+    PetscCall(MatGetRow(A, i, &ncols_A, &cols_A, &vals_A));
+    PetscCall(MatGetRow(B, i, &ncols_B, &cols_B, &vals_B));
+    PetscCall(VecGetValues(b, 1, &i, &mu_bar));
+    PetscCall(VecGetValues(y, ncols_A, cols_A, y_local));
+    for (PetscInt j=0; j<ncols_A; ++j) {
+      mu_bar -= vals_A[j]*y_local[j];
+    }
+    PetscCall(VecGetValues(event_counts, ncols_B, cols_B, n_local));
+    for (PetscInt j=0; j<ncols_B; ++j) {
+      mu_bar += vals_B[j]*n_local[j];
+    }
+    if (ncols_B > 0) {
+      // sample with rejection sampling
+    } else {
+      // just draw a Gaussian random variable with mean mu_bar and width sigma
+    }
+    mu_bar /= A_ii;
+    PetscCall(MatRestoreRow(A, i, &ncols_A, &cols_A, &vals_A));
+    PetscCall(MatRestoreRow(B, i, &ncols_B, &cols_B, &vals_B));
+  }
   PetscCall(VecCopy(y,w));
+  PetscCall(PetscFree(y_local));
+  PetscCall(PetscFree(n_local));
+  PetscCall(VecDestroy(&diag));
   PetscFunctionReturn(PETSC_SUCCESS);
 }
 
@@ -130,7 +191,6 @@ static PetscErrorCode PCReset_PoissonGibbs(PC pc)
   PC_PoissonGibbs poissongibbs = pc->data;
 
   PetscFunctionBeginUser;
-  poissongibbs->A = NULL;
   PetscCall(PetscRandomDestroy(&poissongibbs->prand));
   if (poissongibbs->del_scb) {
     PetscCall(poissongibbs->del_scb(poissongibbs->cbctx));
@@ -159,7 +219,6 @@ static PetscErrorCode PCSetUp_PoissonGibbs(PC pc)
   PC_PoissonGibbs poissongibbs = pc->data;
   
   PetscFunctionBeginUser;
-  poissongibbs->A = pc->pmat;
   PetscCall(PetscObjectComposeFunction((PetscObject)pc, "PCPostSolve_C", (void (*)())PoissonGibbsPostSolveImpl));
   PetscCall(PetscObjectComposeFunction((PetscObject)pc, "PCDestroyContext_C", (void (*)())PoissonGibbsDestroyCtxImpl));
   PetscCall(PetscObjectComposeFunction((PetscObject)pc, "PCCoarsenContext_C", (void (*)())PoissonGibbsCoarsenCtxImpl));
