@@ -88,12 +88,13 @@ message(STATUS ${PARMGMC_INCLUDES})
 target_sources(parmgmc
 	PRIVATE
 	    src/pc_sorgibbs.c
+      src/pc_poissongibbs.c
 	    src/pc_mcgibbs.c
 	    src/pc_gamgmc.c
 	    src/pc_chols.c
 	    src/pc_parsor.c
 	    src/mc_sor.c
-            src/woodbury.c
+      src/woodbury.c
 	    src/parmgmc.c
 	    src/problems.c
 	    src/ms.c

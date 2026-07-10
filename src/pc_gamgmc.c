@@ -9,6 +9,7 @@
 #include "parmgmc/pc/pc_gamgmc.h"
 #include "parmgmc/parmgmc.h"
 #include "parmgmc/pc/pc_chols.h"
+#include "parmgmc/pc/pc_sorgibbs.h"
 
 #include <petsc/private/pcimpl.h>
 #include <petscerror.h>
@@ -65,6 +66,8 @@
     `PCGAMGMCGetInternalPC(PC, PC*)`.
 */
 
+
+ 
 typedef struct _PC_GAMGMC {
   char      mgtype[64];
   PC        mg;
@@ -81,13 +84,27 @@ static PetscErrorCode PCDestroy_GAMGMC(PC pc)
 {
   PC_GAMGMC pg = pc->data;
   PetscInt  levels;
+  KSP ksp;
+  PC pcc;
+  PetscCtx ctx;
 
   PetscFunctionBeginUser;
+  PetscCall(PCMGGetLevels(pg->mg, &levels));
   if (pg->del_scb) PetscCall(pg->del_scb(pg->cbctx));
   if (pg->As) {
-    PetscCall(PCMGGetLevels(pg->mg, &levels));
     for (PetscInt l = 0; l < levels - 1; ++l) PetscCall(MatDestroy(&(pg->As[l])));
     PetscCall(PetscFree(pg->As));
+  }
+  // Delete application contexts of coarse levels
+  for (PetscInt l = 1; l < levels - 1; ++l) {
+    PetscErrorCode (*destroyctx)(PetscCtx);
+    PetscCall(PetscObjectQueryFunction((PetscObject)pc, "PCDestroyCtx_C", &destroyctx));
+    if (destroyctx) {
+      PetscCall(PCMGGetSmoother(pg->mg, l, &ksp));
+      PetscCall(KSPGetPC(ksp, &pcc));
+      PetscCall(PCGetApplicationContext(pcc, &ctx));
+      PetscCall(destroyctx(ctx));
+    }
   }
   PetscCall(VecDestroy(&pg->work));
   PetscCall(PCDestroy(&pg->mg));
@@ -152,29 +169,56 @@ static PetscErrorCode PCGAMGMC_SetUpHierarchy(PC pc)
   PetscFunctionBeginUser;
   PetscCall(MatGetType(pc->pmat, &type));
   PetscCall(PetscStrcmp(type, MATLRC, &islrc));
-
   PetscCall(PCMGGetLevels(pg->mg, &levels));
+  // Set application context on finest level
+  PetscCtx ctx;
+  KSP kspf;
+  PC  pcf;
+  PetscCall(PCMGGetSmoother(pg->mg, levels-1, &kspf));
+  PetscCall(PCGetApplicationContext(pc, &ctx));
+  PetscCall(KSPSetApplicationContext(kspf, ctx));
+  // Set application context on all coarse levels
+  for (PetscInt l = levels - 1; l > 1; --l) {
+    KSP kspc;
+    PC  pcc;
+    Mat Ip;
+    PetscCall(PCMGGetSmoother(pg->mg, l - 1, &kspc));
+    PetscCall(KSPGetPC(kspc, &pcc));
+    PetscCall(PCMGGetSmoother(pg->mg, l, &kspf));
+    PetscCall(KSPGetPC(kspf, &pcf));
+    PetscErrorCode (*coarsenctx)(PC, Mat, PC);
+    PetscCall(PetscObjectQueryFunction((PetscObject)pcc, "PCCoarsenContext_C", &coarsenctx));
+    if (coarsenctx) {
+      PetscCall(PCMGGetInterpolation(pg->mg, l, &Ip));
+      PetscCall(coarsenctx(pcf, Ip, pcc));
+    }
+    PetscErrorCode (*postsolve)(KSP, Vec, Vec, PetscCtx);
+    PetscCall(PetscObjectQueryFunction((PetscObject)pcf, "PCPostSolve_C", &postsolve));
+    if (postsolve) {
+      PetscCall(PCGetApplicationContext(pcc, &ctx));
+      PetscCall(KSPSetPostSolve(kspf, postsolve, ctx));
+    }
+  }
   if (islrc) {
     PetscCall(PetscMalloc1(levels, &pg->As));
-
     pg->As[levels - 1] = pc->pmat;
     for (PetscInt l = levels - 1; l > 0; --l) {
       Mat Ac, Bf, Bc, Ip;
       Vec Sf;
       KSP kspc;
       PC  pcc;
-
       PetscCall(MatLRCGetMats(pg->As[l], NULL, &Bf, &Sf, NULL));
+      PetscCall(PCMGGetSmoother(pg->mg, l, &kspf));
+      PetscCall(KSPGetPC(kspf, &pcf));
       PetscCall(PCMGGetSmoother(pg->mg, l - 1, &kspc));
       PetscCall(KSPGetPC(kspc, &pcc));
       PetscCall(PCGetOperators(pcc, NULL, &Ac));
       PetscCall(PCMGGetInterpolation(pg->mg, l, &Ip));
-
       PetscCall(MatTransposeMatMult(Ip, Bf, MAT_INITIAL_MATRIX, 1, &Bc));
       PetscCall(MatCreateLRC(Ac, Bc, Sf, NULL, &(pg->As[l - 1])));
       PetscCall(MatDestroy(&Bc));
     }
-
+    
     for (PetscInt l = levels - 1; l >= 0; --l) {
       KSP ksps;
       PC  pcs;

@@ -12,6 +12,7 @@
 #include "parmgmc/pc/pc_mcgibbs.h"
 #include "parmgmc/pc/pc_parsor.h"
 #include "parmgmc/pc/pc_sorgibbs.h"
+#include "parmgmc/pc/pc_poissongibbs.h"
 #include "parmgmc/pc/woodbury.h"
 
 #include <petsc/private/pcimpl.h>
@@ -45,6 +46,7 @@ static PetscErrorCode ParMGMCRegisterPCAll(void)
 {
   PetscFunctionBeginUser;
   PetscCall(PCRegister(PCSORGIBBS, PCCreate_SORGibbs));
+  PetscCall(PCRegister(PCPOISSONGIBBS, PCCreate_PoissonGibbs));
   PetscCall(PCRegister(PCMCGIBBS, PCCreate_MulticolorGibbs));
   PetscCall(PCRegister(PCGAMGMC, PCCreate_GAMGMC));
   PetscCall(PCRegister(PCCHOLSAMPLER, PCCreate_CholSampler));
