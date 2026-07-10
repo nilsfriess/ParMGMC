@@ -87,10 +87,26 @@ static PetscErrorCode PoissonGibbsPostSolveImpl(KSP ksp, Vec x, Vec res, PetscCt
   PetscFunctionReturn(PETSC_SUCCESS);
 }
 
+static PetscErrorCode PCPoissonGetMaxNnzPerRow(Mat mat, PetscInt *max_nnz_per_row) {
+  PetscInt nnz, nnz_per_row;
+  PetscInt* row_ptr;
+  PetscBool done;
+
+  PetscFunctionBeginUser;
+  // Work out maximum number of entries per row for A and B
+  *max_nnz_per_row = 0;
+  PetscCall(MatGetRowIJ(mat, 0, PETSC_FALSE, PETSC_FALSE, &nnz, &row_ptr, NULL, &done));
+  for (PetscInt i=1; i<nnz; ++i) {
+    *max_nnz_per_row = PetscMax(*max_nnz_per_row,row_ptr[i]-row_ptr[i-1]);
+  }
+  PetscCall(MatRestoreRowIJ(mat, 0, PETSC_FALSE, PETSC_FALSE, &nnz, &row_ptr, NULL, &done));
+  PetscFunctionReturn(PETSC_SUCCESS);
+}
+
 /* Generate a new sample (computational routine) */
 static PetscErrorCode PCPoissonGibbsSample(PC pc, Vec b, Vec y, Vec w)
 {
-  PetscInt nrow, ncol, ncols_A, ncols_B, nnz, nnz_per_row_A, nnz_per_row_B;
+  PetscInt nrow, ncol, ncols_A, ncols_B, max_nnz_per_row;
   PetscInt *cols_A;
   PetscScalar *vals_A;
   PetscInt *cols_B;
@@ -100,8 +116,6 @@ static PetscErrorCode PCPoissonGibbsSample(PC pc, Vec b, Vec y, Vec w)
   PetscScalar mu_bar;
   PetscScalar* y_local;
   PetscScalar* n_local;
-  PetscInt* row_ptr;
-  PetscBool done;
   Vec diag;
   PoissonGibbsCtx* ctx;
 
@@ -111,21 +125,10 @@ static PetscErrorCode PCPoissonGibbsSample(PC pc, Vec b, Vec y, Vec w)
   Mat A = pc->pmat;
   Mat B = ctx->B;
 
-  // Work out maximum number of entries per row for A and B
-  nnz_per_row_A = 0;
-  PetscCall(MatGetRowIJ(A, 0, PETSC_FALSE, PETSC_FALSE, &nnz, &row_ptr, NULL, &done));
-  for (PetscInt i=1; i<nnz; ++i) {
-    nnz_per_row_A = PetscMax(nnz_per_row_A,row_ptr[i]-row_ptr[i-1]);
-  }
-  PetscCall(MatRestoreRowIJ(A, 0, PETSC_FALSE, PETSC_FALSE, &nnz, &row_ptr, NULL, &done));
-  nnz_per_row_B = 0;
-  PetscCall(MatGetRowIJ(B, 0, PETSC_FALSE, PETSC_FALSE, &nnz, &row_ptr, NULL, &done));
-  for (PetscInt i=1; i<nnz; ++i) {
-    nnz_per_row_B = PetscMax(nnz_per_row_B,row_ptr[i]-row_ptr[i-1]);
-  }
-  PetscCall(MatRestoreRowIJ(B, 0, PETSC_FALSE, PETSC_FALSE, &nnz, &row_ptr, NULL, &done));
-  PetscCall(PetscMalloc1(nnz_per_row_A, &y_local));
-  PetscCall(PetscMalloc1(nnz_per_row_B, &n_local));
+  PetscCall(PCPoissonGetMaxNnzPerRow(A, &max_nnz_per_row));
+  PetscCall(PetscMalloc1(max_nnz_per_row, &y_local));
+  PetscCall(PCPoissonGetMaxNnzPerRow(B, &max_nnz_per_row));
+  PetscCall(PetscMalloc1(max_nnz_per_row, &n_local));
 
   Vec event_counts = ctx->event_counts;
   PetscCall(VecDuplicate(y, &diag));
