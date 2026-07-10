@@ -160,9 +160,9 @@ static PetscErrorCode PCSetUp_PoissonGibbs(PC pc)
   
   PetscFunctionBeginUser;
   poissongibbs->A = pc->pmat;
-  PetscCall(PetscObjectComposeFunction(pc, "PCPostSolve_C", (void (*)())PoissonGibbsPostSolveImpl));
-  PetscCall(PetscObjectComposeFunction(pc, "PCDestroyContext_C", (void (*)())PoissonGibbsDestroyCtxImpl));
-  PetscCall(PetscObjectComposeFunction(pc, "PCCoarsenContext_C", (void (*)())PoissonGibbsCoarsenCtxImpl));
+  PetscCall(PetscObjectComposeFunction((PetscObject)pc, "PCPostSolve_C", (void (*)())PoissonGibbsPostSolveImpl));
+  PetscCall(PetscObjectComposeFunction((PetscObject)pc, "PCDestroyContext_C", (void (*)())PoissonGibbsDestroyCtxImpl));
+  PetscCall(PetscObjectComposeFunction((PetscObject)pc, "PCCoarsenContext_C", (void (*)())PoissonGibbsCoarsenCtxImpl));
   PetscFunctionReturn(PETSC_SUCCESS);
 }
 
