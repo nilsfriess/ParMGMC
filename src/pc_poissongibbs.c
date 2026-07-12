@@ -145,19 +145,6 @@ static PetscScalar grad_phi(PetscScalar theta,
   return g;
 }
 
-/* bar(F) */
-static PetscScalar Fbar(PetscScalar theta,
-                        PetscScalar theta_bar,
-                        PetscScalar sigma,
-                        PetscInt n_k,
-                        PetscScalar* nu,
-                        PetscScalar* b) {
-  PetscScalar f = 0;
-  for (PetscInt k=0;k<n_k;++k) 
-    f += exp(b[k]*theta+nu[k]) + ((theta_bar - theta)*b[k]-1.0)*exp(b[k]*theta_bar+nu[k]);
-  return f;
-}
-
 static PetscErrorCode PCPoissonGibbsFindMaximum(PetscScalar mu_bar,
                                                 PetscScalar sigma,
                                                 PetscInt n_k,
@@ -255,10 +242,10 @@ static PetscErrorCode PCPoissonGibbsSample(PC pc, Vec b, Vec y)
     sigma = 1./sqrt(diag[i]);
     PetscCall(MatGetRow(A, i, &ncols_A, &cols_A, &vals_A));
     PetscCall(MatGetRow(B, i, &ncols_B, &cols_B, &vals_B));
-    mu_bar = f_rhs[i];
     PetscCall(VecGetValues(y, ncols_A, cols_A, y_local));
     PetscCall(VecGetValues(ctx->event_counts, ncols_B, cols_B, n_local));
     PetscCall(VecGetValues(ctx->nu, ncols_B, cols_B, nu_local));
+    mu_bar = f_rhs[i];
     for (PetscInt j=0; j<ncols_A; ++j) {
       mu_bar -= vals_A[j]*y_local[j];
     }
@@ -274,7 +261,10 @@ static PetscErrorCode PCPoissonGibbsSample(PC pc, Vec b, Vec y)
         PCPoissonGibbsStandardNormal(pc, &r);
         y_new = theta_bar + sigma*r;
         PCPoissonGibbsUniform(pc, &r);
-        accepted = (log(r) <= -Fbar(y_new, theta_bar, sigma, ncols_B, nu_local, vals_B));
+        PetscScalar Fbar = 0;
+        for (PetscInt k=0;k<ncols_B;++k) 
+          Fbar += exp(vals_B[k]*y_new+nu_local[k]) + ((theta_bar - y_new)*vals_B[k]-1.0)*exp(vals_B[k]*y_new+nu_local[k]);
+        accepted = (log(r) <= -Fbar);
       }
     } else {
       // just draw a Gaussian random variable with mean mu_bar and width sigma
