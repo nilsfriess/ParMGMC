@@ -227,6 +227,7 @@ static PetscErrorCode PCPoissonGibbsSample(PC pc, Vec b, Vec y)
   Vec w;
   Vec v_diag;
   PetscScalar* diag;
+  PetscScalar* f_rhs;
   PetscScalar r, y_new;
   PoissonGibbsCtx* ctx;
   PC_PoissonGibbs poissongibbs = pc->data;
@@ -247,19 +248,20 @@ static PetscErrorCode PCPoissonGibbsSample(PC pc, Vec b, Vec y)
   
   PetscCall(VecDuplicate(y, &v_diag));
   PetscCall(MatGetDiagonal(A, v_diag));
-  PetscCall(VecGetArray(v_diag, &diag));
+  PetscCall(VecGetArrayRead(v_diag, &diag));
+  PetscCall(VecGetArrayRead(b, &f_rhs));
   PetscCall(MatGetSize(A, &nrow, &ncol));
   for (PetscInt i=0; i<nrow; ++i) {
     sigma = 1./sqrt(diag[i]);
     PetscCall(MatGetRow(A, i, &ncols_A, &cols_A, &vals_A));
     PetscCall(MatGetRow(B, i, &ncols_B, &cols_B, &vals_B));
-    PetscCall(VecGetValues(b, 1, &i, &mu_bar));
+    mu_bar = f_rhs[i];
     PetscCall(VecGetValues(y, ncols_A, cols_A, y_local));
+    PetscCall(VecGetValues(ctx->event_counts, ncols_B, cols_B, n_local));
+    PetscCall(VecGetValues(ctx->nu, ncols_B, cols_B, nu_local));
     for (PetscInt j=0; j<ncols_A; ++j) {
       mu_bar -= vals_A[j]*y_local[j];
     }
-    PetscCall(VecGetValues(ctx->event_counts, ncols_B, cols_B, n_local));
-    PetscCall(VecGetValues(ctx->nu, ncols_B, cols_B, nu_local));
     for (PetscInt j=0; j<ncols_B; ++j) {
       mu_bar += vals_B[j]*n_local[j];
     }
@@ -283,7 +285,8 @@ static PetscErrorCode PCPoissonGibbsSample(PC pc, Vec b, Vec y)
     PetscCall(MatRestoreRow(A, i, &ncols_A, &cols_A, &vals_A));
     PetscCall(MatRestoreRow(B, i, &ncols_B, &cols_B, &vals_B));
   }
-  PetscCall(VecRestoreArray(v_diag, &diag));
+  PetscCall(VecRestoreArrayRead(v_diag, &diag));
+  PetscCall(VecRestoreArrayRead(b, &f_rhs));
   PetscCall(PetscFree(y_local));
   PetscCall(PetscFree(n_local));
   PetscCall(PetscFree(nu_local));
