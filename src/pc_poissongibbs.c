@@ -280,7 +280,6 @@ static PetscErrorCode PCPoissonGibbsSample(PC pc, Vec b, Vec y)
       y_new = mu_bar + sigma*r;
     }
     PetscCall(VecSetValue(y, i, y_new, INSERT_VALUES));
-
     PetscCall(MatRestoreRow(A, i, &ncols_A, &cols_A, &vals_A));
     PetscCall(MatRestoreRow(B, i, &ncols_B, &cols_B, &vals_B));
   }
@@ -288,7 +287,7 @@ static PetscErrorCode PCPoissonGibbsSample(PC pc, Vec b, Vec y)
   PetscCall(PetscFree(y_local));
   PetscCall(PetscFree(n_local));
   PetscCall(PetscFree(nu_local));
-  PetscCall(VecDestroy(&diag));
+  PetscCall(VecDestroy(&v_diag));
   PetscFunctionReturn(PETSC_SUCCESS);
 }
 
