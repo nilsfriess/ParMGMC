@@ -263,7 +263,7 @@ static PetscErrorCode PCPoissonGibbsSample(PC pc, Vec b, Vec y)
         PCPoissonGibbsUniform(pc, &r);
         PetscScalar Fbar = 0;
         for (PetscInt k=0;k<ncols_B;++k) 
-          Fbar += exp(vals_B[k]*y_new+nu_local[k]) + ((theta_bar - y_new)*vals_B[k]-1.0)*exp(vals_B[k]*y_new+nu_local[k]);
+          Fbar += (exp(vals_B[k]*y_new) + ((theta_bar - y_new)*vals_B[k]-1.0)*exp(vals_B[k]*theta_bar))*exp(nu_local[k]);
         accepted = (log(r) <= -Fbar);
       }
     } else {
