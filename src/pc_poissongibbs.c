@@ -166,7 +166,7 @@ static PetscErrorCode PCPoissonGibbsFindMaximum(PetscScalar mu_bar,
                                                 PetscScalar* theta_bar) {
   PetscScalar theta, theta_old, theta_left, theta_right, theta_mid;
   PetscScalar g, g_old, g_left, g_mid;
-  PetscScalar tolerance = 1.E-12;
+  PetscScalar bisection_tolerance = 1.E-12;
                                                   
   PetscFunctionBeginUser;
   g = grad_phi(theta, mu_bar, sigma, n_k, nu, b);
@@ -196,7 +196,7 @@ static PetscErrorCode PCPoissonGibbsFindMaximum(PetscScalar mu_bar,
     g_left = g;
   }
 
-  while (theta_right-theta_left > tolerance) {
+  while (theta_right-theta_left > bisection_tolerance) {
     theta_mid = 0.5*(theta_left+theta_right);
     g_mid = grad_phi(theta_mid, mu_bar, sigma, n_k, nu, b);
     if ( ((g_left > 0) && (g_mid > 0)) || (g_left < 0) && (g_mid < 0) ) {
@@ -218,7 +218,6 @@ static PetscErrorCode PCPoissonGibbsSample(PC pc, Vec b, Vec y)
   PetscScalar *vals_A;
   PetscInt *cols_B;
   PetscScalar *vals_B;
-  PetscScalar A_ii;
   PetscScalar sigma;
   PetscScalar mu_bar;
   PetscScalar* y_local;
@@ -226,7 +225,8 @@ static PetscErrorCode PCPoissonGibbsSample(PC pc, Vec b, Vec y)
   PetscScalar* nu_local;
   PetscScalar theta_bar;
   Vec w;
-  Vec diag;
+  Vec v_diag;
+  PetscScalar* diag;
   PetscScalar r, y_new;
   PoissonGibbsCtx* ctx;
   PC_PoissonGibbs poissongibbs = pc->data;
@@ -245,12 +245,12 @@ static PetscErrorCode PCPoissonGibbsSample(PC pc, Vec b, Vec y)
   PetscCall(PetscMalloc1(max_nnz_per_row, &n_local));
   PetscCall(PetscMalloc1(max_nnz_per_row, &nu_local));
   
-  PetscCall(VecDuplicate(y, &diag));
-  PetscCall(MatGetDiagonal(A, diag));
+  PetscCall(VecDuplicate(y, &v_diag));
+  PetscCall(MatGetDiagonal(A, v_diag));
+  PetscCall(VecGetArray(v_diag, &diag));
   PetscCall(MatGetSize(A, &nrow, &ncol));
   for (PetscInt i=0; i<nrow; ++i) {
-    PetscCall(VecGetValues(diag, 1, &i, &A_ii));
-    sigma = 1./sqrt(A_ii);
+    sigma = 1./sqrt(diag[i]);
     PetscCall(MatGetRow(A, i, &ncols_A, &cols_A, &vals_A));
     PetscCall(MatGetRow(B, i, &ncols_B, &cols_B, &vals_B));
     PetscCall(VecGetValues(b, 1, &i, &mu_bar));
@@ -263,7 +263,7 @@ static PetscErrorCode PCPoissonGibbsSample(PC pc, Vec b, Vec y)
     for (PetscInt j=0; j<ncols_B; ++j) {
       mu_bar += vals_B[j]*n_local[j];
     }
-    mu_bar /= A_ii;
+    mu_bar *= sigma*sigma;
     if (ncols_B > 0) {
       // sample with rejection sampling
       PetscCall(PCPoissonGibbsFindMaximum(mu_bar, sigma, ncols_B, nu_local, vals_B, &theta_bar));
@@ -284,6 +284,7 @@ static PetscErrorCode PCPoissonGibbsSample(PC pc, Vec b, Vec y)
     PetscCall(MatRestoreRow(A, i, &ncols_A, &cols_A, &vals_A));
     PetscCall(MatRestoreRow(B, i, &ncols_B, &cols_B, &vals_B));
   }
+  PetscCall(VecRestoreArray(v_diag, &diag));
   PetscCall(PetscFree(y_local));
   PetscCall(PetscFree(n_local));
   PetscCall(PetscFree(nu_local));
