@@ -11,7 +11,7 @@
  *  Tests Poisson Gibbs sampler
  */
 
-// RUN: %cc %s -o %t %flags && %mpirun -np %NP %t -ksp_type richardson -pc_type gamgmc -pc_gamgmc_mg_type mg -gamgmc_mg_coarse_pc_type poissongibbs -dm_refine_hierarchy 2 -ksp_max_it 10 -ksp_min_it 10 -ksp_norm_type none -ksp_convergence_test skip
+// RUN: %cc %s -o %t %flags && %mpirun -np %NP %t -ksp_type richardson -pc_type gamgmc -pc_gamgmc_mg_type mg -gamgmc_mg_levels_pc_type poissongibbs -gamgmc_mg_coarse_pc_type poissongibbs -dm_refine_hierarchy 2 -ksp_max_it 10 -ksp_min_it 10 -ksp_norm_type none -ksp_convergence_test skip
 
 /*
 Command line options:
@@ -20,6 +20,7 @@ Command line options:
       -ksp_type richardson \
       -pc_type gamgmc \
       -pc_gamgmc_mg_type mg \
+      -gamgmc_mg_levels_pc_type poissongibbs \
       -gamgmc_mg_coarse_pc_type poissongibbs \
       -dm_refine_hierarchy 2 \
       -ksp_max_it 10 \
