@@ -96,7 +96,7 @@ static PetscErrorCode PCDestroy_GAMGMC(PC pc)
     PetscCall(PetscFree(pg->As));
   }
   // Delete application contexts of coarse levels
-  for (PetscInt l = 1; l < levels - 1; ++l) {
+  for (PetscInt l = 0; l < levels - 1; ++l) {
     PetscErrorCode (*destroyctx)(PetscCtx);
     PetscCall(PetscObjectQueryFunction((PetscObject)pc, "PCDestroyCtx_C", &destroyctx));
     if (destroyctx) {
@@ -178,7 +178,7 @@ static PetscErrorCode PCGAMGMC_SetUpHierarchy(PC pc)
   PetscCall(PCGetApplicationContext(pc, &ctx));
   PetscCall(KSPSetApplicationContext(kspf, ctx));
   // Set application context on all coarse levels
-  for (PetscInt l = levels - 1; l > 1; --l) {
+  for (PetscInt l = levels - 1; l > 0; --l) {
     KSP kspc;
     PC  pcc;
     Mat Ip;
