@@ -41,18 +41,21 @@ typedef struct {
  *   pc_coarse: preconditioner on coarse level
  */
 static PetscErrorCode PoissonGibbsCoarsenCtxImpl(PC pc_fine, Mat Ip, PC pc_coarse) {
-  PetscFunctionBeginUser;
   PoissonGibbsCtx* ctx_fine;   // context associated with fine PC
   PoissonGibbsCtx* ctx_coarse; // context associated with coarse PC 
+  PetscScalar drop_tolerance = 1.E-12;
+
+  PetscFunctionBeginUser;
   PetscCall(PCGetApplicationContext(pc_fine, &ctx_fine));
   ctx_coarse = (PoissonGibbsCtx*)malloc(sizeof(PoissonGibbsCtx));
   // Create and copy event counts
-  PetscCall(VecDuplicate(ctx_fine->event_counts,&ctx_coarse->event_counts));
-  PetscCall(VecCopy(ctx_fine->event_counts,ctx_coarse->event_counts));
+  PetscCall(VecDuplicate(ctx_fine->event_counts, &ctx_coarse->event_counts));
+  PetscCall(VecCopy(ctx_fine->event_counts, ctx_coarse->event_counts));
   // Create coarse level offset vector nu
-  PetscCall(VecDuplicate(ctx_fine->nu,&ctx_coarse->nu));
+  PetscCall(VecDuplicate(ctx_fine->nu, &ctx_coarse->nu));
   // Create coarse matrix B_c = P.B
   PetscCall(MatTransposeMatMult(Ip, ctx_fine->B, MAT_INITIAL_MATRIX, PETSC_DETERMINE, &ctx_coarse->B));
+  PetscCall(MatFilter(ctx_coarse->B, drop_tolerance, PETSC_TRUE, PETSC_FALSE));
   PetscCall(PCSetApplicationContext(pc_coarse, ctx_coarse));
   PetscFunctionReturn(PETSC_SUCCESS);
 }
@@ -262,8 +265,9 @@ static PetscErrorCode PCPoissonGibbsSample(PC pc, Vec b, Vec y)
         y_new = theta_bar + sigma*r;
         PCPoissonGibbsUniform(pc, &r);
         PetscScalar Fbar = 0;
-        for (PetscInt k=0;k<ncols_B;++k) 
-          Fbar += (exp(vals_B[k]*y_new) + ((theta_bar - y_new)*vals_B[k]-1.0)*exp(vals_B[k]*theta_bar))*exp(nu_local[k]);
+        for (PetscInt k=0;k<ncols_B;++k) {
+          Fbar += exp(vals_B[k]*y_new+nu_local[k]) + ((theta_bar - y_new)*vals_B[k]-1.0)*exp(vals_B[k]*theta_bar+nu_local[k]);
+        }
         accepted = (log(r) <= -Fbar);
       }
     } else {
