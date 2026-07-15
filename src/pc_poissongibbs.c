@@ -214,7 +214,7 @@ static PetscErrorCode PCPoissonGibbsSample(PC pc, Vec b, Vec y)
   PetscScalar *vals_B;
   PetscScalar sigma;
   PetscScalar mu_bar;
-  PetscScalar* y_local;
+  PetscScalar* theta;
   PetscScalar* n_local;
   PetscScalar* nu_local;
   PetscScalar theta_bar;
@@ -222,7 +222,7 @@ static PetscErrorCode PCPoissonGibbsSample(PC pc, Vec b, Vec y)
   Vec v_diag;
   PetscScalar* diag;
   PetscScalar* f_rhs;
-  PetscScalar r, y_new;
+  PetscScalar r, theta_prime;
   PoissonGibbsCtx* ctx;
   PC_PoissonGibbs poissongibbs = pc->data;
   PetscInt random_idx;
@@ -235,7 +235,6 @@ static PetscErrorCode PCPoissonGibbsSample(PC pc, Vec b, Vec y)
 
   // Storage for local part of vectors
   PetscCall(PCPoissonGetMaxNnzPerRow(A, &max_nnz_per_row));
-  PetscCall(PetscMalloc1(max_nnz_per_row, &y_local));
   PetscCall(PCPoissonGetMaxNnzPerRow(B, &max_nnz_per_row));
   PetscCall(PetscMalloc1(max_nnz_per_row, &n_local));
   PetscCall(PetscMalloc1(max_nnz_per_row, &nu_local));
@@ -244,19 +243,19 @@ static PetscErrorCode PCPoissonGibbsSample(PC pc, Vec b, Vec y)
   PetscCall(MatGetDiagonal(A, v_diag));
   PetscCall(VecGetArrayRead(v_diag, &diag));
   PetscCall(VecGetArrayRead(b, &f_rhs));
+  PetscCall(VecGetArray(y,&theta));
   PetscCall(MatGetOwnershipRange(A, &rstart, &rend));
   for (PetscInt i=rstart; i<rend; ++i) {
     PetscInt iloc = i - rstart;
     sigma = 1./sqrt(diag[iloc]);
     PetscCall(MatGetRow(A, i, &ncols_A, &cols_A, &vals_A));
     PetscCall(MatGetRow(B, i, &ncols_B, &cols_B, &vals_B));
-    PetscCall(VecGetValues(y, ncols_A, cols_A, y_local));
     PetscCall(VecGetValues(ctx->event_counts, ncols_B, cols_B, n_local));
     PetscCall(VecGetValues(ctx->nu, ncols_B, cols_B, nu_local));
     mu_bar = f_rhs[iloc];
     for (PetscInt j=0; j<ncols_A; ++j) {
       if (cols_A[j] != i)
-        mu_bar -= vals_A[j]*y_local[j];
+        mu_bar -= vals_A[j]*theta[cols_A[j]];
     }
     for (PetscInt j=0; j<ncols_B; ++j) {
       mu_bar += vals_B[j]*n_local[j];
@@ -268,11 +267,11 @@ static PetscErrorCode PCPoissonGibbsSample(PC pc, Vec b, Vec y)
       PetscBool accepted = PETSC_FALSE;
       while (!accepted) {
         PetscCall(PCPoissonGibbsStandardNormal(pc, &r));
-        y_new = theta_bar + sigma*r;
+        theta_prime = theta_bar + sigma*r;
         PetscCall(PCPoissonGibbsUniform(pc, &r));
         PetscScalar Fbar = 0;
-        for (PetscInt k=0;k<ncols_B;++k) {
-          Fbar += exp(vals_B[k]*y_new+nu_local[k]) + ((theta_bar - y_new)*vals_B[k]-1.0)*exp(vals_B[k]*theta_bar+nu_local[k]);
+        for (PetscInt k=0; k<ncols_B; ++k) {
+          Fbar += exp(vals_B[k]*theta_prime+nu_local[k]) + ((theta_bar - theta_prime)*vals_B[k]-1.0)*exp(vals_B[k]*theta_bar+nu_local[k]);
         }
         if (isnan(Fbar) || isinf(Fbar)) {
           return PetscError(PETSC_COMM_SELF, __LINE__, PETSC_FUNCTION_NAME, __FILE__, PETSC_ERR_FP, PETSC_ERROR_INITIAL, "Encountered invalid Fbar value (NaN or Inf) in Poisson-Gibbs rejection step");
@@ -282,17 +281,15 @@ static PetscErrorCode PCPoissonGibbsSample(PC pc, Vec b, Vec y)
     } else {
       // just draw a Gaussian random variable with mean mu_bar and width sigma
       PetscCall(PCPoissonGibbsStandardNormal(pc, &r));
-      y_new = mu_bar + sigma*r;
+      theta_prime = mu_bar + sigma*r;
     }
-    PetscCall(VecSetValue(y, i, y_new, INSERT_VALUES));
+    theta[iloc] = theta_prime;
     PetscCall(MatRestoreRow(A, i, &ncols_A, &cols_A, &vals_A));
     PetscCall(MatRestoreRow(B, i, &ncols_B, &cols_B, &vals_B));
-    PetscCall(VecAssemblyBegin(y));
-    PetscCall(VecAssemblyEnd(y));
   }
   PetscCall(VecRestoreArrayRead(v_diag, &diag));
   PetscCall(VecRestoreArrayRead(b, &f_rhs));
-  PetscCall(PetscFree(y_local));
+  PetscCall(VecRestoreArray(y, &theta));
   PetscCall(PetscFree(n_local));
   PetscCall(PetscFree(nu_local));
   PetscCall(VecDestroy(&v_diag));
