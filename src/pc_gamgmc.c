@@ -97,8 +97,10 @@ static PetscErrorCode PCDestroy_GAMGMC(PC pc)
   }
   // Delete application contexts of coarse levels
   for (PetscInt l = 0; l < levels - 1; ++l) {
+    PetscCall(PCMGGetSmoother(pg->mg, l, &ksp));
+    PetscCall(KSPGetPC(ksp, &pcc));
     PetscErrorCode (*destroyctx)(PetscCtx);
-    PetscCall(PetscObjectQueryFunction((PetscObject)pc, "PCDestroyCtx_C", &destroyctx));
+    PetscCall(PetscObjectQueryFunction((PetscObject)pcc, "PCDestroyContext_C", &destroyctx));
     if (destroyctx) {
       PetscCall(PCMGGetSmoother(pg->mg, l, &ksp));
       PetscCall(KSPGetPC(ksp, &pcc));

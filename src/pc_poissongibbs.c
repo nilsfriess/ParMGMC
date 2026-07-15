@@ -47,7 +47,7 @@ static PetscErrorCode PoissonGibbsCoarsenCtxImpl(PC pc_fine, Mat Ip, PC pc_coars
 
   PetscFunctionBeginUser;
   PetscCall(PCGetApplicationContext(pc_fine, &ctx_fine));
-  ctx_coarse = (PoissonGibbsCtx*)malloc(sizeof(PoissonGibbsCtx));
+  PetscCall(PetscNew(&ctx_coarse));
   // Create and copy event counts
   PetscCall(VecDuplicate(ctx_fine->event_counts, &ctx_coarse->event_counts));
   PetscCall(VecCopy(ctx_fine->event_counts, ctx_coarse->event_counts));
@@ -70,6 +70,7 @@ static PetscErrorCode PoissonGibbsDestroyCtxImpl(PetscCtx ctx) {
   PetscCall(VecDestroy(&poissonctx->event_counts));
   PetscCall(VecDestroy(&poissonctx->nu));
   PetscCall(MatDestroy(&poissonctx->B));
+  PetscCall(PetscFree(ctx));
   PetscFunctionReturn(PETSC_SUCCESS);
 }
 
@@ -103,7 +104,7 @@ static PetscErrorCode PCPoissonGetMaxNnzPerRow(Mat mat, PetscInt *max_nnz_per_ro
   // Work out maximum number of entries per row for A and B
   *max_nnz_per_row = 0;
   PetscCall(MatGetRowIJ(mat, 0, PETSC_FALSE, PETSC_FALSE, &nnz, &row_ptr, NULL, &done));
-  for (PetscInt i=1; i<nnz; ++i) {
+  for (PetscInt i=1; i<=nnz; ++i) {
     *max_nnz_per_row = PetscMax(*max_nnz_per_row,row_ptr[i]-row_ptr[i-1]);
   }
   PetscCall(MatRestoreRowIJ(mat, 0, PETSC_FALSE, PETSC_FALSE, &nnz, &row_ptr, NULL, &done));
@@ -156,9 +157,11 @@ static PetscErrorCode PCPoissonGibbsFindMaximum(PetscScalar mu_bar,
                                                 PetscScalar* theta_bar) {
   PetscScalar theta, theta_old, theta_left, theta_right, theta_mid;
   PetscScalar g, g_old, g_left, g_mid;
-  PetscScalar bisection_tolerance = 1.E-12;
-                                                  
+  PetscScalar bracketing_tolerance = 1.E-12;
+  PetscScalar bisection_tolerance = 1.E-10;
+         
   PetscFunctionBeginUser;
+  theta = 0;
   g = grad_phi(theta, mu_bar, sigma, n_k, nu, b);
   theta_old = theta;
   g_old = g;
@@ -172,6 +175,7 @@ static PetscErrorCode PCPoissonGibbsFindMaximum(PetscScalar mu_bar,
     g = grad_phi(theta, mu_bar, sigma, n_k, nu, b);
     // stop when derivative changes sign
     if ( ((g > 0) && (g_old < 0)) || ((g < 0) && (g_old > 0)) ) break;
+    if (fabs(g) < bracketing_tolerance) break;
     theta_old = theta;
     g_old = g;
   }          
@@ -186,7 +190,7 @@ static PetscErrorCode PCPoissonGibbsFindMaximum(PetscScalar mu_bar,
     g_left = g;
   }
 
-  while (theta_right-theta_left > bisection_tolerance) {
+  while ((theta_right-theta_left)/fmax(fabs(theta_right),fabs(theta_left)) > bisection_tolerance) {
     theta_mid = 0.5*(theta_left+theta_right);
     g_mid = grad_phi(theta_mid, mu_bar, sigma, n_k, nu, b);
     if ( ((g_left > 0) && (g_mid > 0)) || (g_left < 0) && (g_mid < 0) ) {
@@ -250,7 +254,8 @@ static PetscErrorCode PCPoissonGibbsSample(PC pc, Vec b, Vec y)
     PetscCall(VecGetValues(ctx->nu, ncols_B, cols_B, nu_local));
     mu_bar = f_rhs[i];
     for (PetscInt j=0; j<ncols_A; ++j) {
-      mu_bar -= vals_A[j]*y_local[j];
+      if (cols_A[j] != i)
+        mu_bar -= vals_A[j]*y_local[j];
     }
     for (PetscInt j=0; j<ncols_B; ++j) {
       mu_bar += vals_B[j]*n_local[j];
@@ -261,23 +266,28 @@ static PetscErrorCode PCPoissonGibbsSample(PC pc, Vec b, Vec y)
       PetscCall(PCPoissonGibbsFindMaximum(mu_bar, sigma, ncols_B, nu_local, vals_B, &theta_bar));
       PetscBool accepted = PETSC_FALSE;
       while (!accepted) {
-        PCPoissonGibbsStandardNormal(pc, &r);
+        PetscCall(PCPoissonGibbsStandardNormal(pc, &r));
         y_new = theta_bar + sigma*r;
-        PCPoissonGibbsUniform(pc, &r);
+        PetscCall(PCPoissonGibbsUniform(pc, &r));
         PetscScalar Fbar = 0;
         for (PetscInt k=0;k<ncols_B;++k) {
           Fbar += exp(vals_B[k]*y_new+nu_local[k]) + ((theta_bar - y_new)*vals_B[k]-1.0)*exp(vals_B[k]*theta_bar+nu_local[k]);
+        }
+        if (isnan(Fbar) || isinf(Fbar)) {
+          return PetscError(PETSC_COMM_SELF, __LINE__, PETSC_FUNCTION_NAME, __FILE__, PETSC_ERR_FP, PETSC_ERROR_INITIAL, "Encountered invalid Fbar value (NaN or Inf) in Poisson-Gibbs rejection step");
         }
         accepted = (log(r) <= -Fbar);
       }
     } else {
       // just draw a Gaussian random variable with mean mu_bar and width sigma
-      PCPoissonGibbsStandardNormal(pc, &r);
+      PetscCall(PCPoissonGibbsStandardNormal(pc, &r));
       y_new = mu_bar + sigma*r;
     }
     PetscCall(VecSetValue(y, i, y_new, INSERT_VALUES));
     PetscCall(MatRestoreRow(A, i, &ncols_A, &cols_A, &vals_A));
     PetscCall(MatRestoreRow(B, i, &ncols_B, &cols_B, &vals_B));
+    PetscCall(VecAssemblyBegin(y));
+    PetscCall(VecAssemblyEnd(y));
   }
   PetscCall(VecRestoreArrayRead(v_diag, &diag));
   PetscCall(VecRestoreArrayRead(b, &f_rhs));
@@ -293,7 +303,6 @@ static PetscErrorCode PCApply_PoissonGibbs(PC pc, Vec b, Vec y)
   PC_PoissonGibbs poissongibbs = pc->data;
 
   PetscFunctionBeginUser;
-  PetscCall(VecZeroEntries(y));
   PetscCall(PCPoissonGibbsSample(pc, b, y));
   PetscFunctionReturn(PETSC_SUCCESS);
 }

@@ -87,8 +87,8 @@ int main(int argc, char *argv[])
   PetscCall(VecCreate(MPI_COMM_WORLD, &ctx.nu));
   PetscCall(VecSetSizes(ctx.nu, PETSC_DECIDE, nobs));
   PetscCall(VecSetFromOptions(ctx.nu));
+  PetscCall(VecSet(ctx.nu,0));
   PetscCall(MatCreateSeqAIJ(MPI_COMM_WORLD,ndof,nobs,nobs,NULL,&ctx.B));
-  #include "petscmat.h" 
   for (PetscInt j=0; j<nobs; ++j) {
     PetscInt i = (PetscInt) ndof*(1.0*j/nobs);
     PetscCall(MatSetValue(ctx.B, i, j, 1.0, INSERT_VALUES));
@@ -118,21 +118,24 @@ int main(int argc, char *argv[])
 
   PetscCall(KSPGetPC(ksp, &pc));
   PetscCall(PCSetApplicationContext(pc, &ctx));
-  PetscCall(KSPSolve(ksp, f, x));
+  
+  PetscViewer viewer;
+  char        filename[512] = "solution.vtu";
 
+  PetscCall(PetscOptionsGetString(NULL, NULL, "-filename", filename, 512, NULL));
+  PetscCall(PetscViewerVTKOpen(MPI_COMM_WORLD, filename, FILE_MODE_WRITE, &viewer));
+
+  PetscInt n_samples = 32;
+  for (int k=0;k<n_samples;++k)
   {
-    PetscViewer viewer;
-    char        filename[512] = "solution.vtu";
-
-    PetscCall(PetscOptionsGetString(NULL, NULL, "-filename", filename, 512, NULL));
-    PetscCall(PetscViewerVTKOpen(MPI_COMM_WORLD, filename, FILE_MODE_WRITE, &viewer));
-
-    PetscCall(PetscObjectSetName((PetscObject)(x), "solution"));
+    PetscCall(KSPSolve(ksp, f, x));
+    char field_label[100];
+    sprintf (field_label, "sample_%0d",k);
+    PetscCall(PetscObjectSetName((PetscObject)(x), field_label));
     PetscCall(VecView(x, viewer));
-
-    PetscCall(PetscViewerDestroy(&viewer));
   }
-
+  
+  PetscCall(PetscViewerDestroy(&viewer));
   PetscCall(VecDestroy(&x));
   PetscCall(VecDestroy(&f));
   PetscCall(VecDestroy(&ctx.event_counts));
