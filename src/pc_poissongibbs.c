@@ -207,7 +207,7 @@ static PetscErrorCode PCPoissonGibbsFindMaximum(PetscScalar mu_bar,
 /* Generate a new sample (computational routine) */
 static PetscErrorCode PCPoissonGibbsSample(PC pc, Vec b, Vec y)
 {
-  PetscInt nrow, ncol, ncols_A, ncols_B, max_nnz_per_row;
+  PetscInt rstart, rend, ncols_A, ncols_B, max_nnz_per_row;
   PetscInt *cols_A;
   PetscScalar *vals_A;
   PetscInt *cols_B;
@@ -244,15 +244,16 @@ static PetscErrorCode PCPoissonGibbsSample(PC pc, Vec b, Vec y)
   PetscCall(MatGetDiagonal(A, v_diag));
   PetscCall(VecGetArrayRead(v_diag, &diag));
   PetscCall(VecGetArrayRead(b, &f_rhs));
-  PetscCall(MatGetSize(A, &nrow, &ncol));
-  for (PetscInt i=0; i<nrow; ++i) {
-    sigma = 1./sqrt(diag[i]);
+  PetscCall(MatGetOwnershipRange(A, &rstart, &rend));
+  for (PetscInt i=rstart; i<rend; ++i) {
+    PetscInt iloc = i - rstart;
+    sigma = 1./sqrt(diag[iloc]);
     PetscCall(MatGetRow(A, i, &ncols_A, &cols_A, &vals_A));
     PetscCall(MatGetRow(B, i, &ncols_B, &cols_B, &vals_B));
     PetscCall(VecGetValues(y, ncols_A, cols_A, y_local));
     PetscCall(VecGetValues(ctx->event_counts, ncols_B, cols_B, n_local));
     PetscCall(VecGetValues(ctx->nu, ncols_B, cols_B, nu_local));
-    mu_bar = f_rhs[i];
+    mu_bar = f_rhs[iloc];
     for (PetscInt j=0; j<ncols_A; ++j) {
       if (cols_A[j] != i)
         mu_bar -= vals_A[j]*y_local[j];
