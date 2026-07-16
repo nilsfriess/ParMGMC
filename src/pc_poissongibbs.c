@@ -304,6 +304,7 @@ static PetscErrorCode PCApply_PoissonGibbs(PC pc, Vec b, Vec y)
   PC_PoissonGibbs poissongibbs = pc->data;
 
   PetscFunctionBeginUser;
+  PetscCall(VecZeroEntries(y));
   PetscCall(PCPoissonGibbsSample(pc, b, y));
   PetscFunctionReturn(PETSC_SUCCESS);
 }
@@ -314,6 +315,7 @@ static PetscErrorCode PCApplyRichardson_PoissonGibbs(PC pc, Vec b, Vec y, Vec w,
 
   PetscFunctionBeginUser;
   poissongibbs->sample_index = 0;
+  if (guesszero) PetscCall(VecZeroEntries(y));
   for (PetscInt it = 0; it < its; ++it) {
     PetscCall(PCPoissonGibbsSample(pc, b, y));
   }
