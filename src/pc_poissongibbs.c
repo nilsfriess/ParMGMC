@@ -258,7 +258,7 @@ static PetscErrorCode PCPoissonGibbsSample(PC pc, Vec b, Vec y)
     mu_bar = f_rhs[iloc];
     for (PetscInt j=0; j<ncols_A; ++j) {
       if (cols_A[j] != i)
-        mu_bar -= vals_A[j]*theta[cols_A[j]];
+        mu_bar -= vals_A[j]*theta[cols_A[j]-rstart];
     }
     for (PetscInt j=0; j<ncols_B; ++j) {
       mu_bar += vals_B[j]*n_local[j];
