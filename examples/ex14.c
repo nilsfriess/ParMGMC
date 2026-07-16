@@ -83,7 +83,7 @@ int main(int argc, char *argv[])
   PetscCall(VecCreate(MPI_COMM_WORLD, &ctx.event_counts));
   PetscCall(VecSetSizes(ctx.event_counts, PETSC_DECIDE, nobs));
   PetscCall(VecSetFromOptions(ctx.event_counts));
-  PetscCall(VecSet(ctx.event_counts,2));
+  PetscCall(VecSet(ctx.event_counts,2.0));
   PetscCall(VecCreate(MPI_COMM_WORLD, &ctx.nu));
   PetscCall(VecSetSizes(ctx.nu, PETSC_DECIDE, nobs));
   PetscCall(VecSetFromOptions(ctx.nu));
@@ -102,6 +102,7 @@ int main(int argc, char *argv[])
   PetscCall(VecCreate(MPI_COMM_WORLD, &f));
   PetscCall(VecSetSizes(f, PETSC_DECIDE, ndof));
   PetscCall(VecSetFromOptions(f));
+  PetscCall(VecZeroEntries(f));
 
 #ifdef PARMGMC_PETSC_KSP_DMACTIVE_3ARG
   PetscCall(KSPSetDMActive(ksp, KSP_DMACTIVE_OPERATOR, PETSC_FALSE));
@@ -125,12 +126,12 @@ int main(int argc, char *argv[])
   PetscCall(PetscOptionsGetString(NULL, NULL, "-filename", filename, 512, NULL));
   PetscCall(PetscViewerVTKOpen(MPI_COMM_WORLD, filename, FILE_MODE_WRITE, &viewer));
 
-  PetscInt n_samples = 32;
+  PetscInt n_samples = 64;
   for (int k=0;k<n_samples;++k)
   {
     PetscCall(KSPSolve(ksp, f, x));
     char field_label[100];
-    sprintf (field_label, "sample_%0d",k);
+    sprintf (field_label, "sample_%03d",k);
     PetscCall(PetscObjectSetName((PetscObject)(x), field_label));
     PetscCall(VecView(x, viewer));
   }
