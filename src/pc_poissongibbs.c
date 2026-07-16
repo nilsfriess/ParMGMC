@@ -159,19 +159,22 @@ static PetscErrorCode PCPoissonGibbsFindMaximum(PetscScalar mu_bar,
   PetscScalar g, g_old, g_left, g_mid;
   PetscScalar bracketing_tolerance = 1.E-12;
   PetscScalar bisection_tolerance = 1.E-10;
+  PetscScalar delta;
          
   PetscFunctionBeginUser;
-  theta = 0;
+  theta = mu_bar;
   g = grad_phi(theta, mu_bar, sigma, n_k, nu, b);
   theta_old = theta;
   g_old = g;
   // Bracket minimum
+  delta = sigma;
   while (true) {
     if (g > 0) {
-      theta -= sigma;
+      theta -= delta;
     } else {
-      theta += sigma;
+      theta += delta;
     }
+    delta*=2;
     g = grad_phi(theta, mu_bar, sigma, n_k, nu, b);
     // stop when derivative changes sign
     if ( ((g > 0) && (g_old < 0)) || ((g < 0) && (g_old > 0)) ) break;
