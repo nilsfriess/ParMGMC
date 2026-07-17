@@ -222,7 +222,7 @@ static PetscErrorCode PCPoissonGibbsSample(PC pc, Vec b, Vec y)
   PetscScalar* nu_local;
   PetscScalar theta_bar;
   Vec w;
-  Vec v_diag;
+  Vec v_diag, nu_tilde;
   PetscScalar* diag;
   PetscScalar* f_rhs;
   PetscScalar r, theta_prime;
@@ -236,6 +236,9 @@ static PetscErrorCode PCPoissonGibbsSample(PC pc, Vec b, Vec y)
   Mat A = pc->pmat;
   Mat B = ctx->B;
 
+  PetscCall(VecDuplicate(ctx->nu, &nu_tilde));
+  PetscCall(MatMultTransposeAdd(ctx->B, y, ctx->nu, nu_tilde));
+  
   // Storage for local part of vectors
   PetscCall(PCPoissonGetMaxNnzPerRow(A, &max_nnz_per_row));
   PetscCall(PCPoissonGetMaxNnzPerRow(B, &max_nnz_per_row));
@@ -254,7 +257,10 @@ static PetscErrorCode PCPoissonGibbsSample(PC pc, Vec b, Vec y)
     PetscCall(MatGetRow(A, i, &ncols_A, &cols_A, &vals_A));
     PetscCall(MatGetRow(B, i, &ncols_B, &cols_B, &vals_B));
     PetscCall(VecGetValues(ctx->event_counts, ncols_B, cols_B, n_local));
-    PetscCall(VecGetValues(ctx->nu, ncols_B, cols_B, nu_local));
+    PetscCall(VecGetValues(nu_tilde, ncols_B, cols_B, nu_local));
+    for (PetscInt k=0; k<ncols_B; ++k) {
+      nu_local[k] -= theta[iloc]*vals_B[k];
+    }
     mu_bar = f_rhs[iloc];
     for (PetscInt j=0; j<ncols_A; ++j) {
       if (cols_A[j] != i)
@@ -279,6 +285,7 @@ static PetscErrorCode PCPoissonGibbsSample(PC pc, Vec b, Vec y)
         if (isnan(Fbar) || isinf(Fbar)) {
           return PetscError(PETSC_COMM_SELF, __LINE__, PETSC_FUNCTION_NAME, __FILE__, PETSC_ERR_FP, PETSC_ERROR_INITIAL, "Encountered invalid Fbar value (NaN or Inf) in Poisson-Gibbs rejection step");
         }
+        //if (Fbar < 0) printf("Fbar < 0: %e\n",Fbar);
         accepted = (log(r) <= -Fbar);
       }
     } else {
@@ -287,6 +294,12 @@ static PetscErrorCode PCPoissonGibbsSample(PC pc, Vec b, Vec y)
       theta_prime = mu_bar + sigma*r;
     }
     theta[iloc] = theta_prime;
+    for (PetscInt k=0; k<ncols_B; ++k) {
+      nu_local[k] += theta[iloc]*vals_B[k];
+    }
+    PetscCall(VecSetValues(nu_tilde, ncols_B, cols_B, nu_local, INSERT_VALUES));
+    PetscCall(VecAssemblyBegin(nu_tilde));
+    PetscCall(VecAssemblyEnd(nu_tilde));
     PetscCall(MatRestoreRow(A, i, &ncols_A, &cols_A, &vals_A));
     PetscCall(MatRestoreRow(B, i, &ncols_B, &cols_B, &vals_B));
   }
@@ -296,6 +309,7 @@ static PetscErrorCode PCPoissonGibbsSample(PC pc, Vec b, Vec y)
   PetscCall(PetscFree(n_local));
   PetscCall(PetscFree(nu_local));
   PetscCall(VecDestroy(&v_diag));
+  PetscCall(VecDestroy(&nu_tilde));
   PetscFunctionReturn(PETSC_SUCCESS);
 }
 
