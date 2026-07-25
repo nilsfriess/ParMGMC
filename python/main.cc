@@ -12,6 +12,7 @@
 
 #include "petsc_caster.hh"
 #include "parmgmc/parmgmc.h"
+#include "parmgmc/pc/pc_poissongibbs.h"
 
 namespace py = pybind11;
 
@@ -47,6 +48,15 @@ PYBIND11_MODULE(pymgmc, m)
     PetscCallVoid(PetscRandomSetSeed(pr, s));
     PetscCallVoid(PetscRandomSeed(pr));
     PetscCallVoid(PetscRandomDestroy(&pr)); // release the ref given by ParMGMCGetPetscRandom
+    PetscFunctionReturnVoid();
+  });
+  m.def("PCPoissonSetAppCtx", [](PC pc, Vec event_counts, Vec nu, Mat B) {
+    PetscFunctionBegin;
+    PoissonGibbsCtx *ctx = (PoissonGibbsCtx *)new (PoissonGibbsCtx);
+    ctx->event_counts    = event_counts;
+    ctx->nu              = nu;
+    ctx->B               = B;
+    PetscCallVoid(PCSetApplicationContext(pc, ctx));
     PetscFunctionReturnVoid();
   });
 };
