@@ -3,8 +3,8 @@ import pytest
 import numpy as np
 import scipy as sp
 from matplotlib import pyplot as plt
-import pymgmc
 from petsc4py import PETSc
+import pymgmc
 
 
 class MarginalisedDistribution:

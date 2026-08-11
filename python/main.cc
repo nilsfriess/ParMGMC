@@ -52,10 +52,16 @@ PYBIND11_MODULE(pymgmc, m)
   });
   m.def("PCPoissonSetAppCtx", [](PC pc, Vec event_counts, Vec nu, Mat B) {
     PetscFunctionBegin;
-    PoissonGibbsCtx *ctx = (PoissonGibbsCtx *)new (PoissonGibbsCtx);
-    ctx->event_counts    = event_counts;
-    ctx->nu              = nu;
-    ctx->B               = B;
+    PoissonGibbsCtx *ctx;
+    PetscCallVoid(PetscNew(&ctx));
+
+    PetscCallVoid(PetscObjectReference((PetscObject)event_counts));
+    PetscCallVoid(PetscObjectReference((PetscObject)nu));
+    PetscCallVoid(PetscObjectReference((PetscObject)B));
+
+    ctx->event_counts = event_counts;
+    ctx->nu           = nu;
+    ctx->B            = B;
     PetscCallVoid(PCSetApplicationContext(pc, ctx));
     PetscFunctionReturnVoid();
   });
