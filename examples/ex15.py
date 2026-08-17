@@ -93,8 +93,8 @@ event_counts = PETSc.Vec().createWithArray(measured_counts)
 
 nu = PETSc.Vec().createWithArray(np.zeros_like(event_counts))
 
-with fd.assemble(f).dat.vec_ro as f_rhs:
-    pymgmc.PCPoissonSetAppCtx(pc, f_rhs, event_counts, nu, B)
+
+pymgmc.PCPoissonSetAppCtx(pc, event_counts, nu, B)
 
 n_samples = 128
 
