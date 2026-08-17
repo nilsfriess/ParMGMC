@@ -282,7 +282,6 @@ static PetscErrorCode PCPoissonGibbsSample(PC pc, Vec b, Vec y)
         if (isnan(Fbar) || isinf(Fbar)) {
           return PetscError(PETSC_COMM_SELF, __LINE__, PETSC_FUNCTION_NAME, __FILE__, PETSC_ERR_FP, PETSC_ERROR_INITIAL, "Encountered invalid Fbar value (NaN or Inf) in Poisson-Gibbs rejection step");
         }
-        //if (Fbar < 0) printf("Fbar < 0: %e\n",Fbar);
         accepted = (log(r) <= -Fbar);
       }
     } else {
