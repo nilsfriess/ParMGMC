@@ -27,13 +27,13 @@ def get_rongelap_measurements(filename, measurement_interval=300):
 
 
 def get_synthetic_measurements():
-    points = [[0.4, 0.6], [0.8, 0.1]]
+    points = [[0.4, 0.6], [0.8, 0.1], [0.5, 0.5]]
     vom = fd.VertexOnlyMesh(mesh, points)
     W = fd.FunctionSpace(vom, "DG", 0)
 
     interp = fd.assemble(fd.interpolate(fd.TrialFunction(V), W))
     B = interp.petscmat.transpose()
-    counts = np.array([100, 100], dtype=np.float64)
+    counts = np.array([100, 10, 1], dtype=np.float64)
     return B, counts
 
 
@@ -46,7 +46,7 @@ if setup == "rongelap":
 else:
     n = 128
     mesh = fd.UnitSquareMesh(n, n)
-    correlation_length = 0.1
+    correlation_length = 0.5
 
 V = fd.FunctionSpace(mesh, "CG", 1)
 w = fd.TrialFunction(V)
@@ -86,8 +86,6 @@ if setup == "rongelap":
 else:
     B, measured_counts = get_synthetic_measurements()
     B_dense = PETSc.Mat()
-    B.convert("dense", B_dense)
-    print(B_dense.getDenseArray())
 
 event_counts = PETSc.Vec().createWithArray(measured_counts)
 
