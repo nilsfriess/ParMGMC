@@ -85,6 +85,7 @@ static PetscErrorCode PoissonGibbsDestroyCtxImpl(PetscCtx ctx) {
  */
 static PetscErrorCode PoissonGibbsPostSolveImpl(KSP ksp, Vec x, Vec res, PetscCtx ctx) {
   PetscFunctionBeginUser;
+  (void) res; 
   PoissonGibbsCtx* ctx_fine; // (fine level) context
   PC pc; // (fine level) PC object
   PetscCall(KSPGetPC(ksp, &pc));
@@ -96,8 +97,8 @@ static PetscErrorCode PoissonGibbsPostSolveImpl(KSP ksp, Vec x, Vec res, PetscCt
 }
 
 static PetscErrorCode PCPoissonGetMaxNnzPerRow(Mat mat, PetscInt *max_nnz_per_row) {
-  PetscInt nnz, nnz_per_row;
-  PetscInt* row_ptr;
+  PetscInt nnz;
+  const PetscInt* row_ptr;
   PetscBool done;
 
   PetscFunctionBeginUser;
@@ -136,12 +137,12 @@ static PetscErrorCode PCPoissonGibbsUniform(PC pc, PetscScalar *r) {
 
  * dphi/dtheta = sum_{k} B_{ik} exp(B_{ik} theta + nu_k ) +( theta - bar(mu))/sigma^2
  */
-static PetscScalar grad_phi(PetscScalar theta,
-                            PetscScalar mu_bar,
-                            PetscScalar sigma,
-                            PetscInt n_k,
-                            PetscScalar* nu,
-                            PetscScalar* b) {
+static PetscScalar grad_phi(const PetscScalar theta,
+                            const PetscScalar mu_bar,
+                            const PetscScalar sigma,
+                            const PetscInt n_k,
+                            const PetscScalar* nu,
+                            const PetscScalar* b) {
   PetscScalar g = (theta - mu_bar)/(sigma*sigma);
   for (PetscInt k=0;k<n_k;++k) {
     g += b[k]*exp(b[k]*theta+nu[k]);
@@ -149,11 +150,11 @@ static PetscScalar grad_phi(PetscScalar theta,
   return g;
 }
 
-static PetscErrorCode PCPoissonGibbsFindMaximum(PetscScalar mu_bar,
-                                                PetscScalar sigma,
-                                                PetscInt n_k,
-                                                PetscScalar* nu,
-                                                PetscScalar* b,
+static PetscErrorCode PCPoissonGibbsFindMaximum(const PetscScalar mu_bar,
+                                                const PetscScalar sigma,
+                                                const PetscInt n_k,
+                                                const PetscScalar* nu,
+                                                const PetscScalar* b,
                                                 PetscScalar* theta_bar) {
   PetscScalar theta, theta_old, theta_left, theta_right, theta_mid;
   PetscScalar g, g_old, g_left, g_mid;
@@ -196,7 +197,7 @@ static PetscErrorCode PCPoissonGibbsFindMaximum(PetscScalar mu_bar,
   while ((theta_right-theta_left)/fmax(fabs(theta_right),fabs(theta_left)) > bisection_tolerance) {
     theta_mid = 0.5*(theta_left+theta_right);
     g_mid = grad_phi(theta_mid, mu_bar, sigma, n_k, nu, b);
-    if ( ((g_left > 0) && (g_mid > 0)) || (g_left < 0) && (g_mid < 0) ) {
+    if ( ((g_left > 0) && (g_mid > 0)) || ((g_left < 0) && (g_mid < 0)) ) {
       theta_left = theta_mid;
       g_left = g_mid;
     } else {
@@ -211,25 +212,21 @@ static PetscErrorCode PCPoissonGibbsFindMaximum(PetscScalar mu_bar,
 static PetscErrorCode PCPoissonGibbsSample(PC pc, Vec b, Vec y)
 {
   PetscInt rstart, rend, ncols_A, ncols_B, max_nnz_per_row;
-  PetscInt *cols_A;
-  PetscScalar *vals_A;
-  PetscInt *cols_B;
-  PetscScalar *vals_B;
+  const PetscInt *cols_A;
+  const PetscScalar *vals_A;
+  const PetscInt *cols_B;
+  const PetscScalar *vals_B;
   PetscScalar sigma;
   PetscScalar mu_bar;
   PetscScalar* theta;
   PetscScalar* n_local;
   PetscScalar* nu_local;
-  PetscScalar theta_bar;
-  Vec w;
+  PetscScalar theta_bar;  
   Vec v_diag, nu_tilde;
-  PetscScalar* diag;
-  PetscScalar* f_rhs;
+  const PetscScalar* diag;
+  const PetscScalar* f_rhs;
   PetscScalar r, theta_prime;
-  PoissonGibbsCtx* ctx;
-  PC_PoissonGibbs poissongibbs = pc->data;
-  PetscInt random_idx;
-  PetscScalar random_val;
+  PoissonGibbsCtx* ctx;  
 
   PetscFunctionBeginUser;  
   PetscCall(PCGetApplicationContext(pc, &ctx));
@@ -315,8 +312,6 @@ static PetscErrorCode PCPoissonGibbsSample(PC pc, Vec b, Vec y)
 
 static PetscErrorCode PCApply_PoissonGibbs(PC pc, Vec b, Vec y)
 {
-  PC_PoissonGibbs poissongibbs = pc->data;
-
   PetscFunctionBeginUser;
   PetscCall(VecZeroEntries(y));
   PetscCall(PCPoissonGibbsSample(pc, b, y));
@@ -328,6 +323,10 @@ static PetscErrorCode PCApplyRichardson_PoissonGibbs(PC pc, Vec b, Vec y, Vec w,
   PC_PoissonGibbs poissongibbs = pc->data;
 
   PetscFunctionBeginUser;
+  (void)w;
+  (void)rtol;
+  (void)abstol;
+  (void)dtol;
   poissongibbs->sample_index = 0;
   if (guesszero) PetscCall(VecZeroEntries(y));
   for (PetscInt it = 0; it < its; ++it) {
@@ -354,8 +353,7 @@ static PetscErrorCode PCReset_PoissonGibbs(PC pc)
 
 static PetscErrorCode PCDestroy_PoissonGibbs(PC pc)
 {
-  PC_PoissonGibbs poissongibbs = pc->data;
-  PoissonGibbsCtx ctx;
+  PC_PoissonGibbs poissongibbs = pc->data;  
 
   PetscFunctionBeginUser;
   PetscCall(PetscRandomDestroy(&poissongibbs->prand));
@@ -387,6 +385,7 @@ static PetscErrorCode PCSetUp_PoissonGibbs(PC pc)
 static PetscErrorCode PCSetFromOptions_PoissonGibbs(PC pc, PetscOptionItems PetscOptionsObject)
 {
   PC_PoissonGibbs poissongibbs = pc->data;
+  (void)poissongibbs;
   PetscFunctionBegin;
   PetscOptionsHeadBegin(PetscOptionsObject, "Poisson Gibbs options");
   PetscOptionsHeadEnd();
@@ -411,7 +410,8 @@ static PetscErrorCode PCSetSampleCallback_PoissonGibbs(PC pc, PetscErrorCode (*c
 static PetscErrorCode PCView_PoissonGibbs(PC pc, PetscViewer viewer)
 {
   PC_PoissonGibbs poissongibbs = pc->data;
-
+  (void)poissongibbs;
+  (void)viewer;
   PetscFunctionBeginUser;
   PetscFunctionReturn(PETSC_SUCCESS);
 }
