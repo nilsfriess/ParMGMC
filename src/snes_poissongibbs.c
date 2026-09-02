@@ -148,6 +148,8 @@ static PetscErrorCode SNESSample_PoissonGibbs(SNES snes)
 {
   SNES_PoissonGibbs* poissongibbs = (SNES_PoissonGibbs*)snes->data;
   Vec y;
+  Vec f_rhs;
+  Vec nu;
   PetscInt rstart, rend, ncols_Q, ncols_B, max_nnz_per_row;
   const PetscInt *cols_Q;
   const PetscScalar *vals_Q;
@@ -161,7 +163,7 @@ static PetscErrorCode SNESSample_PoissonGibbs(SNES snes)
   PetscScalar theta_bar;  
   Vec v_diag, nu_tilde;
   const PetscScalar* diag;
-  const PetscScalar* f_rhs;
+  const PetscScalar* f_rhs_array;
   PetscScalar r, theta_prime;
   Mat Q_prec;
   Mat B_meas;
@@ -169,16 +171,16 @@ static PetscErrorCode SNESSample_PoissonGibbs(SNES snes)
   PoissonGibbsCtx* ctx;  
 
   PetscFunctionBeginUser;
-
   y = snes->vec_sol;
+  PetscCall(VecNestGetSubVec(snes->vec_rhs,0,&f_rhs));
+  PetscCall(VecNestGetSubVec(snes->vec_rhs,1,&nu));
 
   PetscCall(SNESGetApplicationContext(snes, &ctx));
   Q_prec = ctx->Q_prec;
-  B_meas = ctx->B_meas;  
+  B_meas = ctx->B_meas;
 
-
-  PetscCall(VecDuplicate(ctx->nu, &nu_tilde));
-  PetscCall(MatMultTransposeAdd(ctx->B_meas, y, ctx->nu, nu_tilde));
+  PetscCall(VecDuplicate(nu, &nu_tilde));
+  PetscCall(MatMultTransposeAdd(ctx->B_meas, y, nu, nu_tilde));
   
   // Storage for local part of vectors
   PetscCall(SNESPoissonGibbs_GetMaxNnzPerRow(Q_prec, &max_nnz_per_row));
@@ -189,7 +191,7 @@ static PetscErrorCode SNESSample_PoissonGibbs(SNES snes)
   PetscCall(VecDuplicate(y, &v_diag));
   PetscCall(MatGetDiagonal(Q_prec, v_diag));
   PetscCall(VecGetArrayRead(v_diag, &diag));
-  PetscCall(VecGetArrayRead(ctx->f_rhs, &f_rhs));
+  PetscCall(VecGetArrayRead(f_rhs, &f_rhs_array));
   PetscCall(VecGetArray(y,&theta));
   PetscCall(MatGetOwnershipRange(Q_prec, &rstart, &rend));
 
@@ -204,7 +206,7 @@ static PetscErrorCode SNESSample_PoissonGibbs(SNES snes)
       for (PetscInt k=0; k<ncols_B; ++k) {
         nu_local[k] -= theta[iloc]*vals_B[k];
       }
-      mu_bar = f_rhs[iloc];
+      mu_bar = f_rhs_array[iloc];
       for (PetscInt j=0; j<ncols_Q; ++j) {
         if (cols_Q[j] != i)
           mu_bar -= vals_Q[j]*theta[cols_Q[j]-rstart];
@@ -248,7 +250,7 @@ static PetscErrorCode SNESSample_PoissonGibbs(SNES snes)
   }
   snes->reason = SNES_CONVERGED_ITS;
   PetscCall(VecRestoreArrayRead(v_diag, &diag));
-  PetscCall(VecRestoreArrayRead(ctx->f_rhs, &f_rhs));
+  PetscCall(VecRestoreArrayRead(f_rhs, &f_rhs_array));
   PetscCall(VecRestoreArray(y, &theta));
   PetscCall(PetscFree(n_local));
   PetscCall(PetscFree(nu_local));

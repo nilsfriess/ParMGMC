@@ -202,6 +202,7 @@ class Sampler:
 
         f_petsc = PETSc.Vec().createWithArray(f)
         nu_petsc = PETSc.Vec().createWithArray([nu])
+        self._b_rhs_petsc = PETSc.Vec().createNest([f_petsc, nu_petsc])
         event_count_petsc = PETSc.Vec().createWithArray([event_count])
         snes = PETSc.SNES().create()
         opts = PETSc.Options()
@@ -214,16 +215,14 @@ class Sampler:
             opts[key] = value
         snes.setFromOptions()
 
-        pymgmc.SNESPoissonSetAppCtx(
-            snes, event_count_petsc, Q_petsc, B_petsc, f_petsc, nu_petsc
-        )
+        pymgmc.SNESPoissonSetAppCtx(snes, event_count_petsc, Q_petsc, B_petsc)
         self._snes = snes
         self._y = PETSc.Vec().createWithArray([0, 0])
 
     def __iter__(self):
         """Iterator"""
         while True:
-            self._snes.solve(None, self._y)
+            self._snes.solve(self._b_rhs_petsc, self._y)
             yield np.array(self._y.getArray())
 
 
