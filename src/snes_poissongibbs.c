@@ -143,6 +143,22 @@ static PetscErrorCode SNESPoissonGibbs_FindMaximum(const PetscScalar mu_bar,
   PetscFunctionReturn(PETSC_SUCCESS);                                         
 }
 
+static PetscErrorCode SNESPoissonGibbs_Function(SNES snes, Vec y, Vec b, void* ctx) 
+{
+  Vec f_rhs;
+  Vec nu;
+
+  PoissonGibbsCtx* poissongibbs = (PoissonGibbsCtx*)ctx;
+
+  PetscFunctionBeginUser;
+  PetscCall(VecNestGetSubVec(b, 0, &f_rhs));
+  PetscCall(VecNestGetSubVec(b, 1, &nu));
+  PetscCall(MatMult(poissongibbs->Q_prec,y,f_rhs));
+  PetscCall(MatMultTranspose(poissongibbs->B_meas,y,nu));
+  PetscFunctionReturn(PETSC_SUCCESS);
+}
+
+
 /* Generate a new sample (computational routine) */
 static PetscErrorCode SNESSample_PoissonGibbs(SNES snes)
 {
@@ -317,6 +333,7 @@ static PetscErrorCode SNESView_PoissonGibbs(SNES snes, PetscViewer viewer)
 PetscErrorCode SNESCreate_PoissonGibbs(SNES snes)
 {
   SNES_PoissonGibbs* poissongibbs;
+  PoissonGibbsCtx* ctx;  
 
   PetscFunctionBeginUser;
   PetscCall(PetscNew(&poissongibbs));
@@ -331,6 +348,9 @@ PetscErrorCode SNESCreate_PoissonGibbs(SNES snes)
 
   snes->usesksp = PETSC_FALSE;
   snes->usesnpc = PETSC_FALSE;
+
+  PetscCall(SNESGetApplicationContext(snes, &ctx));
+  PetscCall(SNESSetFunction(snes, NULL, SNESPoissonGibbs_Function, ctx));
 
   PetscFunctionReturn(PETSC_SUCCESS);
 }
