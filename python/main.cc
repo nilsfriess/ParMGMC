@@ -12,7 +12,7 @@
 
 #include "petsc_caster.hh"
 #include "parmgmc/parmgmc.h"
-#include "parmgmc/pc/pc_poissongibbs.h"
+#include "parmgmc/snes/snes_poissongibbs.h"
 
 namespace py = pybind11;
 
@@ -50,19 +50,23 @@ PYBIND11_MODULE(pymgmc, m)
     PetscCallVoid(PetscRandomDestroy(&pr)); // release the ref given by ParMGMCGetPetscRandom
     PetscFunctionReturnVoid();
   });
-  m.def("PCPoissonSetAppCtx", [](PC pc, Vec event_counts, Vec nu, Mat B) {
+  m.def("SNESPoissonSetAppCtx", [](SNES snes, Vec event_counts, Mat Q_prec, Mat B_meas, Vec f_rhs, Vec nu) {
     PetscFunctionBegin;
     PoissonGibbsCtx *ctx;
     PetscCallVoid(PetscNew(&ctx));
 
     PetscCallVoid(PetscObjectReference((PetscObject)event_counts));
+    PetscCallVoid(PetscObjectReference((PetscObject)Q_prec));
+    PetscCallVoid(PetscObjectReference((PetscObject)B_meas));
+    PetscCallVoid(PetscObjectReference((PetscObject)f_rhs));
     PetscCallVoid(PetscObjectReference((PetscObject)nu));
-    PetscCallVoid(PetscObjectReference((PetscObject)B));
 
     ctx->event_counts = event_counts;
+    ctx->Q_prec       = Q_prec;
+    ctx->B_meas       = B_meas;
+    ctx->f_rhs        = f_rhs;
     ctx->nu           = nu;
-    ctx->B            = B;
-    PetscCallVoid(PCSetApplicationContext(pc, ctx));
+    PetscCallVoid(SNESSetApplicationContext(snes, ctx));
     PetscFunctionReturnVoid();
   });
 };

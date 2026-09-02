@@ -147,6 +147,38 @@ public:
 };
 
 template <>
+struct type_caster<_p_SNES> {
+public:
+  PYBIND11_TYPE_CASTER(SNES, const_name("snes"));
+
+  bool load(handle src, bool)
+  {
+    VERIFY_PETSC4PY_FROMPY(PyPetscSNES_Get);
+    if (PyObject_TypeCheck(src.ptr(), &PyPetscSNES_Type) != 0) {
+      value = PyPetscSNES_Get(src.ptr());
+      return true;
+    } else return false;
+  }
+
+  static handle cast(SNES src, return_value_policy policy, handle)
+  {
+    VERIFY_PETSC4PY_FROMCPP(PyPetscSNES_New);
+    if (policy == return_value_policy::take_ownership) {
+      PyObject *obj = PyPetscSNES_New(src);
+      PetscCallAbort(MPI_COMM_WORLD, PetscObjectDereference((PetscObject)src));
+      return {obj};
+    } else if (policy == return_value_policy::automatic_reference or policy == return_value_policy::reference) {
+      PyObject *obj = PyPetscSNES_New(src);
+      return {obj};
+    } else {
+      return {};
+    }
+  }
+
+  operator SNES() { return value; }
+};
+
+template <>
 struct type_caster<_p_PetscRandom> {
 public:
   PYBIND11_TYPE_CASTER(PetscRandom, const_name("PetscRandom"));

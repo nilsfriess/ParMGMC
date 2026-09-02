@@ -34,13 +34,13 @@ class MarginalisedDistribution:
     LOWER_BOUND = -100
     UPPER_BOUND = +100
 
-    def __init__(self, A_precision, f_rhs, b_measurement, nu, event_count):
+    def __init__(self, Q_prec, f_rhs, b_measurement, nu, event_count):
         """Initialise new instance
 
         Parameters
         ==========
-        A_precision :
-            precision matrix :math:`A`
+        Q_prec :
+            precision matrix :math:`Q`
         f_rhs :
             right hand side vector :math:`f`
         b_measurement :
@@ -50,7 +50,7 @@ class MarginalisedDistribution:
         event_count :
             measured number of events :math:`n`
         """
-        self._A_precision = A_precision
+        self._Q_prec = Q_prec
         self._f_rhs = f_rhs
         self._b_measurement = b_measurement
         self._nu = nu
@@ -85,14 +85,11 @@ class MarginalisedDistribution:
         p_marginal = np.exp(
             -1
             / 2
-            * (
-                self._A_precision[0, 0]
-                - self._A_precision[0, 1] ** 2 / self._A_precision[1, 1]
-            )
+            * (self._Q_prec[0, 0] - self._Q_prec[0, 1] ** 2 / self._Q_prec[1, 1])
             * y**2
             + (
                 self._f_rhs[0]
-                - self._A_precision[0, 1] / self._A_precision[1, 1] * self._f_rhs[1]
+                - self._Q_prec[0, 1] / self._Q_prec[1, 1] * self._f_rhs[1]
             )
             * y
         )
@@ -181,13 +178,13 @@ class Sampler:
     :math:`\\Lambda(y) = e^{b y +\\nu}`.
     """
 
-    def __init__(self, A, f, b, nu, event_count):
+    def __init__(self, Q, f, b, nu, event_count):
         """Initialise new instance
 
         Parameters
         ==========
-        A_precision :
-            precision matrix :math:`A`
+        Q :
+            precision matrix :math:`Q`
         f_rhs :
             right hand side vector :math:`f`
         b_measurement :
@@ -198,44 +195,40 @@ class Sampler:
             measured number of events :math:`n`
         """
         # PETSc objects
-        A_petsc = PETSc.Mat().createAIJWithArrays(
-            (2, 2), ((0, 2, 4), (0, 1, 0, 1), [A[0, 0], A[0, 1], A[1, 0], A[1, 1]])
+        Q_petsc = PETSc.Mat().createAIJWithArrays(
+            (2, 2), ((0, 2, 4), (0, 1, 0, 1), [Q[0, 0], Q[0, 1], Q[1, 0], Q[1, 1]])
         )
         B_petsc = PETSc.Mat().createAIJWithArrays((2, 1), ((0, 1, 2), (0, 0), [b, 0]))
 
-        self._f_petsc = PETSc.Vec().createWithArray(f)
+        f_petsc = PETSc.Vec().createWithArray(f)
         nu_petsc = PETSc.Vec().createWithArray([nu])
         event_count_petsc = PETSc.Vec().createWithArray([event_count])
-        ksp = PETSc.KSP().create()
-        ksp.setOperators(A_petsc)
+        snes = PETSc.SNES().create()
         opts = PETSc.Options()
         solver_parameters = {
-            "ksp_type": "richardson",
-            "ksp_min_it": 1,
-            "ksp_max_it": 1,
-            "ksp_convergence_test": "skip",
-            "pc_type": "poissongibbs",
-            "ksp_view": ":ksp_view.txt",
+            "snes_type": "poissongibbs",
+            "poissongibbs_its": 1,
+            "snes_view": ":snes_view.txt",
         }
         for key, value in solver_parameters.items():
             opts[key] = value
-        ksp.setFromOptions()
-        ksp.setInitialGuessNonzero(True)
-        pc = ksp.getPC()
-        pc.setType("poissongibbs")
-        pymgmc.PCPoissonSetAppCtx(pc, event_count_petsc, nu_petsc, B_petsc)
-        self._ksp = ksp
+        snes.setFromOptions()
+
+        pymgmc.SNESPoissonSetAppCtx(
+            snes, event_count_petsc, Q_petsc, B_petsc, f_petsc, nu_petsc
+        )
+        self._snes = snes
         self._y = PETSc.Vec().createWithArray([0, 0])
 
     def __iter__(self):
         """Iterator"""
         while True:
-            self._ksp.solve(self._f_petsc, self._y)
+            self._snes.solve(None, self._y)
             yield np.array(self._y.getArray())
 
 
 def visualise(
-    A_precision,
+    Q_prec,
     f_rhs,
     b_measurement,
     nu,
@@ -250,8 +243,8 @@ def visualise(
 
     Parameters
     ==========
-    A_precision :
-        precision matrix :math:`A`
+    Q_prec :
+        precision matrix :math:`Q`
     f_rhs :
         right hand side vector :math:`f`
     b_measurement :
@@ -272,9 +265,9 @@ def visualise(
         name of file to save to
     """
     distribution = MarginalisedDistribution(
-        A_precision, f_rhs, b_measurement, nu, event_count
+        Q_prec, f_rhs, b_measurement, nu, event_count
     )
-    sampler = Sampler(A_precision, f_rhs, b_measurement, nu, event_count)
+    sampler = Sampler(Q_prec, f_rhs, b_measurement, nu, event_count)
     samples = np.asarray(list(itertools.islice(sampler, n_samples)))[:, 0]
     ks = distribution.kolmogorov_smirnov(samples)
     print(f"Kolmgorov-Smirnow statistics = {ks:6.2e}")
@@ -299,14 +292,14 @@ test_data = [
 ]
 
 
-@pytest.mark.parametrize("A_precision,f_rhs,b_measurement,nu,event_count", test_data)
-def test_sampler(A_precision, f_rhs, b_measurement, nu, event_count):
+@pytest.mark.parametrize("Q_prec,f_rhs,b_measurement,nu,event_count", test_data)
+def test_sampler(Q_prec, f_rhs, b_measurement, nu, event_count):
     """Verify that samples satisfy the Kolmogorov Smirnov test"""
     n_samples = 20000
     distribution = MarginalisedDistribution(
-        A_precision, f_rhs, b_measurement, nu, event_count
+        Q_prec, f_rhs, b_measurement, nu, event_count
     )
-    sampler = Sampler(A_precision, f_rhs, b_measurement, nu, event_count)
+    sampler = Sampler(Q_prec, f_rhs, b_measurement, nu, event_count)
     samples = np.asarray(list(itertools.islice(sampler, n_samples)))[:, 0]
     tolerance = 1.0e-2
     assert distribution.kolmogorov_smirnov(samples) < tolerance

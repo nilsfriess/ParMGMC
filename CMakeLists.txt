@@ -88,7 +88,7 @@ message(STATUS ${PARMGMC_INCLUDES})
 target_sources(parmgmc
 	PRIVATE
 	    src/pc_sorgibbs.c
-      src/pc_poissongibbs.c
+      src/snes_poissongibbs.c
 	    src/pc_mcgibbs.c
 	    src/pc_gamgmc.c
 	    src/pc_chols.c

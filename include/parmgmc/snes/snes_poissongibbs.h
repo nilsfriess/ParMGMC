@@ -8,18 +8,17 @@
 
 #pragma once
 
-#include <petscmacros.h>
-#include <petscpctypes.h>
-#include <petscsystypes.h>
 #include <petscvec.h>
 #include <petscmat.h>
+#include <petscsnes.h>
 
 /* User context for Poisson Gibbs sampler */
 typedef struct {
-   Vec event_counts; // measured event counts
-   Vec nu;           // Shift vector of length m
-   Mat B;            // observation matrix of size n x m
+  Vec event_counts; // measured event counts
+  Mat Q_prec;       // precision matrix
+  Mat B_meas;       // measurement matrix
+  Vec f_rhs;        // right hand side vector  
+  Vec nu;           // Shift vector of length m
 } PoissonGibbsCtx;
 
-
-PETSC_EXTERN PetscErrorCode PCCreate_PoissonGibbs(PC pc);
+PETSC_EXTERN PetscErrorCode SNESCreate_PoissonGibbs(SNES snes);
