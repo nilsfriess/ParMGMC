@@ -20,3 +20,5 @@ typedef struct {
 } PoissonGibbsCtx;
 
 PETSC_EXTERN PetscErrorCode SNESCreate_PoissonGibbs(SNES snes);
+PETSC_EXTERN PetscErrorCode SNESCreate_PoissonGibbsFAS(SNES snes);
+

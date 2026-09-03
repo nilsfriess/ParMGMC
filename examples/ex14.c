@@ -95,6 +95,7 @@ int main(int argc, char *argv[])
   SNES           snes;
   MS             ms;
   PetscInt       nobs = 4;
+  PetscViewer    viewer;
 
   PetscCall(PetscInitialize(&argc, &argv, NULL, NULL));
   PetscCall(ParMGMCInitialize());
@@ -114,6 +115,8 @@ int main(int argc, char *argv[])
   initialise_ctx(Q_prec,nobs,&ctx);
   initialise_rhs(ndof,nobs,&b_rhs);
 
+  PetscCall(SNESSetApplicationContext(snes, &ctx));
+  
   // Create sample vector
   PetscCall(VecCreate(MPI_COMM_WORLD, &y));
   PetscCall(VecSetSizes(y, PETSC_DECIDE, ndof));
@@ -121,10 +124,15 @@ int main(int argc, char *argv[])
   
   PetscCall(SNESSetFromOptions(snes));
   PetscCall(SNESSetUp(snes));
+
+  PetscCall(PetscViewerASCIIOpen(PETSC_COMM_WORLD,"snes_view.txt",&viewer));
+  PetscCall(SNESView(snes, viewer));
+  PetscCall(PetscViewerDestroy(&viewer));
+  PetscCall(SNESDestroy(&snes));
+  exit(0);
+
   PetscCall(DMCreateGlobalVector(dm, &y));
-  PetscCall(SNESSetApplicationContext(snes, &ctx));
   
-  PetscViewer viewer;
   char        filename[512] = "solution.vtu";
 
   PetscCall(PetscOptionsGetString(NULL, NULL, "-filename", filename, 512, NULL));

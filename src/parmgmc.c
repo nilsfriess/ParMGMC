@@ -14,7 +14,6 @@
 #include "parmgmc/pc/pc_sorgibbs.h"
 #include "parmgmc/pc/woodbury.h"
 #include "parmgmc/snes/snes_poissongibbs.h"
-#include "parmgmc/snes/snes_poissongibbsfas.h"
 
 #include <petsc/private/pcimpl.h>
 #include <petsc/private/petscimpl.h>
