@@ -14,6 +14,7 @@
 #include "parmgmc/pc/pc_sorgibbs.h"
 #include "parmgmc/pc/woodbury.h"
 #include "parmgmc/snes/snes_poissongibbs.h"
+#include "parmgmc/snes/snes_poissongibbsfas.h"
 
 #include <petsc/private/pcimpl.h>
 #include <petsc/private/petscimpl.h>
@@ -52,6 +53,7 @@ static PetscErrorCode ParMGMCRegisterPCAll(void)
   PetscCall(PCRegister(PCPARSOR, PCCreate_PARSOR));
   PetscCall(PCRegister(PCWOODBURY, PCCreate_Woodbury));
   PetscCall(SNESRegister(SNESPOISSONGIBBS, SNESCreate_PoissonGibbs));
+  PetscCall(SNESRegister(SNESPOISSONGIBBSFAS, SNESCreate_PoissonGibbsFAS));
   PetscFunctionReturn(PETSC_SUCCESS);
 }
 

@@ -89,6 +89,7 @@ target_sources(parmgmc
 	PRIVATE
 	    src/pc_sorgibbs.c
       src/snes_poissongibbs.c
+      src/snes_poissongibbsfas.c
 	    src/pc_mcgibbs.c
 	    src/pc_gamgmc.c
 	    src/pc_chols.c

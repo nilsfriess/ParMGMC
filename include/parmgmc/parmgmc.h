@@ -15,13 +15,14 @@
 #include <petscvec.h>
 #include <petscversion.h>
 
-#define PCMCGIBBS        "mcgibbs"
-#define PCGAMGMC         "gamgmc"
-#define PCSORGIBBS       "sorgibbs"
-#define PCCHOLSAMPLER    "cholsampler"
-#define PCPARSOR         "parsor"
-#define PCWOODBURY       "woodbury"
-#define SNESPOISSONGIBBS "poissongibbs"
+#define PCMCGIBBS           "mcgibbs"
+#define PCGAMGMC            "gamgmc"
+#define PCSORGIBBS          "sorgibbs"
+#define PCCHOLSAMPLER       "cholsampler"
+#define PCPARSOR            "parsor"
+#define PCWOODBURY          "woodbury"
+#define SNESPOISSONGIBBS    "poissongibbs"
+#define SNESPOISSONGIBBSFAS "poissongibbsfas"
 
 PETSC_EXTERN PetscClassId  PARMGMC_CLASSID;
 PETSC_EXTERN PetscLogEvent MULTICOL_SOR;
