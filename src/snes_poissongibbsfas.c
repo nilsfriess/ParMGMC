@@ -133,18 +133,16 @@ static PetscErrorCode setup_fas(SNES snes) {
 
   // Set the smoothers on all levels
   for (PetscInt ell=0;ell<nlevels;++ell) {
-    SNES snes_level;
+    SNES smoother;
     Vec solution;
     if (ell == 0) {
-      PetscCall(SNESFASGetCoarseSolve(poissongibbsfas->fas, &snes_level));
+      PetscCall(SNESFASGetCoarseSolve(poissongibbsfas->fas, &smoother));
     } else {
-      PetscCall(SNESFASGetSmoother(poissongibbsfas->fas, ell, &snes_level));
-    }
-    PetscCall(SNESSetType(snes_level, SNESPOISSONGIBBS));
-    PetscCall(MatCreateVecs(poissongibbsfas->smoother_ctx[ell].Q_prec,
-                            &solution, NULL));
-    PetscCall(SNESSetSolution(snes_level, solution));
-    PetscCall(SNESSetApplicationContext(snes_level, &poissongibbsfas->smoother_ctx[ell]));
+      PetscCall(SNESFASGetSmoother(poissongibbsfas->fas, ell, &smoother));
+    }    
+    PetscCall(SNESSetApplicationContext(smoother, &poissongibbsfas->smoother_ctx[ell]));    
+    PetscCall(SNESSetType(smoother, SNESPOISSONGIBBS));        
+    PetscCall(SNESSetUp(smoother));
   }
     
   // Set intergrid operators on all levels
@@ -162,9 +160,19 @@ static PetscErrorCode setup_fas(SNES snes) {
     PetscCall(MatCreateNest(PETSC_COMM_WORLD, 2, NULL, 2, NULL, blocks, &R));
     PetscCall(SNESFASSetRestriction(poissongibbsfas->fas, ell, R));
   }
-  Vec fine_solution;
-  PetscCall(MatCreateVecs(ctx->Q_prec,&fine_solution, NULL));
-  PetscCall(SNESSetSolution(poissongibbsfas->fas, fine_solution));
+
+  Vec b_rhs;
+  SNESFunctionFn *f;
+  SNES fine_smoother;
+  if (nlevels == 1) {
+      PetscCall(SNESFASGetCoarseSolve(poissongibbsfas->fas, &fine_smoother));
+    } else {
+      PetscCall(SNESFASGetSmoother(poissongibbsfas->fas, nlevels-1, &fine_smoother));
+    }
+  PetscCall(SNESGetFunction(fine_smoother, &b_rhs, &f, ctx));
+  PetscCall(SNESSetFunction(poissongibbsfas->fas, b_rhs, f, ctx));
+  PetscCall(SNESSetFunction(snes, b_rhs, f, ctx));
+
   PetscCall(SNESSetUp(poissongibbsfas->fas));
   
   PetscFunctionReturn(PETSC_SUCCESS);
@@ -226,6 +234,7 @@ PetscErrorCode SNESCreate_PoissonGibbsFAS(SNES snes)
   snes->usesksp = PETSC_FALSE;
   snes->usesnpc = PETSC_FALSE;
 
+  
   // Create multigrid PC
   PetscCall(PCCreate(PETSC_COMM_WORLD,&poissongibbsfas->mg));
   // Create SNES

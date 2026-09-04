@@ -27,6 +27,7 @@ typedef struct {
   PetscInt random_work_ptr;
   PetscInt sample_index;  
   PetscInt its;
+  Vec b_rhs; // right hand side
 }  SNES_PoissonGibbs;
 
 #define RANDOM_BUFFER_SIZE 64
@@ -282,6 +283,7 @@ static PetscErrorCode SNESReset_PoissonGibbs(SNES snes)
   PetscFunctionBeginUser;
   PetscCall(PetscRandomDestroy(&poissongibbs->prand));  
   PetscCall(VecDestroy(&poissongibbs->random_workspace));
+  PetscCall(VecDestroy(&poissongibbs->b_rhs));
   PetscFunctionReturn(PETSC_SUCCESS);
 }
 
@@ -292,6 +294,7 @@ static PetscErrorCode SNESDestroy_PoissonGibbs(SNES snes)
   PetscFunctionBeginUser;
   PetscCall(PetscRandomDestroy(&poissongibbs->prand));
   PetscCall(VecDestroy(&poissongibbs->random_workspace));
+  PetscCall(VecDestroy(&poissongibbs->b_rhs));
   PetscCall(PetscFree(poissongibbs));
   PetscFunctionReturn(PETSC_SUCCESS);  
 }
@@ -333,7 +336,9 @@ static PetscErrorCode SNESView_PoissonGibbs(SNES snes, PetscViewer viewer)
 PetscErrorCode SNESCreate_PoissonGibbs(SNES snes)
 {
   SNES_PoissonGibbs* poissongibbs;
-  PoissonGibbsCtx* ctx;  
+  PoissonGibbsCtx* ctx;
+  PetscInt ndof, nobs;
+  Vec f_rhs, nu;    
 
   PetscFunctionBeginUser;
   PetscCall(PetscNew(&poissongibbs));
@@ -348,9 +353,14 @@ PetscErrorCode SNESCreate_PoissonGibbs(SNES snes)
 
   snes->usesksp = PETSC_FALSE;
   snes->usesnpc = PETSC_FALSE;
-
+  
   PetscCall(SNESGetApplicationContext(snes, &ctx));
-  PetscCall(SNESSetFunction(snes, NULL, SNESPoissonGibbs_Function, ctx));
+  PetscCall(MatGetSize(ctx->B_meas,&ndof,&nobs));
+  PetscCall(VecCreateSeq(PETSC_COMM_SELF, ndof, &f_rhs));
+  PetscCall(VecCreateSeq(PETSC_COMM_SELF, nobs, &nu));
+  Vec subvecs[2] = {f_rhs, nu};
+  PetscCall(VecCreateNest(PETSC_COMM_WORLD, 2, NULL, subvecs, &poissongibbs->b_rhs));
+  PetscCall(SNESSetFunction(snes, poissongibbs->b_rhs, SNESPoissonGibbs_Function, ctx));
 
   PetscFunctionReturn(PETSC_SUCCESS);
 }
