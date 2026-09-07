@@ -133,8 +133,9 @@ static PetscErrorCode setup_fas(SNES snes) {
 
   // Set the smoothers on all levels
   for (PetscInt ell=0;ell<nlevels;++ell) {
-    SNES smoother;
-    Vec solution;
+    Vec b_rhs;
+    SNESFunctionFn *f;
+    SNES smoother, level_snes;
     if (ell == 0) {
       PetscCall(SNESFASGetCoarseSolve(poissongibbsfas->fas, &smoother));
     } else {
@@ -143,8 +144,11 @@ static PetscErrorCode setup_fas(SNES snes) {
     PetscCall(SNESSetApplicationContext(smoother, &poissongibbsfas->smoother_ctx[ell]));    
     PetscCall(SNESSetType(smoother, SNESPOISSONGIBBS));        
     PetscCall(SNESSetUp(smoother));
+    PetscCall(SNESGetFunction(smoother, &b_rhs, &f, NULL));
+    PetscCall(SNESFASGetCycleSNES(poissongibbsfas->fas, ell, &level_snes));
+    PetscCall(SNESSetFunction(level_snes, b_rhs, f, &poissongibbsfas->smoother_ctx[ell]));
   }
-    
+
   // Set intergrid operators on all levels
   Mat Id;
   PetscInt ndof, nobs;
@@ -160,18 +164,6 @@ static PetscErrorCode setup_fas(SNES snes) {
     PetscCall(MatCreateNest(PETSC_COMM_WORLD, 2, NULL, 2, NULL, blocks, &R));
     PetscCall(SNESFASSetRestriction(poissongibbsfas->fas, ell, R));
   }
-
-  Vec b_rhs;
-  SNESFunctionFn *f;
-  SNES fine_smoother;
-  if (nlevels == 1) {
-      PetscCall(SNESFASGetCoarseSolve(poissongibbsfas->fas, &fine_smoother));
-    } else {
-      PetscCall(SNESFASGetSmoother(poissongibbsfas->fas, nlevels-1, &fine_smoother));
-    }
-  PetscCall(SNESGetFunction(fine_smoother, &b_rhs, &f, ctx));
-  PetscCall(SNESSetFunction(poissongibbsfas->fas, b_rhs, f, ctx));
-  PetscCall(SNESSetFunction(snes, b_rhs, f, ctx));
 
   PetscCall(SNESSetUp(poissongibbsfas->fas));
   
