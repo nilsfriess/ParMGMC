@@ -181,6 +181,7 @@ static PetscErrorCode setup_fas(SNES snes) {
     //                          [ 0 0 ]
     Mat blocks_prolong[4] = {P[ell-1], NULL, NULL, Id};
     PetscCall(MatCreateNest(PETSC_COMM_WORLD, 2, NULL, 2, NULL, blocks_prolong, &P_2x2));
+    PetscCall(MatNestSetVecType(P_2x2, VECNEST));
     PetscCall(SNESFASSetInterpolation(poissongibbsfas->fas, ell, P_2x2));
     // Restriction is given by
     //                          [ P^T 0 ]
@@ -188,6 +189,7 @@ static PetscErrorCode setup_fas(SNES snes) {
     PetscCall(MatTranspose(P[ell-1], MAT_INITIAL_MATRIX, &P_T));
     Mat blocks_restrict[4] = {P_T, NULL, NULL, Id};
     PetscCall(MatCreateNest(PETSC_COMM_WORLD, 2, NULL, 2, NULL, blocks_restrict, &R_2x2));
+    PetscCall(MatNestSetVecType(R_2x2, VECNEST));
     PetscCall(SNESFASSetRestriction(poissongibbsfas->fas, ell, R_2x2));
     // Injection is given by
     //                          [ 0   0 ]
@@ -196,6 +198,7 @@ static PetscErrorCode setup_fas(SNES snes) {
     PetscCall(MatZeroEntries(R_hat));
     Mat blocks_inject[4] = {R_hat, NULL, NULL, Id};
     PetscCall(MatCreateNest(PETSC_COMM_WORLD, 2, NULL, 2, NULL, blocks_inject, &I_2x2));    
+    PetscCall(MatNestSetVecType(I_2x2, VECNEST));
     PetscCall(SNESFASSetInjection(poissongibbsfas->fas, ell, I_2x2));
   }
 
