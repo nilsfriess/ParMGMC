@@ -22,9 +22,12 @@
 #include <string.h>
 
 typedef struct {  
-  SNES fas;         // FAS
-  PC mg;            // multigrid 
-  PetscInt nlevels; // number of multigrid levels
+  SNES fas;            // FAS
+  PC mg;               // multigrid 
+  PetscInt nlevels;    // number of multigrid levels
+  PetscInt its_up;     // Number of pre-smoother iterations
+  PetscInt its_down;   // Number of post-smoother iterations
+  PetscInt its_coarse; // Number of coarse-smoother iterations
   PoissonGibbsCtx *smoother_ctx;
 }  SNES_PoissonGibbsFAS;
 
@@ -135,16 +138,29 @@ static PetscErrorCode setup_fas(SNES snes) {
   for (PetscInt ell=0;ell<nlevels;++ell) {
     Vec b_rhs;
     SNESFunctionFn *f;
-    SNES smoother, level_snes;
+    SNES smoother_up, smoother_down, smoother_coarse, level_snes;
     if (ell == 0) {
-      PetscCall(SNESFASGetCoarseSolve(poissongibbsfas->fas, &smoother));
+      PetscCall(SNESFASGetCoarseSolve(poissongibbsfas->fas, &smoother_coarse));
+      PetscCall(SNESSetApplicationContext(smoother_coarse, &poissongibbsfas->smoother_ctx[ell]));
+      PetscCall(SNESSetType(smoother_coarse, SNESPOISSONGIBBS));
+      PetscCall(SNESPoissonGibbsSetIterations(smoother_coarse,poissongibbsfas->its_coarse));
+      PetscCall(SNESSetUp(smoother_coarse));
+      PetscCall(SNESGetFunction(smoother_coarse, &b_rhs, &f, NULL));
     } else {
-      PetscCall(SNESFASGetSmoother(poissongibbsfas->fas, ell, &smoother));
+      // Down smoother
+      PetscCall(SNESFASGetSmootherDown(poissongibbsfas->fas, ell, &smoother_down));
+      PetscCall(SNESSetApplicationContext(smoother_down, &poissongibbsfas->smoother_ctx[ell]));
+      PetscCall(SNESSetType(smoother_down, SNESPOISSONGIBBS));
+      PetscCall(SNESPoissonGibbsSetIterations(smoother_down,poissongibbsfas->its_down));
+      PetscCall(SNESSetUp(smoother_down));
+      // Up smoother
+      PetscCall(SNESFASGetSmootherUp(poissongibbsfas->fas, ell, &smoother_up));
+      PetscCall(SNESSetApplicationContext(smoother_up, &poissongibbsfas->smoother_ctx[ell]));
+      PetscCall(SNESSetType(smoother_up, SNESPOISSONGIBBS));
+      PetscCall(SNESPoissonGibbsSetIterations(smoother_up,poissongibbsfas->its_up));
+      PetscCall(SNESSetUp(smoother_up));
+      PetscCall(SNESGetFunction(smoother_up, &b_rhs, &f, NULL));
     }    
-    PetscCall(SNESSetApplicationContext(smoother, &poissongibbsfas->smoother_ctx[ell]));    
-    PetscCall(SNESSetType(smoother, SNESPOISSONGIBBS));        
-    PetscCall(SNESSetUp(smoother));
-    PetscCall(SNESGetFunction(smoother, &b_rhs, &f, NULL));
     PetscCall(SNESFASGetCycleSNES(poissongibbsfas->fas, ell, &level_snes));
     PetscCall(SNESSetFunction(level_snes, b_rhs, f, &poissongibbsfas->smoother_ctx[ell]));
   }
@@ -192,6 +208,12 @@ static PetscErrorCode SNESSetFromOptions_PoissonGibbsFAS(SNES snes, PetscOptionI
   PetscCall(PetscStrcmp(pc_type, PCGAMG, &isgamg));
   PetscCall(PetscStrcmp(pc_type, PCMG, &ismg));
   PetscCheck(isgamg || ismg, PETSC_COMM_SELF, PETSC_ERR_ARG_WRONG, "PC type must be mg or gamg, but got %s", pc_type);
+
+  PetscOptionsHeadBegin(PetscOptionsObject, "Poisson Gibbs options");
+  PetscCall(PetscOptionsInt("-snes_poissongibbsfas_smoothdown", "Number of Poisson Gibbs pre-smoother iterations", NULL, poissongibbsfas->its_down, &poissongibbsfas->its_down, NULL));  
+  PetscCall(PetscOptionsInt("-snes_poissongibbsfas_smoothup", "Number of Poisson Gibbs post-smoother smoother iterations", NULL, poissongibbsfas->its_up, &poissongibbsfas->its_up, NULL));    
+  PetscCall(PetscOptionsInt("-snes_poissongibbsfas_smoothcoarse", "Number of Poisson Gibbs coarse-smoother iterations", NULL, poissongibbsfas->its_coarse, &poissongibbsfas->its_coarse, NULL));  
+  PetscOptionsHeadEnd();  
   PetscFunctionReturn(PETSC_SUCCESS);
 }
 
@@ -226,7 +248,10 @@ PetscErrorCode SNESCreate_PoissonGibbsFAS(SNES snes)
   snes->usesksp = PETSC_FALSE;
   snes->usesnpc = PETSC_FALSE;
 
-  
+  poissongibbsfas->its_up = 1;
+  poissongibbsfas->its_down = 1;
+  poissongibbsfas->its_coarse = 1;
+    
   // Create multigrid PC
   PetscCall(PCCreate(PETSC_COMM_WORLD,&poissongibbsfas->mg));
   // Create SNES

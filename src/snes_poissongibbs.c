@@ -312,13 +312,20 @@ static PetscErrorCode SNESSetUp_PoissonGibbs(SNES snes)
   PetscFunctionReturn(PETSC_SUCCESS);
 }
 
+PetscErrorCode SNESPoissonGibbsSetIterations(SNES snes, PetscInt its) {
+  SNES_PoissonGibbs* poissongibbs = (SNES_PoissonGibbs*)snes->data;
+  PetscFunctionBeginUser;
+  poissongibbs->its = its;
+  PetscFunctionReturn(PETSC_SUCCESS);
+}
+
 static PetscErrorCode SNESSetFromOptions_PoissonGibbs(SNES snes, PetscOptionItems PetscOptionsObject)
 {
   SNES_PoissonGibbs* poissongibbs = (SNES_PoissonGibbs*)snes->data;
   (void)poissongibbs;
   PetscFunctionBegin;
   PetscOptionsHeadBegin(PetscOptionsObject, "Poisson Gibbs options");
-  PetscCall(PetscOptionsInt("-poissongibbs_its", "Number of Poisson Gibbs iterations", NULL, poissongibbs->its, &poissongibbs->its, NULL));
+  PetscCall(PetscOptionsInt("-poissongibbs_its", "Number of Poisson Gibbs iterations", NULL, poissongibbs->its, &poissongibbs->its, NULL));  
   PetscOptionsHeadEnd();
   PetscFunctionReturn(PETSC_SUCCESS);
 }
@@ -353,6 +360,8 @@ PetscErrorCode SNESCreate_PoissonGibbs(SNES snes)
 
   snes->usesksp = PETSC_FALSE;
   snes->usesnpc = PETSC_FALSE;
+
+  PetscCall(SNESPoissonGibbsSetIterations(snes,1));
   
   PetscCall(SNESGetApplicationContext(snes, &ctx));
   PetscCall(MatGetSize(ctx->B_meas,&ndof,&nobs));
