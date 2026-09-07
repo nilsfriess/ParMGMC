@@ -22,9 +22,10 @@
 #include <string.h>
 
 typedef struct {  
-  SNES fas;            // FAS
-  PC mg;               // multigrid 
+  SNES fas;            // internal FAS
+  PC mg;               // internal multigrid 
   PetscInt nlevels;    // number of multigrid levels
+  PetscInt its;        // Number of iterations (=FAS cycles)
   PetscInt its_up;     // Number of pre-smoother iterations
   PetscInt its_down;   // Number of post-smoother iterations
   PetscInt its_coarse; // Number of coarse-smoother iterations
@@ -37,6 +38,8 @@ static PetscErrorCode SNESSample_PoissonGibbsFAS(SNES snes)
   SNES_PoissonGibbsFAS* poissongibbsfas = (SNES_PoissonGibbsFAS*)snes->data;
   
   PetscFunctionBeginUser;
+  PetscCall(SNESSolve(poissongibbsfas->fas, snes->vec_rhs, snes->vec_sol));
+  snes->reason = SNES_CONVERGED_ITS;
   PetscFunctionReturn(PETSC_SUCCESS);
 }
 
@@ -160,7 +163,7 @@ static PetscErrorCode setup_fas(SNES snes) {
       PetscCall(SNESPoissonGibbsSetIterations(smoother_up,poissongibbsfas->its_up));
       PetscCall(SNESSetUp(smoother_up));
       PetscCall(SNESGetFunction(smoother_up, &b_rhs, &f, NULL));
-    }    
+    }
     PetscCall(SNESFASGetCycleSNES(poissongibbsfas->fas, ell, &level_snes));
     PetscCall(SNESSetFunction(level_snes, b_rhs, f, &poissongibbsfas->smoother_ctx[ell]));
   }
@@ -172,15 +175,34 @@ static PetscErrorCode setup_fas(SNES snes) {
   PetscCall(MatCreateConstantDiagonal(PETSC_COMM_WORLD, nobs, nobs, PETSC_DECIDE, PETSC_DECIDE, 1.0, &Id));
   PetscCall(PCGetInterpolations(poissongibbsfas->mg, &nlevels, &P));
   for (PetscInt ell=1;ell<nlevels;++ell) {
-    Mat R;
-    Mat P_T;
-    PetscCall(SNESFASSetInterpolation(poissongibbsfas->fas, ell, P[ell-1]));
+    Mat P_T, R_hat, R_2x2, P_2x2, I_2x2;
+    // Prolongation is given by
+    //                          [ P 0 ]
+    //                          [ 0 0 ]
+    Mat blocks_prolong[4] = {P[ell-1], NULL, NULL, Id};
+    PetscCall(MatCreateNest(PETSC_COMM_WORLD, 2, NULL, 2, NULL, blocks_prolong, &P_2x2));
+    PetscCall(SNESFASSetInterpolation(poissongibbsfas->fas, ell, P_2x2));
+    // Restriction is given by
+    //                          [ P^T 0 ]
+    //                          [ 0   I ]    
     PetscCall(MatTranspose(P[ell-1], MAT_INITIAL_MATRIX, &P_T));
-    Mat blocks[4] = {P_T, NULL, NULL, Id};
-    PetscCall(MatCreateNest(PETSC_COMM_WORLD, 2, NULL, 2, NULL, blocks, &R));
-    PetscCall(SNESFASSetRestriction(poissongibbsfas->fas, ell, R));
+    Mat blocks_restrict[4] = {P_T, NULL, NULL, Id};
+    PetscCall(MatCreateNest(PETSC_COMM_WORLD, 2, NULL, 2, NULL, blocks_restrict, &R_2x2));
+    PetscCall(SNESFASSetRestriction(poissongibbsfas->fas, ell, R_2x2));
+    // Injection is given by
+    //                          [ 0   0 ]
+    //                          [ 0   I ]        
+    PetscCall(MatDuplicate(P_T, MAT_DO_NOT_COPY_VALUES, &R_hat));
+    PetscCall(MatZeroEntries(R_hat));
+    Mat blocks_inject[4] = {R_hat, NULL, NULL, Id};
+    PetscCall(MatCreateNest(PETSC_COMM_WORLD, 2, NULL, 2, NULL, blocks_inject, &I_2x2));    
+    PetscCall(SNESFASSetInjection(poissongibbsfas->fas, ell, I_2x2));
   }
 
+  // Do exactly one iteration
+  PetscCall(SNESSetTolerances(poissongibbsfas->fas, PETSC_DEFAULT, PETSC_DEFAULT,
+                            PETSC_DEFAULT, 1, PETSC_DEFAULT));
+  PetscCall(SNESSetForceIteration(poissongibbsfas->fas,true));
   PetscCall(SNESSetUp(poissongibbsfas->fas));
   
   PetscFunctionReturn(PETSC_SUCCESS);
@@ -209,7 +231,7 @@ static PetscErrorCode SNESSetFromOptions_PoissonGibbsFAS(SNES snes, PetscOptionI
   PetscCall(PetscStrcmp(pc_type, PCMG, &ismg));
   PetscCheck(isgamg || ismg, PETSC_COMM_SELF, PETSC_ERR_ARG_WRONG, "PC type must be mg or gamg, but got %s", pc_type);
 
-  PetscOptionsHeadBegin(PetscOptionsObject, "Poisson Gibbs options");
+  PetscOptionsHeadBegin(PetscOptionsObject, "Poisson Gibbs options");  
   PetscCall(PetscOptionsInt("-snes_poissongibbsfas_smoothdown", "Number of Poisson Gibbs pre-smoother iterations", NULL, poissongibbsfas->its_down, &poissongibbsfas->its_down, NULL));  
   PetscCall(PetscOptionsInt("-snes_poissongibbsfas_smoothup", "Number of Poisson Gibbs post-smoother smoother iterations", NULL, poissongibbsfas->its_up, &poissongibbsfas->its_up, NULL));    
   PetscCall(PetscOptionsInt("-snes_poissongibbsfas_smoothcoarse", "Number of Poisson Gibbs coarse-smoother iterations", NULL, poissongibbsfas->its_coarse, &poissongibbsfas->its_coarse, NULL));  
@@ -221,7 +243,7 @@ static PetscErrorCode SNESView_PoissonGibbsFAS(SNES snes, PetscViewer viewer)
 {
   SNES_PoissonGibbsFAS* poissongibbsfas = (SNES_PoissonGibbsFAS*)snes->data;
   PetscFunctionBeginUser;
-  PetscCall(PetscViewerASCIIPushTab(viewer));
+  PetscCall(PetscViewerASCIIPushTab(viewer));  
   PetscCall(PetscViewerASCIIPrintf(viewer, "Underlying multigrid\n"));
   PetscCall(PCView(poissongibbsfas->mg,viewer));
   PetscCall(PetscViewerASCIIPrintf(viewer, "Underlying FAS\n"));
@@ -248,6 +270,7 @@ PetscErrorCode SNESCreate_PoissonGibbsFAS(SNES snes)
   snes->usesksp = PETSC_FALSE;
   snes->usesnpc = PETSC_FALSE;
 
+  poissongibbsfas->its = 1;
   poissongibbsfas->its_up = 1;
   poissongibbsfas->its_down = 1;
   poissongibbsfas->its_coarse = 1;

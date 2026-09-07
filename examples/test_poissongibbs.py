@@ -213,17 +213,19 @@ class Sampler:
         }
         for key, value in solver_parameters.items():
             opts[key] = value
-        snes.setFromOptions()
-
         pymgmc.SNESPoissonSetAppCtx(snes, event_count_petsc, Q_petsc, B_petsc)
+        snes.setFromOptions()
         self._snes = snes
-        self._y = PETSc.Vec().createWithArray([0, 0])
+        theta = PETSc.Vec().createWithArray([0, 0])
+        z = PETSc.Vec().createWithArray([0])
+        self._y = PETSc.Vec().createNest([theta, z])
 
     def __iter__(self):
         """Iterator"""
         while True:
             self._snes.solve(self._b_rhs_petsc, self._y)
-            yield np.array(self._y.getArray())
+            theta, _ = self._y.getNestSubVecs()
+            yield np.array(theta.getArray())
 
 
 def visualise(

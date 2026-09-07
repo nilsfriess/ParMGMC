@@ -146,16 +146,16 @@ static PetscErrorCode SNESPoissonGibbs_FindMaximum(const PetscScalar mu_bar,
 
 static PetscErrorCode SNESPoissonGibbs_Function(SNES snes, Vec y, Vec b, void* ctx) 
 {
-  Vec f_rhs;
-  Vec nu;
+  Vec theta, f_rhs, nu;
 
   PoissonGibbsCtx* poissongibbs = (PoissonGibbsCtx*)ctx;
 
   PetscFunctionBeginUser;
+  PetscCall(VecNestGetSubVec(y, 0, &theta));
   PetscCall(VecNestGetSubVec(b, 0, &f_rhs));
   PetscCall(VecNestGetSubVec(b, 1, &nu));
-  PetscCall(MatMult(poissongibbs->Q_prec,y,f_rhs));
-  PetscCall(MatMultTranspose(poissongibbs->B_meas,y,nu));
+  PetscCall(MatMult(poissongibbs->Q_prec,theta,f_rhs));
+  PetscCall(MatMultTranspose(poissongibbs->B_meas,theta,nu));
   PetscFunctionReturn(PETSC_SUCCESS);
 }
 
@@ -164,7 +164,7 @@ static PetscErrorCode SNESPoissonGibbs_Function(SNES snes, Vec y, Vec b, void* c
 static PetscErrorCode SNESSample_PoissonGibbs(SNES snes)
 {
   SNES_PoissonGibbs* poissongibbs = (SNES_PoissonGibbs*)snes->data;
-  Vec y;
+  Vec theta;
   Vec f_rhs;
   Vec nu;
   PetscInt rstart, rend, ncols_Q, ncols_B, max_nnz_per_row;
@@ -174,7 +174,7 @@ static PetscErrorCode SNESSample_PoissonGibbs(SNES snes)
   const PetscScalar *vals_B;
   PetscScalar sigma;
   PetscScalar mu_bar;
-  PetscScalar* theta;
+  PetscScalar* theta_array;
   PetscScalar* n_local;
   PetscScalar* nu_local;
   PetscScalar theta_bar;  
@@ -188,7 +188,7 @@ static PetscErrorCode SNESSample_PoissonGibbs(SNES snes)
   PoissonGibbsCtx* ctx;  
 
   PetscFunctionBeginUser;
-  y = snes->vec_sol;
+  PetscCall(VecNestGetSubVec(snes->vec_sol,0,&theta));
   PetscCall(VecNestGetSubVec(snes->vec_rhs,0,&f_rhs));
   PetscCall(VecNestGetSubVec(snes->vec_rhs,1,&nu));
 
@@ -197,7 +197,7 @@ static PetscErrorCode SNESSample_PoissonGibbs(SNES snes)
   B_meas = ctx->B_meas;
 
   PetscCall(VecDuplicate(nu, &nu_tilde));
-  PetscCall(MatMultTransposeAdd(ctx->B_meas, y, nu, nu_tilde));
+  PetscCall(MatMultTransposeAdd(ctx->B_meas, theta, nu, nu_tilde));
   
   // Storage for local part of vectors
   PetscCall(SNESPoissonGibbs_GetMaxNnzPerRow(Q_prec, &max_nnz_per_row));
@@ -205,11 +205,11 @@ static PetscErrorCode SNESSample_PoissonGibbs(SNES snes)
   PetscCall(PetscMalloc1(max_nnz_per_row, &n_local));
   PetscCall(PetscMalloc1(max_nnz_per_row, &nu_local));
   
-  PetscCall(VecDuplicate(y, &v_diag));
+  PetscCall(VecDuplicate(theta, &v_diag));
   PetscCall(MatGetDiagonal(Q_prec, v_diag));
   PetscCall(VecGetArrayRead(v_diag, &diag));
   PetscCall(VecGetArrayRead(f_rhs, &f_rhs_array));
-  PetscCall(VecGetArray(y,&theta));
+  PetscCall(VecGetArray(theta,&theta_array));
   PetscCall(MatGetOwnershipRange(Q_prec, &rstart, &rend));
 
   for (it=0; it<poissongibbs->its; ++it) {
@@ -221,12 +221,12 @@ static PetscErrorCode SNESSample_PoissonGibbs(SNES snes)
       PetscCall(VecGetValues(ctx->event_counts, ncols_B, cols_B, n_local));
       PetscCall(VecGetValues(nu_tilde, ncols_B, cols_B, nu_local));
       for (PetscInt k=0; k<ncols_B; ++k) {
-        nu_local[k] -= theta[iloc]*vals_B[k];
+        nu_local[k] -= theta_array[iloc]*vals_B[k];
       }
       mu_bar = f_rhs_array[iloc];
       for (PetscInt j=0; j<ncols_Q; ++j) {
         if (cols_Q[j] != i)
-          mu_bar -= vals_Q[j]*theta[cols_Q[j]-rstart];
+          mu_bar -= vals_Q[j]*theta_array[cols_Q[j]-rstart];
       }
       for (PetscInt j=0; j<ncols_B; ++j) {
         mu_bar += vals_B[j]*n_local[j];
@@ -254,9 +254,9 @@ static PetscErrorCode SNESSample_PoissonGibbs(SNES snes)
         PetscCall(SNESPoissonGibbs_StandardNormal(snes, &r));
         theta_prime = mu_bar + sigma*r;
       }
-      theta[iloc] = theta_prime;
+      theta_array[iloc] = theta_prime;
       for (PetscInt k=0; k<ncols_B; ++k) {
-        nu_local[k] += theta[iloc]*vals_B[k];
+        nu_local[k] += theta_array[iloc]*vals_B[k];
       }
       PetscCall(VecSetValues(nu_tilde, ncols_B, cols_B, nu_local, INSERT_VALUES));
       PetscCall(VecAssemblyBegin(nu_tilde));
@@ -268,7 +268,7 @@ static PetscErrorCode SNESSample_PoissonGibbs(SNES snes)
   snes->reason = SNES_CONVERGED_ITS;
   PetscCall(VecRestoreArrayRead(v_diag, &diag));
   PetscCall(VecRestoreArrayRead(f_rhs, &f_rhs_array));
-  PetscCall(VecRestoreArray(y, &theta));
+  PetscCall(VecRestoreArray(theta, &theta_array));
   PetscCall(PetscFree(n_local));
   PetscCall(PetscFree(nu_local));
   PetscCall(VecDestroy(&v_diag));

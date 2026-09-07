@@ -17,8 +17,17 @@
 Command line options:
 
   ./build/examples/ex14 \
+      -dm_refine 3 \
       -snes_type poissongibbs \
       -poissongibbs_its 1 \
+      -snes_view :snes_view.txt
+
+  or
+
+  ./build/examples/ex14 \
+      -dm_refine 3 \
+      -snes_type poissongibbsfas \
+      -pc_type gamg \     
       -snes_view :snes_view.txt
 
 */
@@ -88,7 +97,7 @@ int main(int argc, char *argv[])
 {
   DM             dm;
   Mat            Q_prec;
-  Vec            y;
+  Vec            theta, z, y;
   Vec            b_rhs;
   Vec*           subvecs;
   PetscInt       n;
@@ -118,34 +127,31 @@ int main(int argc, char *argv[])
   PetscCall(SNESSetApplicationContext(snes, &ctx));
   
   // Create sample vector
-  PetscCall(VecCreate(MPI_COMM_WORLD, &y));
-  PetscCall(VecSetSizes(y, PETSC_DECIDE, ndof));
-  PetscCall(VecSetFromOptions(y));
+  PetscCall(DMCreateGlobalVector(dm, &theta));  
+  PetscCall(VecCreateSeq(PETSC_COMM_SELF, nobs, &z));
+  Vec y_subvecs[2] = {theta, z};
+  PetscCall(VecCreateNest(PETSC_COMM_SELF, 2, NULL, y_subvecs, &y));
   
   PetscCall(SNESSetFromOptions(snes));
   PetscCall(SNESSetUp(snes));
 
   PetscCall(PetscViewerASCIIOpen(PETSC_COMM_WORLD,"snes_view.txt",&viewer));
   PetscCall(SNESView(snes, viewer));
-  PetscCall(PetscViewerDestroy(&viewer));
-  PetscCall(SNESDestroy(&snes));
-  exit(0);
-
-  PetscCall(DMCreateGlobalVector(dm, &y));
+  PetscCall(PetscViewerDestroy(&viewer));  
   
   char        filename[512] = "solution.vtu";
 
   PetscCall(PetscOptionsGetString(NULL, NULL, "-filename", filename, 512, NULL));
   PetscCall(PetscViewerVTKOpen(MPI_COMM_WORLD, filename, FILE_MODE_WRITE, &viewer));
 
-  PetscInt n_samples = 64;
+  PetscInt n_samples = 16;
   for (int k=0;k<n_samples;++k)
   {
     PetscCall(SNESSolve(snes, b_rhs, y));
     char field_label[100];
     sprintf (field_label, "sample_%03d",k);
-    PetscCall(PetscObjectSetName((PetscObject)(y), field_label));
-    PetscCall(VecView(y, viewer));
+    PetscCall(PetscObjectSetName((PetscObject)(theta), field_label));
+    PetscCall(VecView(theta, viewer));
   }
   
   PetscCall(PetscViewerDestroy(&viewer));
