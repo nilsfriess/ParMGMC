@@ -133,7 +133,7 @@ int main(int argc, char *argv[])
   PetscCall(PetscOptionsGetString(NULL, NULL, "-filename", filename, 512, NULL));
   PetscCall(PetscViewerVTKOpen(MPI_COMM_WORLD, filename, FILE_MODE_WRITE, &viewer));
 
-  PetscInt n_samples = 16;
+  PetscInt n_samples = 64;
   for (int k=0;k<n_samples;++k)
   {
     PetscCall(SNESSolve(snes, f_rhs, y));

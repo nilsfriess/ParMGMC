@@ -78,15 +78,14 @@ mu_rhs = fd.Function(V).interpolate(fd.Constant(np.log(background_counts)))
 
 
 # Assemble system matrix
-
-
 Q_prec = fd.assemble(a).M.handle
 # Construct SNES
 snes = PETSc.SNES().create()
 snes.setOptionsPrefix("")
 opts = PETSc.Options()
 solver_parameters = {
-    "snes_type": "poissongibbs",
+    "snes_type": "poissongibbsfas",
+    "pc_type": "gamg",
     "poissongibbs_its": 1,
     "snes_view": ":snes_view.txt",
 }
@@ -96,7 +95,7 @@ snes.setFromOptions()
 
 pymgmc.SNESPoissonSetAppCtx(snes, event_counts, Q_prec, B_meas, nu)
 
-n_samples = 1024
+n_samples = 128
 
 if setup == "rongelap":
     points_qoi = [[-3000, -1000]]

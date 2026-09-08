@@ -21,23 +21,34 @@
 #include <stddef.h>
 #include <string.h>
 
+/* Workspace for Poisson Gibbs sampler*/
 typedef struct {
-  PetscRandom prand; // Random numbers
-  Vec random_workspace;
-  PetscInt random_work_ptr;
-  PetscInt sample_index;  
-  PetscInt its;
+  PetscRandom prand;        // Random numbers
+  Vec random_workspace;     // Workspace vector containing random numbers
+  PetscInt random_work_ptr; // Pointer to current entry in random number vector    
+  PetscInt its;             // Number of iterations
 }  SNES_PoissonGibbs;
 
-#define RANDOM_BUFFER_SIZE 64
+#define RANDOM_BUFFER_SIZE 64 // Size of workspace vector with random numbers
 
+/* Compute largest number of nonzeros per row in a given matrix
+ *
+ * This information can be used to create a sufficiently large buffer which can store
+ * the matrix rows.
+ * 
+ * Input parameters
+ *   mat : matrix to process
+ * 
+ * Output parameters
+ *   max_nnz_per_row : reference to variable which will contain the result
+ */
 static PetscErrorCode SNESPoissonGibbs_GetMaxNnzPerRow(Mat mat, PetscInt *max_nnz_per_row) {
+
   PetscInt nnz;
   const PetscInt* row_ptr;
   PetscBool done;
 
   PetscFunctionBeginUser;
-  // Work out maximum number of entries per row for Q_prec and B
   *max_nnz_per_row = 0;
   PetscCall(MatGetRowIJ(mat, 0, PETSC_FALSE, PETSC_FALSE, &nnz, &row_ptr, NULL, &done));
   for (PetscInt i=1; i<=nnz; ++i) {
@@ -47,6 +58,19 @@ static PetscErrorCode SNESPoissonGibbs_GetMaxNnzPerRow(Mat mat, PetscInt *max_nn
   PetscFunctionReturn(PETSC_SUCCESS);
 }
 
+/* Return single normally distributed random number
+ * 
+ * The random number z ~ N(0,1) has mean zero and variance 1. Internally, this creates
+ * a buffer with random numbers of size RANDOM_BUFFER_SIZE and then extracts individual
+ * random numbers by iterating over this buffer, repopulating it once the samples are
+ * exhausted.
+ * 
+ * Input parameters
+ *   snes : the SNES object
+ * 
+ * Output parameters
+ *   r : reference to variable which will contain the resulting random number 
+ */
 static PetscErrorCode SNESPoissonGibbs_StandardNormal(SNES snes, PetscScalar *r) {
   SNES_PoissonGibbs* poissongibbs = (SNES_PoissonGibbs*)snes->data;
 
@@ -60,17 +84,21 @@ static PetscErrorCode SNESPoissonGibbs_StandardNormal(SNES snes, PetscScalar *r)
   PetscFunctionReturn(PETSC_SUCCESS);
 }
 
-static PetscErrorCode SNESPoissonGibbs_Uniform(SNES snes, PetscScalar *r) {
-  SNES_PoissonGibbs* poissongibbs = (SNES_PoissonGibbs*)snes->data;
-
-  PetscFunctionBeginUser;  
-  PetscCall(PetscRandomGetValueReal(poissongibbs->prand, r));
-  PetscFunctionReturn(PETSC_SUCCESS);
-}
-
-/* Gradient dphi/dtheta(theta) 
-
- * dphi/dtheta = sum_{k} B_{ik} exp(B_{ik} theta + nu_k ) +( theta - bar(mu))/sigma^2
+/* Gradient dphi/dtheta(theta) of function which defines the pdf
+ *
+ * Returns the gradient 
+ *
+ *   dphi/dtheta = sum_{k=1}^{n_k} B_{ik} exp(B_{ik} theta + nu_k ) +( theta - bar(mu))/sigma^2
+ * 
+ * Input parameters
+ * 
+ *   theta : current value of theta
+ *   mu_bar : mean value 
+ *   sigma : variance
+ *   n_k : number of measurements to include
+ *   nu : array with offset values nu_k
+ *   b : array with measurements B_{ik} for a fixed i; this is a row of the measurement
+ *       matrix B
  */
 static PetscScalar grad_phi(const PetscScalar theta,
                             const PetscScalar mu_bar,
@@ -143,7 +171,16 @@ static PetscErrorCode SNESPoissonGibbs_FindMaximum(const PetscScalar mu_bar,
   PetscFunctionReturn(PETSC_SUCCESS);                                         
 }
 
-/* Generate a new sample (computational routine) */
+/* Generate a new sample 
+ *
+ * This is the key computation routine for generating a new sample. It iterates over
+ * all unknowns and updates these unknowns individually by drawing from the one-
+ * dimensional distribution which is conditioned on all other unknowns and the 
+ * measurements.
+ *
+ * Input parameters
+ *   snes : underlying SNES object
+ */
 static PetscErrorCode SNESSample_PoissonGibbs(SNES snes)
 {
   SNES_PoissonGibbs* poissongibbs = (SNES_PoissonGibbs*)snes->data;
@@ -175,7 +212,7 @@ static PetscErrorCode SNESSample_PoissonGibbs(SNES snes)
   PetscCall(SNESGetApplicationContext(snes, &ctx));
   Q_prec = ctx->Q_prec;
   B_meas = ctx->B_meas;
-  // Check whether RHS is a nested vector
+  // Check whether RHS is a nested vector and extract RHS and solution
   PetscBool is_nest;
   PetscCall(PetscObjectTypeCompare((PetscObject)snes->vec_rhs, VECNEST, &is_nest));
   if (is_nest) { 
@@ -188,7 +225,6 @@ static PetscErrorCode SNESSample_PoissonGibbs(SNES snes)
     nu = ctx->nu;
   }
 
-  
   PetscCall(VecDuplicate(nu, &nu_tilde));
   PetscCall(MatMultTransposeAdd(ctx->B_meas, theta, nu, nu_tilde));
   
@@ -232,7 +268,7 @@ static PetscErrorCode SNESSample_PoissonGibbs(SNES snes)
         while (!accepted) {
           PetscCall(SNESPoissonGibbs_StandardNormal(snes, &r));
           theta_prime = theta_bar + sigma*r;
-          PetscCall(SNESPoissonGibbs_Uniform(snes, &r));
+          PetscCall(PetscRandomGetValueReal(poissongibbs->prand, &r));          
           PetscScalar Fbar = 0;
           for (PetscInt k=0; k<ncols_B; ++k) {
             Fbar += exp(vals_B[k]*theta_prime+nu_local[k]) + ((theta_bar - theta_prime)*vals_B[k]-1.0)*exp(vals_B[k]*theta_bar+nu_local[k]);

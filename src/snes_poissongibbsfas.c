@@ -112,6 +112,7 @@ static PetscErrorCode setup_multigrid(SNES snes) {
   for (PetscInt ell=nlevels-1;ell>=0;--ell) {
     poissongibbsfas->smoother_ctx[ell].event_counts = ctx->event_counts;
     PetscCall(VecDuplicate(ctx->nu, &poissongibbsfas->smoother_ctx[ell].nu));
+    PetscCall(VecCopy(ctx->nu, poissongibbsfas->smoother_ctx[ell].nu));
     PetscCall(PetscObjectReference((PetscObject)ctx->event_counts));
     // On finest level, just point to already existing matrices
     if (ell==nlevels-1) {
@@ -120,7 +121,6 @@ static PetscErrorCode setup_multigrid(SNES snes) {
       poissongibbsfas->smoother_ctx[ell].B_meas = ctx->B_meas;
       PetscCall(PetscObjectReference((PetscObject)ctx->B_meas));
     } else {
-      // event_counts is just copied
       // Q_c = P^T Q P
       Mat Q_prec_P;
       PetscCall(MatMatMult(poissongibbsfas->smoother_ctx[ell+1].Q_prec, P[ell],
