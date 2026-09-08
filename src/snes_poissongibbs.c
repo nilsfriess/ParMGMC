@@ -421,6 +421,7 @@ static PetscErrorCode SNESSetFromOptions_PoissonGibbs(SNES snes, PetscOptionItem
 {
   SNES_PoissonGibbs *poissongibbs = (SNES_PoissonGibbs *)snes->data;
   (void)poissongibbs;
+
   PetscFunctionBegin;
   PetscOptionsHeadBegin(PetscOptionsObject, "Poisson Gibbs options");
   PetscCall(PetscOptionsInt("-poissongibbs_its", "Number of Poisson Gibbs iterations", NULL, poissongibbs->its, &poissongibbs->its, NULL));
@@ -467,8 +468,7 @@ PetscErrorCode SNESCreate_PoissonGibbs(SNES snes)
   snes->usesksp = PETSC_FALSE;
   snes->usesnpc = PETSC_FALSE;
 
-  // Set default value value
-  PetscCall(SNESPoissonGibbsSetIterations(snes, 1));
+  poissongibbs->its = 1;
 
   PetscFunctionReturn(PETSC_SUCCESS);
 }
