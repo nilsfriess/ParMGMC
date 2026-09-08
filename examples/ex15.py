@@ -94,10 +94,7 @@ for key, value in solver_parameters.items():
     opts[key] = value
 snes.setFromOptions()
 
-pymgmc.SNESPoissonSetAppCtx(snes, event_counts, Q_prec, B_meas)
-
-with fd.assemble(fd.action(a, mu_rhs)).dat.vec_ro as f_rhs:
-    b_rhs = PETSc.Vec().createNest([f_rhs, nu])
+pymgmc.SNESPoissonSetAppCtx(snes, event_counts, Q_prec, B_meas, nu)
 
 n_samples = 1024
 
@@ -110,8 +107,8 @@ vom_qoi = fd.VertexOnlyMesh(mesh, points_qoi, reorder=False)
 W_qoi = fd.FunctionSpace(vom_qoi, "DG", 0)
 chain = []
 for k in tqdm.tqdm(range(n_samples)):
-    with y.dat.vec as u:
-        snes.solve(b_rhs, u)
+    with fd.assemble(fd.action(a, mu_rhs)).dat.vec_ro as f_rhs, y.dat.vec as u:
+        snes.solve(f_rhs, u)
 
     y_obs = fd.assemble(fd.interpolate(y, W_qoi))
     z = float(np.exp(y_obs.dat.data)[0])
