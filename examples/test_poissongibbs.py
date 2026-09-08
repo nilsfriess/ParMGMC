@@ -199,10 +199,8 @@ class Sampler:
             (2, 2), ((0, 2, 4), (0, 1, 0, 1), [Q[0, 0], Q[0, 1], Q[1, 0], Q[1, 1]])
         )
         B_petsc = PETSc.Mat().createAIJWithArrays((2, 1), ((0, 1, 2), (0, 0), [b, 0]))
-
-        f_petsc = PETSc.Vec().createWithArray(f)
         nu_petsc = PETSc.Vec().createWithArray([nu])
-        self._b_rhs_petsc = PETSc.Vec().createNest([f_petsc, nu_petsc])
+        self._b_rhs_petsc = PETSc.Vec().createWithArray(f)
         event_count_petsc = PETSc.Vec().createWithArray([event_count])
         snes = PETSc.SNES().create()
         opts = PETSc.Options()
@@ -216,16 +214,13 @@ class Sampler:
         pymgmc.SNESPoissonSetAppCtx(snes, event_count_petsc, Q_petsc, B_petsc, nu_petsc)
         snes.setFromOptions()
         self._snes = snes
-        theta = PETSc.Vec().createWithArray([0, 0])
-        z = PETSc.Vec().createWithArray([0])
-        self._y = PETSc.Vec().createNest([theta, z])
+        self._y = PETSc.Vec().createWithArray([0, 0])
 
     def __iter__(self):
         """Iterator"""
         while True:
             self._snes.solve(self._b_rhs_petsc, self._y)
-            theta, _ = self._y.getNestSubVecs()
-            yield np.array(theta.getArray())
+            yield np.array(self._y.getArray())
 
 
 def visualise(

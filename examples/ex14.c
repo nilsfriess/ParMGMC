@@ -57,6 +57,7 @@ Command line options:
 
 PetscErrorCode initialise_ctx(Mat Q_prec, PetscInt nobs, PoissonGibbsCtx* ctx) {
   PetscInt ndof, m;
+  Vec nu;
 
   PetscFunctionBeginUser;  
   PetscCall(MatGetSize(Q_prec,&ndof,&m));
@@ -75,21 +76,11 @@ PetscErrorCode initialise_ctx(Mat Q_prec, PetscInt nobs, PoissonGibbsCtx* ctx) {
   PetscCall(MatAssemblyEnd(ctx->B_meas, MAT_FINAL_ASSEMBLY));
 
   ctx->Q_prec = Q_prec;
-  PetscFunctionReturn(PETSC_SUCCESS);
-}
-
-PetscErrorCode initialise_rhs(PetscInt ndof, PetscInt nobs, Vec* b_rhs) {
-  Vec f_rhs, nu;
-  PetscFunctionBeginUser;  
-  PetscCall(VecCreate(MPI_COMM_WORLD, &f_rhs));
-  PetscCall(VecSetSizes(f_rhs, PETSC_DECIDE, ndof));
-  PetscCall(VecSetFromOptions(f_rhs));
-  PetscCall(VecZeroEntries(f_rhs));
   PetscCall(VecCreate(MPI_COMM_WORLD, &nu));
   PetscCall(VecSetSizes(nu, PETSC_DECIDE, nobs));  
   PetscCall(VecSetFromOptions(nu));
-  PetscCall(VecSet(nu,0));
-  PetscCall(VecCreateNest(PETSC_COMM_WORLD,2,NULL,(Vec[]){f_rhs,nu},b_rhs));
+  PetscCall(VecSet(nu,0));  
+  ctx->nu = nu;
   PetscFunctionReturn(PETSC_SUCCESS);
 }
 
@@ -97,10 +88,8 @@ int main(int argc, char *argv[])
 {
   DM             dm;
   Mat            Q_prec;
-  Vec            theta, z, y;
-  Vec            b_rhs;
-  Vec*           subvecs;
-  PetscInt       n;
+  Vec            y;
+  Vec            f_rhs;
   SNES           snes;
   MS             ms;
   PetscInt       nobs = 4;
@@ -122,15 +111,15 @@ int main(int argc, char *argv[])
   
   PoissonGibbsCtx ctx;
   initialise_ctx(Q_prec,nobs,&ctx);
-  initialise_rhs(ndof,nobs,&b_rhs);
-
   PetscCall(SNESSetApplicationContext(snes, &ctx));
   
+  PetscCall(VecCreate(PETSC_COMM_SELF, &f_rhs));
+  PetscCall(VecSetSizes(f_rhs, PETSC_DECIDE, ndof));
+  PetscCall(VecSetFromOptions(f_rhs));
+  PetscCall(VecZeroEntries(f_rhs));
+  
   // Create sample vector
-  PetscCall(DMCreateGlobalVector(dm, &theta));  
-  PetscCall(VecCreateSeq(PETSC_COMM_SELF, nobs, &z));
-  Vec y_subvecs[2] = {theta, z};
-  PetscCall(VecCreateNest(PETSC_COMM_SELF, 2, NULL, y_subvecs, &y));
+  PetscCall(DMCreateGlobalVector(dm, &y));
   
   PetscCall(SNESSetFromOptions(snes));
   PetscCall(SNESSetUp(snes));
@@ -147,22 +136,20 @@ int main(int argc, char *argv[])
   PetscInt n_samples = 16;
   for (int k=0;k<n_samples;++k)
   {
-    PetscCall(SNESSolve(snes, b_rhs, y));
+    PetscCall(SNESSolve(snes, f_rhs, y));
     char field_label[100];
     sprintf (field_label, "sample_%03d",k);
-    PetscCall(PetscObjectSetName((PetscObject)(theta), field_label));
-    PetscCall(VecView(theta, viewer));
+    PetscCall(PetscObjectSetName((PetscObject)(y), field_label));
+    PetscCall(VecView(y, viewer));
   }
   
   PetscCall(PetscViewerDestroy(&viewer));
   PetscCall(VecDestroy(&y));
   PetscCall(VecDestroy(&ctx.event_counts));
   PetscCall(MatDestroy(&ctx.Q_prec));
-  PetscCall(MatDestroy(&ctx.B_meas));
-  PetscCall(VecNestGetSubVecs(b_rhs, &n, &subvecs));
-  for (PetscInt i = 0; i < n; ++i)
-    PetscCall(VecDestroy(&subvecs[i]));
-  PetscCall(VecDestroy(&b_rhs));
+  PetscCall(MatDestroy(&ctx.B_meas));  
+  PetscCall(VecDestroy(&ctx.nu));
+  PetscCall(VecDestroy(&f_rhs));
   PetscCall(SNESDestroy(&snes));
   PetscCall(ParMGMCFinalize());
   PetscCall(PetscFinalize());

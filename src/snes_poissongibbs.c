@@ -171,14 +171,24 @@ static PetscErrorCode SNESSample_PoissonGibbs(SNES snes)
   PoissonGibbsCtx* ctx;  
 
   PetscFunctionBeginUser;
-  PetscCall(VecNestGetSubVec(snes->vec_sol,0,&theta));
-  PetscCall(VecNestGetSubVec(snes->vec_rhs,0,&f_rhs));
-  PetscCall(VecNestGetSubVec(snes->vec_rhs,1,&nu));
 
   PetscCall(SNESGetApplicationContext(snes, &ctx));
   Q_prec = ctx->Q_prec;
   B_meas = ctx->B_meas;
+  // Check whether RHS is a nested vector
+  PetscBool is_nest;
+  PetscCall(PetscObjectTypeCompare((PetscObject)snes->vec_rhs, VECNEST, &is_nest));
+  if (is_nest) { 
+    PetscCall(VecNestGetSubVec(snes->vec_sol,0,&theta));
+    PetscCall(VecNestGetSubVec(snes->vec_rhs,0,&f_rhs));
+    PetscCall(VecNestGetSubVec(snes->vec_rhs,1,&nu));
+  } else {
+    theta = snes->vec_sol;
+    f_rhs = snes->vec_rhs;
+    nu = ctx->nu;
+  }
 
+  
   PetscCall(VecDuplicate(nu, &nu_tilde));
   PetscCall(MatMultTransposeAdd(ctx->B_meas, theta, nu, nu_tilde));
   

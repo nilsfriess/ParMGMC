@@ -35,11 +35,23 @@ typedef struct {
 /* Generate a new sample (computational routine) */
 static PetscErrorCode SNESSample_PoissonGibbsFAS(SNES snes)
 {
-  SNES_PoissonGibbsFAS* poissongibbsfas = (SNES_PoissonGibbsFAS*)snes->data;
+  Vec vec_rhs, vec_sol, z;
+  SNES_PoissonGibbsFAS* poissongibbsfas;
+  PoissonGibbsCtx* ctx;
+
+  PetscFunctionBeginUser;  
   
-  PetscFunctionBeginUser;
-  PetscCall(SNESSolve(poissongibbsfas->fas, snes->vec_rhs, snes->vec_sol));
-  snes->reason = SNES_CONVERGED_ITS;
+  poissongibbsfas = (SNES_PoissonGibbsFAS*)snes->data;
+  PetscCall(SNESGetApplicationContext(snes, &ctx));  
+  PetscCall(VecDuplicate(ctx->nu, &z));
+  PetscCall(VecSet(z, 0.0));
+
+  PetscCall(VecCreateNest(PETSC_COMM_WORLD, 2, NULL, (Vec[]){snes->vec_rhs, ctx->nu}, &vec_rhs));
+  PetscCall(VecCreateNest(PETSC_COMM_WORLD, 2, NULL, (Vec[]){snes->vec_sol, z}, &vec_sol));
+
+  PetscCall(SNESSolve(poissongibbsfas->fas, vec_rhs, vec_sol));
+  snes->reason = SNES_CONVERGED_ITS;  
+  PetscCall(VecDestroy(&z));
   PetscFunctionReturn(PETSC_SUCCESS);
 }
 
@@ -52,9 +64,15 @@ static PetscErrorCode SNESReset_PoissonGibbsFAS(SNES snes)
   if (poissongibbsfas->smoother_ctx) {
     PetscCall(PCMGGetLevels(poissongibbsfas->mg,&nlevels));
     for (PetscInt ell=0;ell<nlevels;++ell) {
-      PetscCall(MatDestroy(&poissongibbsfas->smoother_ctx[ell].Q_prec));
-      PetscCall(MatDestroy(&poissongibbsfas->smoother_ctx[ell].B_meas));
-      PetscCall(VecDestroy(&poissongibbsfas->smoother_ctx[ell].event_counts));
+      PoissonGibbsCtx ctx = poissongibbsfas->smoother_ctx[ell];
+      if (ctx.Q_prec)
+        PetscCall(MatDestroy(&ctx.Q_prec));
+      if (ctx.B_meas)
+        PetscCall(MatDestroy(&ctx.B_meas));
+      if (ctx.event_counts)
+        PetscCall(VecDestroy(&ctx.event_counts));      
+      if (ctx.nu)
+        PetscCall(VecDestroy(&ctx.nu));
     }
     PetscCall(PetscFree(poissongibbsfas->smoother_ctx));
   }
@@ -92,7 +110,8 @@ static PetscErrorCode setup_multigrid(SNES snes) {
   PetscCall(PCGetInterpolations(poissongibbsfas->mg, &nlevels, &P));
   // Construct precision matrices on all levels
   for (PetscInt ell=nlevels-1;ell>=0;--ell) {
-    poissongibbsfas->smoother_ctx[ell].event_counts = ctx->event_counts;    
+    poissongibbsfas->smoother_ctx[ell].event_counts = ctx->event_counts;
+    PetscCall(VecDuplicate(ctx->nu, &poissongibbsfas->smoother_ctx[ell].nu));
     PetscCall(PetscObjectReference((PetscObject)ctx->event_counts));
     // On finest level, just point to already existing matrices
     if (ell==nlevels-1) {
@@ -199,8 +218,7 @@ static PetscErrorCode setup_fas(SNES snes) {
     PetscCall(SNESFASGetCycleSNES(poissongibbsfas->fas, ell, &level_snes));
     PetscCall(SNESSetApplicationContext(level_snes, &poissongibbsfas->smoother_ctx[ell]));    
     PetscCall(set_function(level_snes));
-  }
-
+  }  
   // Set intergrid operators on all levels
   Mat Id;
   PetscInt ndof, nobs;
@@ -233,22 +251,22 @@ static PetscErrorCode setup_fas(SNES snes) {
     PetscCall(MatCreateNest(PETSC_COMM_WORLD, 2, NULL, 2, NULL, blocks_inject, &I_2x2));    
     PetscCall(MatNestSetVecType(I_2x2, VECNEST));
     PetscCall(SNESFASSetInjection(poissongibbsfas->fas, ell, I_2x2));
-  }
-
+  }  
   // Do exactly one iteration
   PetscCall(SNESSetTolerances(poissongibbsfas->fas, PETSC_DEFAULT, PETSC_DEFAULT,
                             PETSC_DEFAULT, 1, PETSC_DEFAULT));
-  PetscCall(SNESSetForceIteration(poissongibbsfas->fas,true));
-  PetscCall(SNESSetUp(poissongibbsfas->fas));
+  PetscCall(SNESSetForceIteration(poissongibbsfas->fas,true));  
+  PetscCall(SNESSetUp(poissongibbsfas->fas));   
   
   PetscFunctionReturn(PETSC_SUCCESS);
 }
 
 static PetscErrorCode SNESSetUp_PoissonGibbsFAS(SNES snes)
 {
+  
   PetscFunctionBeginUser;
   PetscCall(setup_multigrid(snes));
-  PetscCall(setup_fas(snes));
+  PetscCall(setup_fas(snes));  
   PetscFunctionReturn(PETSC_SUCCESS);
 }
 
