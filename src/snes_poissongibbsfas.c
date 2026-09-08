@@ -119,6 +119,39 @@ static PetscErrorCode setup_multigrid(SNES snes) {
   PetscFunctionReturn(PETSC_SUCCESS);
 }
 
+static PetscErrorCode SNESPoissonGibbs_Function(SNES snes, Vec y, Vec b, void* ctx) 
+{
+  Vec theta, f_rhs, nu;
+
+  PoissonGibbsCtx* poissongibbs = (PoissonGibbsCtx*)ctx;
+
+  PetscFunctionBeginUser;
+  PetscCall(VecNestGetSubVec(y, 0, &theta));
+  PetscCall(VecNestGetSubVec(b, 0, &f_rhs));
+  PetscCall(VecNestGetSubVec(b, 1, &nu));
+  PetscCall(MatMult(poissongibbs->Q_prec,theta,f_rhs));
+  PetscCall(MatMultTranspose(poissongibbs->B_meas,theta,nu));
+  PetscFunctionReturn(PETSC_SUCCESS);
+}
+
+static PetscErrorCode set_function(SNES snes) {
+
+  PoissonGibbsCtx* ctx;
+  PetscInt ndof, nobs;
+  Vec f_rhs, nu, b_rhs;
+
+  PetscFunctionBeginUser;
+  PetscCall(SNESGetApplicationContext(snes, &ctx));
+  PetscCall(MatGetSize(ctx->B_meas,&ndof,&nobs));
+  PetscCall(VecCreateSeq(PETSC_COMM_SELF, ndof, &f_rhs));
+  PetscCall(VecCreateSeq(PETSC_COMM_SELF, nobs, &nu));
+  Vec subvecs[2] = {f_rhs, nu};
+  PetscCall(VecCreateNest(PETSC_COMM_WORLD, 2, NULL, subvecs, &b_rhs));
+  PetscCall(SNESSetFunction(snes, b_rhs, SNESPoissonGibbs_Function, ctx));    
+  PetscFunctionReturn(PETSC_SUCCESS);
+}
+
+
 static PetscErrorCode setup_fas(SNES snes) {
   
   PetscInt nlevels;
@@ -139,33 +172,33 @@ static PetscErrorCode setup_fas(SNES snes) {
 
   // Set the smoothers on all levels
   for (PetscInt ell=0;ell<nlevels;++ell) {
-    Vec b_rhs;
-    SNESFunctionFn *f;
     SNES smoother_up, smoother_down, smoother_coarse, level_snes;
     if (ell == 0) {
       PetscCall(SNESFASGetCoarseSolve(poissongibbsfas->fas, &smoother_coarse));
       PetscCall(SNESSetApplicationContext(smoother_coarse, &poissongibbsfas->smoother_ctx[ell]));
       PetscCall(SNESSetType(smoother_coarse, SNESPOISSONGIBBS));
-      PetscCall(SNESPoissonGibbsSetIterations(smoother_coarse,poissongibbsfas->its_coarse));
-      PetscCall(SNESSetUp(smoother_coarse));
-      PetscCall(SNESGetFunction(smoother_coarse, &b_rhs, &f, NULL));
+      PetscCall(SNESPoissonGibbsSetIterations(smoother_coarse,poissongibbsfas->its_coarse));      
+      PetscCall(set_function(smoother_coarse));              
+      PetscCall(SNESSetUp(smoother_coarse));            
     } else {
       // Down smoother
       PetscCall(SNESFASGetSmootherDown(poissongibbsfas->fas, ell, &smoother_down));
       PetscCall(SNESSetApplicationContext(smoother_down, &poissongibbsfas->smoother_ctx[ell]));
       PetscCall(SNESSetType(smoother_down, SNESPOISSONGIBBS));
       PetscCall(SNESPoissonGibbsSetIterations(smoother_down,poissongibbsfas->its_down));
-      PetscCall(SNESSetUp(smoother_down));
+      PetscCall(set_function(smoother_down));
+      PetscCall(SNESSetUp(smoother_down));            
       // Up smoother
       PetscCall(SNESFASGetSmootherUp(poissongibbsfas->fas, ell, &smoother_up));
       PetscCall(SNESSetApplicationContext(smoother_up, &poissongibbsfas->smoother_ctx[ell]));
       PetscCall(SNESSetType(smoother_up, SNESPOISSONGIBBS));
-      PetscCall(SNESPoissonGibbsSetIterations(smoother_up,poissongibbsfas->its_up));
-      PetscCall(SNESSetUp(smoother_up));
-      PetscCall(SNESGetFunction(smoother_up, &b_rhs, &f, NULL));
+      PetscCall(SNESPoissonGibbsSetIterations(smoother_up,poissongibbsfas->its_up));      
+      PetscCall(set_function(smoother_up));     
+      PetscCall(SNESSetUp(smoother_up));       
     }
     PetscCall(SNESFASGetCycleSNES(poissongibbsfas->fas, ell, &level_snes));
-    PetscCall(SNESSetFunction(level_snes, b_rhs, f, &poissongibbsfas->smoother_ctx[ell]));
+    PetscCall(SNESSetApplicationContext(level_snes, &poissongibbsfas->smoother_ctx[ell]));    
+    PetscCall(set_function(level_snes));
   }
 
   // Set intergrid operators on all levels

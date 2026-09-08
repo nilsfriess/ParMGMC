@@ -17,6 +17,7 @@ typedef struct {
   Vec event_counts; // measured event counts
   Mat Q_prec;       // precision matrix
   Mat B_meas;       // measurement matrix
+  Vec nu;           // offset vector
 } PoissonGibbsCtx;
 
 PETSC_EXTERN PetscErrorCode SNESCreate_PoissonGibbs(SNES snes);

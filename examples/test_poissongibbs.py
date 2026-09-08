@@ -213,7 +213,7 @@ class Sampler:
         }
         for key, value in solver_parameters.items():
             opts[key] = value
-        pymgmc.SNESPoissonSetAppCtx(snes, event_count_petsc, Q_petsc, B_petsc)
+        pymgmc.SNESPoissonSetAppCtx(snes, event_count_petsc, Q_petsc, B_petsc, nu_petsc)
         snes.setFromOptions()
         self._snes = snes
         theta = PETSc.Vec().createWithArray([0, 0])
