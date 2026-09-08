@@ -4,43 +4,47 @@
     This file is part of ParMGMC which is released under the GNU LESSER GENERAL
     PUBLIC LICENSE (LGPL). See file LICENSE in the project root folder for full
     license details.
+    */
 
-    Non-linear Gibbs sampler for posterior obtained by conditioning a Gaussian prior
-    on a Poisson process. The precision matrix of the prior is assumed to be the
-    N x N sparse matrix Q. The N x m measurement matrix B describes the coupling between
-    the vector of unknowns theta and the observations. More specifically, we have for the
-    posterior:
+/** @file pc_poissongibbs.c
+    @brief Non-linear Gibbs sampler for posterior obtained by conditioning a Gaussian prior
+    on a Poisson process
 
-      theta ~ product_{k=1}^{m} P(Lambda_k,n_k) N(mu,Q^{-1})
+    # Options database keys
+    - `-poissongibbs_its` number its of Gibbs- sweeps over the unknowns
 
-    where P(Lambda,n) = Lambda^n/n! e^{-Lambda} is the Poisson probability density and
-    N(mu,Q^{-1}) is a multivariate normal probability distribution. The rate Lambda_k is given
-    by
+    # Notes
+
+    The precision matrix of the prior is assumed to be the N x N sparse matrix \f$Q\f$. The
+    N x m measurement matrix \f$B\f$ describes the coupling between the vector of unknowns theta and
+    the observations. More specifically, we have for the posterior:
+
+      \f$\theta \sim \prod_{k=1}^{m} P(\Lambda_k,n_k) N(\mu,Q^{-1}) \f$
+
+    where \f$P(\Lambda,n) = \frac{\Lambda^n}{n!} e^{-\Lambda}\f$ is the Poisson probability
+    density and \f$N(mu,Q^{-1})\f$ is a multivariate normal probability distribution.
+    The rate \f$\Lambda_k\f$ is given by
     
-      Lambda_k(theta) = exp(b^{(k)} theta - nu_k) 
+      \f$\Lambda_k(\theta) = \exp\left(b^{(k)} \theta - \nu_k\right) 
     
-    where b^{(k)} is the k-th column of B.
+    where \f$b^{(k)}\f$ is the k-th column of \f$B\f$.
 
     The vectors n (size m), nu (size m) and the matrices Q (shape N x N) and B (shape N x m)
     are collected in the user context PoissonGibbsCtx defined in snes_poissongibbs.h.
 
-    The mean mu is provided via the right hand side vector f = Q.mu which is passed to the
+    The mean mu is provided via the right hand side vector \f$f = Q\mu\f$ which is passed to the
     solve routine.
 
     The code can be run in two setups:
 
-      1. Both the solution y=theta and the right hand side b=f are vectors of size N.
+      1. Both the solution \f$y=\theta\f$ and the right hand side b=f are vectors of size N.
          In this case, the vector nu provided in the user context is used.
-      2. The solution y=(theta,z) and the right hand side b=(f,nu) are nested vectors with
+      2. The solution \f$y=(\theta,z)\f$ and the right hand side \f$b=(f,\nu)\f$ are nested vectors with
          two components of size N and m respectively. In this setup, the nu in the user context
          is ignored, and the nu in the right-hand side vector b is used.
 
     The second configuration is required for the hierarchical extension of the algorithm,
-    which requires passing a modified nu' = nu - B^T theta to the coarser level samplers.
-
-    The number its of Gibbs- sweeps over the unknowns can be set with 
-
-      -poissongibbs_its its
+    which requires passing a modified \f$\nu' = \nu - B^T \theta\f$ to the coarser level samplers.
 */
 
 #include "parmgmc/snes/snes_poissongibbs.h"
@@ -356,8 +360,8 @@ static PetscErrorCode SNESReset_PoissonGibbs(SNES snes)
 
 /* Destroy SNES object
  *
- * Free contents of temporary workspace and deallocate the workspace
- * itself.
+ * Free contents of temporary workspace with SNESReset_PoissonGibbs() and in addition
+ * deallocate the workspace itself.
  *
  * Parameters
  *   snes [inout] : SNES object
@@ -378,7 +382,7 @@ static PetscErrorCode SNESDestroy_PoissonGibbs(SNES snes)
  * number generation
  * 
  * Parameters
- *   snes : SNES object
+ *   snes [inout] : SNES object
  */
 static PetscErrorCode SNESSetUp_PoissonGibbs(SNES snes)
 {

@@ -4,9 +4,29 @@
     This file is part of ParMGMC which is released under the GNU LESSER GENERAL
     PUBLIC LICENSE (LGPL). See file LICENSE in the project root folder for full
     license details.
+*/
 
-    Non-linear Gibbs sampler for posterior obtained by contitioning a Gaussian prior
+/** @file pc_poissongibbsfas.c
+    @brief Multigrid Monte Carlo sampler for posterior obtained by conditioning a Gaussian prior
     on a Poisson process.
+
+    # Options database keys
+
+    - `-snes_poissongibbsfas_smoothdown`   Number of Gibbs pre-smoothing sweeps
+    - `-snes_poissongibbsfas_smoothup`     Number of Gibbs post-smoothing sweeps
+    - `-snes_poissongibbsfas_smoothcoarse` Number of Gibbs sweeps on coarsest level
+    - `-pc_type`                           Multigrid type, can be `gamg` or `mg`
+    
+    # Notes
+
+    The Multigrid Monte Carlo sampler for the posterior obtained by conditioning a Gaussian prior
+    on a Poisson process is constructed by wrapping a `SNESFAS` instance. See
+    `snes_poissongibbs.c` for the definition of the posterior distribution and how to configure
+    its parameters through the user context of type `PoissonGibbsCtx` defined in
+    `snes_poissongibbs.h` and the right hand side vector. On each level of the hierarchy a
+    `SNESPoissonGibbs` sampler is used for pre- and post-smoothinh.
+    This hierarchy is constructed by coarsening the precision matrix \f$Q\f$ with the specified
+    multigrid object, which is can be configured through the options database.
 */
 
 #include "parmgmc/snes/snes_poissongibbs.h"
@@ -21,18 +41,26 @@
 #include <stddef.h>
 #include <string.h>
 
+/* Internal workspace of MGMC sampler */
 typedef struct {
-  SNES             fas;        // internal FAS
-  PC               mg;         // internal multigrid
-  PetscInt         nlevels;    // number of multigrid levels
-  PetscInt         its;        // Number of iterations (=FAS cycles)
-  PetscInt         its_up;     // Number of pre-smoother iterations
-  PetscInt         its_down;   // Number of post-smoother iterations
-  PetscInt         its_coarse; // Number of coarse-smoother iterations
-  PoissonGibbsCtx *smoother_ctx;
+  SNES             fas;          // internal FAS
+  PC               mg;           // internal multigrid
+  PetscInt         nlevels;      // number of multigrid levels
+  PetscInt         its;          // Number of iterations (=FAS cycles)
+  PetscInt         its_up;       // Number of pre-smoother iterations
+  PetscInt         its_down;     // Number of post-smoother iterations
+  PetscInt         its_coarse;   // Number of coarse-smoother iterations
+  PoissonGibbsCtx *smoother_ctx; // User context for smoothers on all levels
 } SNES_PoissonGibbsFAS;
 
-/* Generate a new sample (computational routine) */
+/* Generate a new sample by updating y -> y'
+ *
+ * This is the central computational routines which computes a new sample y' based
+ * on the current sample y with the MGMC algorithm, which is realised as a SNESFAS object.
+ *
+ * Parameters
+ *   snes [inout] : SNES object
+ */
 static PetscErrorCode SNESSample_PoissonGibbsFAS(SNES snes)
 {
   Vec                   vec_rhs, vec_sol, z;
@@ -55,6 +83,15 @@ static PetscErrorCode SNESSample_PoissonGibbsFAS(SNES snes)
   PetscFunctionReturn(PETSC_SUCCESS);
 }
 
+/* Reset SNES object
+ *
+ * Free contents of temporary workspace to prepare object for reuse. This deletes the 
+ * Poisson Gibbs user contexts on all levels and destroys the internal multigrid and
+ * FAS objects.
+ *
+ * Parameters
+ *   snes [inout] : SNES object
+ */
 static PetscErrorCode SNESReset_PoissonGibbsFAS(SNES snes)
 {
   SNES_PoissonGibbsFAS *poissongibbsfas = (SNES_PoissonGibbsFAS *)snes->data;
@@ -72,20 +109,40 @@ static PetscErrorCode SNESReset_PoissonGibbsFAS(SNES snes)
     }
     PetscCall(PetscFree(poissongibbsfas->smoother_ctx));
   }
+  PetscCall(PCDestroy(&poissongibbsfas->mg));
+  PetscCall(SNESDestroy(&poissongibbsfas->fas));
   PetscFunctionReturn(PETSC_SUCCESS);
 }
 
+/* Destroy SNES object
+ *
+ * Free contents of temporary workspace with SNESReset_PoissonGibbsFAS() and in addition
+ * deallocate the workspace itself.
+ *
+ * Parameters
+ *   snes [inout] : SNES object
+ */
 static PetscErrorCode SNESDestroy_PoissonGibbsFAS(SNES snes)
 {
   SNES_PoissonGibbsFAS *poissongibbsfas = (SNES_PoissonGibbsFAS *)snes->data;
 
   PetscFunctionBeginUser;
-  PetscCall(PCDestroy(&poissongibbsfas->mg));
-  PetscCall(SNESDestroy(&poissongibbsfas->fas));
   PetscCall(PetscFree(poissongibbsfas));
   PetscFunctionReturn(PETSC_SUCCESS);
 }
 
+/* Set up the internal multigrid hierarchy
+ *
+ * Builds a multigrid hierarchy based on the provided precision matrix Q. The intergrid
+ * operators from this hierarchy are then used to construct the user contexts on each
+ * level of the multigrid hierarchy by coarsening the matrices according to
+ * Q^c = P^T.Q.P and B^c = P^T.B. The event counts are the same on all levels, so can just be
+ * copied (by reference). The offsets nu on the coarse levels are not used, so we can again
+ * simply copy them by reference.
+ * 
+ * Parameters
+ *   snes [inout] : SNES object
+ */
 static PetscErrorCode setup_multigrid(SNES snes)
 {
   PetscInt nlevels;
@@ -104,12 +161,14 @@ static PetscErrorCode setup_multigrid(SNES snes)
   PetscCall(PetscMalloc1(nlevels, &poissongibbsfas->smoother_ctx));
   // Extract prolongation operators
   PetscCall(PCGetInterpolations(poissongibbsfas->mg, &nlevels, &P));
-  // Construct precision matrices on all levels
+  // Construct precision- and measurement matrices on all levels
   for (PetscInt ell = nlevels - 1; ell >= 0; --ell) {
+    // event counts are the same on all levels, so just create a reference
     poissongibbsfas->smoother_ctx[ell].event_counts = ctx->event_counts;
-    PetscCall(VecDuplicate(ctx->nu, &poissongibbsfas->smoother_ctx[ell].nu));
-    PetscCall(VecCopy(ctx->nu, poissongibbsfas->smoother_ctx[ell].nu));
+    // offsets nu are not used on coarse levels, so again just create a reference
     PetscCall(PetscObjectReference((PetscObject)ctx->event_counts));
+    poissongibbsfas->smoother_ctx[ell].nu = ctx->nu;
+    PetscCall(PetscObjectReference((PetscObject)ctx->nu));
     // On finest level, just point to already existing matrices
     if (ell == nlevels - 1) {
       poissongibbsfas->smoother_ctx[ell].Q_prec = ctx->Q_prec;
@@ -129,6 +188,20 @@ static PetscErrorCode setup_multigrid(SNES snes)
   PetscFunctionReturn(PETSC_SUCCESS);
 }
 
+/* The function on each level 
+ *
+ * As can be shown, the MGMC algorithm requires this function to be 
+ * 
+ *   F(y) = F([theta,z]) = [Q.theta,B.theta] = [f_rhs,nu] = b
+ * 
+ * Note that the second component z of the nested vector y=[theta,z] is simply ignored,
+ * so it can have an arbitrary value.
+ *
+ * Parameters
+ *   snes [in] : SNES object
+ *   y [in] : nested solution vector y = (theta, z) where z will be ignored
+ *   b [out] : nested solution vector 
+ */
 static PetscErrorCode SNESPoissonGibbs_Function(SNES snes, Vec y, Vec b, void *ctx)
 {
   Vec theta, f_rhs, nu;
@@ -144,6 +217,15 @@ static PetscErrorCode SNESPoissonGibbs_Function(SNES snes, Vec y, Vec b, void *c
   PetscFunctionReturn(PETSC_SUCCESS);
 }
 
+/* Set the function of a specific SNES to SNESPoissonGibbs_Function() 
+ *
+ * It is assumed that the passed snes already has a user context of type PoissonGibbsCtx
+ * attached; this is required to work out the size of the nested vector and to
+ * correctly pass this context to SNESPoissonGibbs_Function.
+ * 
+ * Parameters
+ *   snes [inout] : SNES object, must have a user context of type PoissonGibbsCtx
+ */
 static PetscErrorCode set_function(SNES snes)
 {
   PoissonGibbsCtx *ctx;
@@ -161,6 +243,15 @@ static PetscErrorCode set_function(SNES snes)
   PetscFunctionReturn(PETSC_SUCCESS);
 }
 
+/* Set up the internal FAS algorithm
+ *
+ * This assumes that the mg object of the snes has already been set up. It uses the
+ * information from this multigrid hierarchy to set up the internal FAS solver, which will
+ * implement the MGMC algorithm.
+ *
+ * Parameters
+ *   snes [in] : the SNES object 
+ */
 static PetscErrorCode setup_fas(SNES snes)
 {
   PetscInt nlevels;
@@ -250,6 +341,13 @@ static PetscErrorCode setup_fas(SNES snes)
   PetscFunctionReturn(PETSC_SUCCESS);
 }
 
+/* Set up SNES object
+ * 
+ * Create temporary workspace and set up the internal multigrid and FAS objects.
+ * 
+ * Parameters
+ *   snes [inout] : SNES object
+ */
 static PetscErrorCode SNESSetUp_PoissonGibbsFAS(SNES snes)
 {
   PetscFunctionBeginUser;
@@ -258,6 +356,15 @@ static PetscErrorCode SNESSetUp_PoissonGibbsFAS(SNES snes)
   PetscFunctionReturn(PETSC_SUCCESS);
 }
 
+/* Inspect options database to set SNES parameters
+ *
+ * Checks that the multigrid specified with -pc_type is 'mg' or 'gamg'. Then parses the
+ * options of the Gibbs smoothers on the different levels.
+ *
+ * Parameters
+ *   snes [inout] : SNES object
+ *   PetscOptionsObject [in] : PETSc options object
+ */
 static PetscErrorCode SNESSetFromOptions_PoissonGibbsFAS(SNES snes, PetscOptionItems PetscOptionsObject)
 {
   const char *pc_type;
@@ -281,6 +388,12 @@ static PetscErrorCode SNESSetFromOptions_PoissonGibbsFAS(SNES snes, PetscOptionI
   PetscFunctionReturn(PETSC_SUCCESS);
 }
 
+/* View SNES object
+ * 
+ * Parameters
+ *   snes [in] : SNES object
+ *   viewer [inout] : viewer to user
+ */
 static PetscErrorCode SNESView_PoissonGibbsFAS(SNES snes, PetscViewer viewer)
 {
   SNES_PoissonGibbsFAS *poissongibbsfas = (SNES_PoissonGibbsFAS *)snes->data;
@@ -294,6 +407,11 @@ static PetscErrorCode SNESView_PoissonGibbsFAS(SNES snes, PetscViewer viewer)
   PetscFunctionReturn(PETSC_SUCCESS);
 }
 
+/* Create unitialised SNES object
+ *
+ * Parameters
+ *   snes [inout] : SNES object to create
+ */
 PetscErrorCode SNESCreate_PoissonGibbsFAS(SNES snes)
 {
   SNES_PoissonGibbsFAS *poissongibbsfas;
