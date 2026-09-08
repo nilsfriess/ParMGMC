@@ -55,21 +55,22 @@ Command line options:
 #include <petscviewer.h>
 #include <time.h>
 
-PetscErrorCode initialise_ctx(Mat Q_prec, PetscInt nobs, PoissonGibbsCtx* ctx) {
+PetscErrorCode initialise_ctx(Mat Q_prec, PetscInt nobs, PoissonGibbsCtx *ctx)
+{
   PetscInt ndof, m;
-  Vec nu;
+  Vec      nu;
 
-  PetscFunctionBeginUser;  
-  PetscCall(MatGetSize(Q_prec,&ndof,&m));
-// Observations
+  PetscFunctionBeginUser;
+  PetscCall(MatGetSize(Q_prec, &ndof, &m));
+  // Observations
   PetscCall(VecCreate(MPI_COMM_WORLD, &ctx->event_counts));
   PetscCall(VecSetSizes(ctx->event_counts, PETSC_DECIDE, nobs));
   PetscCall(VecSetFromOptions(ctx->event_counts));
-  PetscCall(VecSet(ctx->event_counts,2.0));
-  
-  PetscCall(MatCreateSeqAIJ(MPI_COMM_WORLD,ndof,nobs,nobs,NULL,&ctx->B_meas));
-  for (PetscInt j=0; j<nobs; ++j) {
-    PetscInt i = (PetscInt) ndof*(1.0*j/nobs);
+  PetscCall(VecSet(ctx->event_counts, 2.0));
+
+  PetscCall(MatCreateSeqAIJ(MPI_COMM_WORLD, ndof, nobs, nobs, NULL, &ctx->B_meas));
+  for (PetscInt j = 0; j < nobs; ++j) {
+    PetscInt i = (PetscInt)ndof * (1.0 * j / nobs);
     PetscCall(MatSetValue(ctx->B_meas, i, j, 1.0, INSERT_VALUES));
   }
   PetscCall(MatAssemblyBegin(ctx->B_meas, MAT_FINAL_ASSEMBLY));
@@ -77,23 +78,23 @@ PetscErrorCode initialise_ctx(Mat Q_prec, PetscInt nobs, PoissonGibbsCtx* ctx) {
 
   ctx->Q_prec = Q_prec;
   PetscCall(VecCreate(MPI_COMM_WORLD, &nu));
-  PetscCall(VecSetSizes(nu, PETSC_DECIDE, nobs));  
+  PetscCall(VecSetSizes(nu, PETSC_DECIDE, nobs));
   PetscCall(VecSetFromOptions(nu));
-  PetscCall(VecSet(nu,0));  
+  PetscCall(VecSet(nu, 0));
   ctx->nu = nu;
   PetscFunctionReturn(PETSC_SUCCESS);
 }
 
 int main(int argc, char *argv[])
 {
-  DM             dm;
-  Mat            Q_prec;
-  Vec            y;
-  Vec            f_rhs;
-  SNES           snes;
-  MS             ms;
-  PetscInt       nobs = 4;
-  PetscViewer    viewer;
+  DM          dm;
+  Mat         Q_prec;
+  Vec         y;
+  Vec         f_rhs;
+  SNES        snes;
+  MS          ms;
+  PetscInt    nobs = 4;
+  PetscViewer viewer;
 
   PetscCall(PetscInitialize(&argc, &argv, NULL, NULL));
   PetscCall(ParMGMCInitialize());
@@ -104,50 +105,49 @@ int main(int argc, char *argv[])
   PetscCall(MSGetPrecisionMatrix(ms, &Q_prec));
   PetscCall(MSGetDM(ms, &dm));
   PetscInt ndof, m;
-  PetscCall(MatGetSize(Q_prec,&ndof,&m));
-  printf("Matrix size = %d x %d\n",ndof,m);
+  PetscCall(MatGetSize(Q_prec, &ndof, &m));
+  printf("Matrix size = %d x %d\n", ndof, m);
   PetscCall(SNESCreate(MPI_COMM_WORLD, &snes));
   PetscCall(SNESSetDM(snes, dm));
-  
+
   PoissonGibbsCtx ctx;
-  initialise_ctx(Q_prec,nobs,&ctx);
+  initialise_ctx(Q_prec, nobs, &ctx);
   PetscCall(SNESSetApplicationContext(snes, &ctx));
-  
+
   PetscCall(VecCreate(PETSC_COMM_SELF, &f_rhs));
   PetscCall(VecSetSizes(f_rhs, PETSC_DECIDE, ndof));
   PetscCall(VecSetFromOptions(f_rhs));
   PetscCall(VecZeroEntries(f_rhs));
-  
+
   // Create sample vector
   PetscCall(DMCreateGlobalVector(dm, &y));
-  
+
   PetscCall(SNESSetFromOptions(snes));
   PetscCall(SNESSetUp(snes));
 
-  PetscCall(PetscViewerASCIIOpen(PETSC_COMM_WORLD,"snes_view.txt",&viewer));
+  PetscCall(PetscViewerASCIIOpen(PETSC_COMM_WORLD, "snes_view.txt", &viewer));
   PetscCall(SNESView(snes, viewer));
-  PetscCall(PetscViewerDestroy(&viewer));  
-  
-  char        filename[512] = "solution.vtu";
+  PetscCall(PetscViewerDestroy(&viewer));
+
+  char filename[512] = "solution.vtu";
 
   PetscCall(PetscOptionsGetString(NULL, NULL, "-filename", filename, 512, NULL));
   PetscCall(PetscViewerVTKOpen(MPI_COMM_WORLD, filename, FILE_MODE_WRITE, &viewer));
 
   PetscInt n_samples = 64;
-  for (int k=0;k<n_samples;++k)
-  {
+  for (int k = 0; k < n_samples; ++k) {
     PetscCall(SNESSolve(snes, f_rhs, y));
     char field_label[100];
-    sprintf (field_label, "sample_%03d",k);
+    sprintf(field_label, "sample_%03d", k);
     PetscCall(PetscObjectSetName((PetscObject)(y), field_label));
     PetscCall(VecView(y, viewer));
   }
-  
+
   PetscCall(PetscViewerDestroy(&viewer));
   PetscCall(VecDestroy(&y));
   PetscCall(VecDestroy(&ctx.event_counts));
   PetscCall(MatDestroy(&ctx.Q_prec));
-  PetscCall(MatDestroy(&ctx.B_meas));  
+  PetscCall(MatDestroy(&ctx.B_meas));
   PetscCall(VecDestroy(&ctx.nu));
   PetscCall(VecDestroy(&f_rhs));
   PetscCall(SNESDestroy(&snes));
