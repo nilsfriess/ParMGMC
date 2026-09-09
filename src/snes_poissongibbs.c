@@ -79,7 +79,7 @@ typedef struct {
  *   max_nnz_per_row [out]: reference to variable which will
  *                           contain the result
  */
-static PetscErrorCode SNESPoissonGibbs_GetMaxNnzPerRow(Mat mat, PetscInt *max_nnz_per_row)
+static PetscErrorCode SNESPoissonGibbsGetMaxNnzPerRow_Private(Mat mat, PetscInt *max_nnz_per_row)
 {
   PetscInt        nnz;
   const PetscInt *row_ptr;
@@ -104,11 +104,12 @@ static PetscErrorCode SNESPoissonGibbs_GetMaxNnzPerRow(Mat mat, PetscInt *max_nn
  *   snes [in] : the SNES object
  *   r [out] : reference to variable which will contain the resulting random number 
  */
-static PetscErrorCode SNESPoissonGibbs_StandardNormal(SNES snes, PetscScalar *r)
+static PetscErrorCode SNESPoissonGibbsStandardNormal_Private(SNES snes, PetscScalar *r)
 {
-  SNES_PoissonGibbs *poissongibbs = (SNES_PoissonGibbs *)snes->data;
+  SNES_PoissonGibbs *poissongibbs;
 
   PetscFunctionBeginUser;
+  poissongibbs = (SNES_PoissonGibbs *)snes->data;
   if (poissongibbs->random_work_ptr >= RANDOM_BUFFER_SIZE) {
     PetscCall(VecSetRandomStandardNormal(poissongibbs->random_workspace, poissongibbs->prand));
     poissongibbs->random_work_ptr = 0;
@@ -223,7 +224,7 @@ static PetscScalar find_argmax_phi(const PetscScalar mu_bar, const PetscScalar s
  */
 static PetscErrorCode SNESSample_PoissonGibbs(SNES snes)
 {
-  SNES_PoissonGibbs *poissongibbs = (SNES_PoissonGibbs *)snes->data;
+  SNES_PoissonGibbs *poissongibbs;
   Vec                theta;
   Vec                f_rhs;
   Vec                nu;
@@ -248,7 +249,7 @@ static PetscErrorCode SNESSample_PoissonGibbs(SNES snes)
   PoissonGibbsCtx   *ctx;
 
   PetscFunctionBeginUser;
-
+  poissongibbs = (SNES_PoissonGibbs *)snes->data;
   PetscCall(SNESGetApplicationContext(snes, &ctx));
   Q_prec = ctx->Q_prec;
   B_meas = ctx->B_meas;
@@ -269,8 +270,8 @@ static PetscErrorCode SNESSample_PoissonGibbs(SNES snes)
   PetscCall(MatMultTransposeAdd(ctx->B_meas, theta, nu, nu_tilde));
 
   // Storage for local part of vectors
-  PetscCall(SNESPoissonGibbs_GetMaxNnzPerRow(Q_prec, &max_nnz_per_row));
-  PetscCall(SNESPoissonGibbs_GetMaxNnzPerRow(B_meas, &max_nnz_per_row));
+  PetscCall(SNESPoissonGibbsGetMaxNnzPerRow_Private(Q_prec, &max_nnz_per_row));
+  PetscCall(SNESPoissonGibbsGetMaxNnzPerRow_Private(B_meas, &max_nnz_per_row));
   PetscCall(PetscMalloc1(max_nnz_per_row, &n_local));
   PetscCall(PetscMalloc1(max_nnz_per_row, &nu_local));
 
@@ -304,7 +305,7 @@ static PetscErrorCode SNESSample_PoissonGibbs(SNES snes)
         theta_bar          = find_argmax_phi(mu_bar, sigma, ncols_B, nu_local, vals_B);
         PetscBool accepted = PETSC_FALSE;
         while (!accepted) {
-          PetscCall(SNESPoissonGibbs_StandardNormal(snes, &r));
+          PetscCall(SNESPoissonGibbsStandardNormal_Private(snes, &r));
           theta_prime = theta_bar + sigma * r;
           PetscCall(PetscRandomGetValueReal(poissongibbs->prand, &r));
           PetscScalar Fbar = 0;
@@ -314,7 +315,7 @@ static PetscErrorCode SNESSample_PoissonGibbs(SNES snes)
         }
       } else {
         // Otherwise just draw a Gaussian random variable with mean mu_bar and width sigma
-        PetscCall(SNESPoissonGibbs_StandardNormal(snes, &r));
+        PetscCall(SNESPoissonGibbsStandardNormal_Private(snes, &r));
         theta_prime = mu_bar + sigma * r;
       }
       theta_array[iloc] = theta_prime;
@@ -349,9 +350,10 @@ static PetscErrorCode SNESSample_PoissonGibbs(SNES snes)
  */
 static PetscErrorCode SNESReset_PoissonGibbs(SNES snes)
 {
-  SNES_PoissonGibbs *poissongibbs = (SNES_PoissonGibbs *)snes->data;
+  SNES_PoissonGibbs *poissongibbs;
 
   PetscFunctionBeginUser;
+  poissongibbs = (SNES_PoissonGibbs *)snes->data;
   PetscCall(PetscRandomDestroy(&poissongibbs->prand));
   PetscCall(VecDestroy(&poissongibbs->random_workspace));
   PetscCall(SNESPoissonGibbsSetIterations(snes, 1));
@@ -368,9 +370,10 @@ static PetscErrorCode SNESReset_PoissonGibbs(SNES snes)
  */
 static PetscErrorCode SNESDestroy_PoissonGibbs(SNES snes)
 {
-  SNES_PoissonGibbs *poissongibbs = (SNES_PoissonGibbs *)snes->data;
+  SNES_PoissonGibbs *poissongibbs;
 
   PetscFunctionBeginUser;
+  poissongibbs = (SNES_PoissonGibbs *)snes->data;
   PetscCall(SNESReset_PoissonGibbs(snes));
   PetscCall(PetscFree(poissongibbs));
   PetscFunctionReturn(PETSC_SUCCESS);
@@ -386,9 +389,10 @@ static PetscErrorCode SNESDestroy_PoissonGibbs(SNES snes)
  */
 static PetscErrorCode SNESSetUp_PoissonGibbs(SNES snes)
 {
-  SNES_PoissonGibbs *poissongibbs = (SNES_PoissonGibbs *)snes->data;
+  SNES_PoissonGibbs *poissongibbs;
 
   PetscFunctionBeginUser;
+  poissongibbs = (SNES_PoissonGibbs *)snes->data;
   // Create random number generator and vector which will store
   // random numbers
   if (!poissongibbs->prand) PetscCall(ParMGMCGetPetscRandom(&poissongibbs->prand));
@@ -407,8 +411,10 @@ static PetscErrorCode SNESSetUp_PoissonGibbs(SNES snes)
  */
 PetscErrorCode SNESPoissonGibbsSetIterations(SNES snes, PetscInt its)
 {
-  SNES_PoissonGibbs *poissongibbs = (SNES_PoissonGibbs *)snes->data;
+  SNES_PoissonGibbs *poissongibbs;
+
   PetscFunctionBeginUser;
+  poissongibbs      = (SNES_PoissonGibbs *)snes->data;
   poissongibbs->its = its;
   PetscFunctionReturn(PETSC_SUCCESS);
 }
@@ -423,10 +429,11 @@ PetscErrorCode SNESPoissonGibbsSetIterations(SNES snes, PetscInt its)
  */
 static PetscErrorCode SNESSetFromOptions_PoissonGibbs(SNES snes, PetscOptionItems PetscOptionsObject)
 {
-  SNES_PoissonGibbs *poissongibbs = (SNES_PoissonGibbs *)snes->data;
+  SNES_PoissonGibbs *poissongibbs;
   (void)poissongibbs;
 
   PetscFunctionBegin;
+  poissongibbs = (SNES_PoissonGibbs *)snes->data;
   PetscOptionsHeadBegin(PetscOptionsObject, "Poisson Gibbs options");
   PetscCall(PetscOptionsInt("-poissongibbs_its", "Number of Poisson Gibbs iterations", NULL, poissongibbs->its, &poissongibbs->its, NULL));
   PetscOptionsHeadEnd();
@@ -441,11 +448,13 @@ static PetscErrorCode SNESSetFromOptions_PoissonGibbs(SNES snes, PetscOptionItem
  */
 static PetscErrorCode SNESView_PoissonGibbs(SNES snes, PetscViewer viewer)
 {
-  SNES_PoissonGibbs *poissongibbs = (SNES_PoissonGibbs *)snes->data;
+  SNES_PoissonGibbs *poissongibbs;
   (void)poissongibbs;
   (void)viewer;
-  PetscCall(PetscViewerASCIIPrintf(viewer, "  number of iterations=%" PetscInt_FMT "\n", poissongibbs->its));
+
   PetscFunctionBeginUser;
+  poissongibbs = (SNES_PoissonGibbs *)snes->data;
+  PetscCall(PetscViewerASCIIPrintf(viewer, "  number of iterations=%" PetscInt_FMT "\n", poissongibbs->its));
   PetscFunctionReturn(PETSC_SUCCESS);
 }
 

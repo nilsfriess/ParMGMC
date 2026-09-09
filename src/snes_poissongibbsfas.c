@@ -68,15 +68,12 @@ static PetscErrorCode SNESSample_PoissonGibbsFAS(SNES snes)
   PoissonGibbsCtx      *ctx;
 
   PetscFunctionBeginUser;
-
   poissongibbsfas = (SNES_PoissonGibbsFAS *)snes->data;
   PetscCall(SNESGetApplicationContext(snes, &ctx));
   PetscCall(VecDuplicate(ctx->nu, &z));
   PetscCall(VecSet(z, 0.0));
-
   PetscCall(VecCreateNest(PETSC_COMM_WORLD, 2, NULL, (Vec[]){snes->vec_rhs, ctx->nu}, &vec_rhs));
   PetscCall(VecCreateNest(PETSC_COMM_WORLD, 2, NULL, (Vec[]){snes->vec_sol, z}, &vec_sol));
-
   PetscCall(SNESSolve(poissongibbsfas->fas, vec_rhs, vec_sol));
   snes->reason = SNES_CONVERGED_ITS;
   PetscCall(VecDestroy(&z));
@@ -143,17 +140,15 @@ static PetscErrorCode SNESDestroy_PoissonGibbsFAS(SNES snes)
  * Parameters
  *   snes [inout] : SNES object
  */
-static PetscErrorCode setup_multigrid(SNES snes)
+static PetscErrorCode SNESPoissonGibbsSetupMultigrid_Private(SNES snes)
 {
   PetscInt nlevels;
   Mat     *P;
 
   PetscFunctionBeginUser;
-
   SNES_PoissonGibbsFAS *poissongibbsfas = (SNES_PoissonGibbsFAS *)snes->data;
   PoissonGibbsCtx      *ctx;
   PetscCall(SNESGetApplicationContext(snes, &ctx));
-
   PetscCall(PCSetDM(poissongibbsfas->mg, snes->dm));
   PetscCall(PCSetOperators(poissongibbsfas->mg, ctx->Q_prec, ctx->Q_prec));
   PetscCall(PCSetUp(poissongibbsfas->mg));
@@ -226,7 +221,7 @@ static PetscErrorCode SNESPoissonGibbs_Function(SNES snes, Vec y, Vec b, void *c
  * Parameters
  *   snes [inout] : SNES object, must have a user context of type PoissonGibbsCtx
  */
-static PetscErrorCode set_function(SNES snes)
+static PetscErrorCode SNESPoissonGibbsSetFunction_Private(SNES snes)
 {
   PoissonGibbsCtx *ctx;
   PetscInt         ndof, nobs;
@@ -252,17 +247,16 @@ static PetscErrorCode set_function(SNES snes)
  * Parameters
  *   snes [in] : the SNES object 
  */
-static PetscErrorCode setup_fas(SNES snes)
+static PetscErrorCode SNESPoissonGibbsFASSetupFAS_Private(SNES snes)
 {
-  PetscInt nlevels;
-  Mat     *P;
+  PetscInt              nlevels;
+  Mat                  *P;
+  SNES_PoissonGibbsFAS *poissongibbsfas;
+  PoissonGibbsCtx      *ctx;
 
   PetscFunctionBeginUser;
-
-  SNES_PoissonGibbsFAS *poissongibbsfas = (SNES_PoissonGibbsFAS *)snes->data;
-  PoissonGibbsCtx      *ctx;
+  poissongibbsfas = (SNES_PoissonGibbsFAS *)snes->data;
   PetscCall(SNESGetApplicationContext(snes, &ctx));
-
   nlevels = poissongibbsfas->nlevels;
 
   // Set up FAS
@@ -278,7 +272,7 @@ static PetscErrorCode setup_fas(SNES snes)
       PetscCall(SNESSetApplicationContext(smoother_coarse, &poissongibbsfas->smoother_ctx[ell]));
       PetscCall(SNESSetType(smoother_coarse, SNESPOISSONGIBBS));
       PetscCall(SNESPoissonGibbsSetIterations(smoother_coarse, poissongibbsfas->its_coarse));
-      PetscCall(set_function(smoother_coarse));
+      PetscCall(SNESPoissonGibbsSetFunction_Private(smoother_coarse));
       PetscCall(SNESSetUp(smoother_coarse));
     } else {
       // Down smoother
@@ -286,19 +280,19 @@ static PetscErrorCode setup_fas(SNES snes)
       PetscCall(SNESSetApplicationContext(smoother_down, &poissongibbsfas->smoother_ctx[ell]));
       PetscCall(SNESSetType(smoother_down, SNESPOISSONGIBBS));
       PetscCall(SNESPoissonGibbsSetIterations(smoother_down, poissongibbsfas->its_down));
-      PetscCall(set_function(smoother_down));
+      PetscCall(SNESPoissonGibbsSetFunction_Private(smoother_down));
       PetscCall(SNESSetUp(smoother_down));
       // Up smoother
       PetscCall(SNESFASGetSmootherUp(poissongibbsfas->fas, ell, &smoother_up));
       PetscCall(SNESSetApplicationContext(smoother_up, &poissongibbsfas->smoother_ctx[ell]));
       PetscCall(SNESSetType(smoother_up, SNESPOISSONGIBBS));
       PetscCall(SNESPoissonGibbsSetIterations(smoother_up, poissongibbsfas->its_up));
-      PetscCall(set_function(smoother_up));
+      PetscCall(SNESPoissonGibbsSetFunction_Private(smoother_up));
       PetscCall(SNESSetUp(smoother_up));
     }
     PetscCall(SNESFASGetCycleSNES(poissongibbsfas->fas, ell, &level_snes));
     PetscCall(SNESSetApplicationContext(level_snes, &poissongibbsfas->smoother_ctx[ell]));
-    PetscCall(set_function(level_snes));
+    PetscCall(SNESPoissonGibbsSetFunction_Private(level_snes));
   }
   // Set intergrid operators on all levels
   Mat      Id;
@@ -351,8 +345,8 @@ static PetscErrorCode setup_fas(SNES snes)
 static PetscErrorCode SNESSetUp_PoissonGibbsFAS(SNES snes)
 {
   PetscFunctionBeginUser;
-  PetscCall(setup_multigrid(snes));
-  PetscCall(setup_fas(snes));
+  PetscCall(SNESPoissonGibbsSetupMultigrid_Private(snes));
+  PetscCall(SNESPoissonGibbsFASSetupFAS_Private(snes));
   PetscFunctionReturn(PETSC_SUCCESS);
 }
 
@@ -367,10 +361,10 @@ static PetscErrorCode SNESSetUp_PoissonGibbsFAS(SNES snes)
  */
 static PetscErrorCode SNESSetFromOptions_PoissonGibbsFAS(SNES snes, PetscOptionItems PetscOptionsObject)
 {
-  const char *pc_type;
-  PetscBool   isgamg, ismg;
-
+  const char           *pc_type;
+  PetscBool             isgamg, ismg;
   SNES_PoissonGibbsFAS *poissongibbsfas = (SNES_PoissonGibbsFAS *)snes->data;
+
   PetscFunctionBegin;
   // Set multigrid from options
   PetscCall(PCSetFromOptions(poissongibbsfas->mg));
@@ -379,7 +373,6 @@ static PetscErrorCode SNESSetFromOptions_PoissonGibbsFAS(SNES snes, PetscOptionI
   PetscCall(PetscStrcmp(pc_type, PCGAMG, &isgamg));
   PetscCall(PetscStrcmp(pc_type, PCMG, &ismg));
   PetscCheck(isgamg || ismg, PETSC_COMM_SELF, PETSC_ERR_ARG_WRONG, "PC type must be mg or gamg, but got %s", pc_type);
-
   PetscOptionsHeadBegin(PetscOptionsObject, "Poisson Gibbs options");
   PetscCall(PetscOptionsInt("-snes_poissongibbsfas_smoothdown", "Number of Poisson Gibbs pre-smoother iterations", NULL, poissongibbsfas->its_down, &poissongibbsfas->its_down, NULL));
   PetscCall(PetscOptionsInt("-snes_poissongibbsfas_smoothup", "Number of Poisson Gibbs post-smoother smoother iterations", NULL, poissongibbsfas->its_up, &poissongibbsfas->its_up, NULL));
@@ -397,6 +390,7 @@ static PetscErrorCode SNESSetFromOptions_PoissonGibbsFAS(SNES snes, PetscOptionI
 static PetscErrorCode SNESView_PoissonGibbsFAS(SNES snes, PetscViewer viewer)
 {
   SNES_PoissonGibbsFAS *poissongibbsfas = (SNES_PoissonGibbsFAS *)snes->data;
+
   PetscFunctionBeginUser;
   PetscCall(PetscViewerASCIIPushTab(viewer));
   PetscCall(PetscViewerASCIIPrintf(viewer, "Underlying multigrid\n"));
