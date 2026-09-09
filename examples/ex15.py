@@ -51,7 +51,7 @@ if setup == "rongelap":
 else:
     n = 64
     mesh = fd.UnitSquareMesh(n, n)
-    correlation_length = 1.0
+    correlation_length = 0.1
 
 V = fd.FunctionSpace(mesh, "CG", 1)
 w = fd.TrialFunction(V)
