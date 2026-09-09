@@ -51,15 +51,14 @@ PYBIND11_MODULE(pymgmc, m)
     PetscFunctionReturnVoid();
   });
   m.def("SNESPoissonSetAppCtx", [](SNES snes, Vec event_counts, Mat Q_prec, Mat B_meas, Vec nu) {
-    PetscFunctionBegin;
     PoissonGibbsCtx *ctx;
-    PetscCallVoid(PetscNew(&ctx));
 
+    PetscFunctionBegin;
+    PetscCallVoid(PetscNew(&ctx));
     PetscCallVoid(PetscObjectReference((PetscObject)event_counts));
     PetscCallVoid(PetscObjectReference((PetscObject)Q_prec));
     PetscCallVoid(PetscObjectReference((PetscObject)B_meas));
     PetscCallVoid(PetscObjectReference((PetscObject)nu));
-
     ctx->event_counts = event_counts;
     ctx->Q_prec       = Q_prec;
     ctx->B_meas       = B_meas;
