@@ -82,15 +82,6 @@ Q_prec = fd.assemble(a).M.handle
 # Construct SNES
 snes = PETSc.SNES().create()
 snes.setOptionsPrefix("")
-opts = PETSc.Options()
-solver_parameters = {
-    "snes_type": "poissongibbsfas",
-    "pc_type": "gamg",
-    "poissongibbs_its": 1,
-    "snes_view": ":snes_view.txt",
-}
-for key, value in solver_parameters.items():
-    opts[key] = value
 snes.setFromOptions()
 
 pymgmc.SNESPoissonSetAppCtx(snes, event_counts, Q_prec, B_meas, nu)
