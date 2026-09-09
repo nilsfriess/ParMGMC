@@ -96,6 +96,7 @@ else:
 vom_qoi = fd.VertexOnlyMesh(mesh, points_qoi, reorder=False)
 W_qoi = fd.FunctionSpace(vom_qoi, "DG", 0)
 chain = []
+y_samples = []
 for k in tqdm.tqdm(range(n_samples)):
     with fd.assemble(fd.action(a, mu_rhs)).dat.vec_ro as f_rhs, y.dat.vec as u:
         snes.solve(f_rhs, u)
@@ -103,6 +104,9 @@ for k in tqdm.tqdm(range(n_samples)):
     y_obs = fd.assemble(fd.interpolate(y, W_qoi))
     z = float(np.exp(y_obs.dat.data)[0])
     chain.append(z)
+    _y = y.copy(deepcopy=True)
+    _y.rename(f"sample_{k:04d}")
+    y_samples.append(_y)
 chain = np.asarray(chain)
 mean = np.average(chain)
 std = np.std(chain)
@@ -113,7 +117,7 @@ print(f"std  = {std:8.4f}")
 print(f"iact = {iact:8.4f}")
 
 w = fd.Function(V, name="exp_sample").interpolate(fd.exp(y))
-fd.VTKFile("sample.pvd").write(y, w)
+fd.VTKFile("sample.pvd").write(*y_samples, y, w)
 
 plt.clf()
 plt.plot(chain, linewidth=2, marker="o", markersize=4)
