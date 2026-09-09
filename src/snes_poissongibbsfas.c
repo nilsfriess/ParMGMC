@@ -205,7 +205,7 @@ static PetscErrorCode setup_multigrid(SNES snes)
 static PetscErrorCode SNESPoissonGibbs_Function(SNES snes, Vec y, Vec b, void *ctx)
 {
   Vec theta, f_rhs, nu;
-
+  (void)snes;
   PoissonGibbsCtx *poissongibbs = (PoissonGibbsCtx *)ctx;
 
   PetscFunctionBeginUser;
