@@ -320,8 +320,7 @@ static PetscErrorCode SNESPoissonGibbsFASSetupFAS_Private(SNES snes)
     // Injection is given by
     //                          [ 0   0 ]
     //                          [ 0   I ]
-    PetscCall(MatDuplicate(P_T, MAT_DO_NOT_COPY_VALUES, &R_hat));
-    PetscCall(MatZeroEntries(R_hat));
+    PetscCall(MatDuplicate(P_T, MAT_COPY_VALUES, &R_hat));
     Mat blocks_inject[4] = {R_hat, NULL, NULL, Id};
     PetscCall(MatCreateNest(PETSC_COMM_WORLD, 2, NULL, 2, NULL, blocks_inject, &I_2x2));
     PetscCall(MatNestSetVecType(I_2x2, VECNEST));
