@@ -8,10 +8,10 @@
 
 /*  Description
  *
- *  Tests Poisson Gibbs sampler
+ *  Tests Poisson Gibbs sampler (ONLY SEQUENTIAL VERSION SUPPORTED)
  */
 
-// RUN: %cc %s -o %t %flags && %mpirun -np %NP %t -snes_type poissongibbs -poissongibbs_its 1 -snes_view :snes_view.txt
+// RUN: %cc %s -o %t %flags && %mpirun -np 1 %t -dm_refine 3 -snes_type poissongibbs -poissongibbs_its 1 -snes_view :snes_view.txt
 
 /*
 Command line options:
@@ -97,6 +97,7 @@ int main(int argc, char *argv[])
   PetscViewer viewer;
 
   PetscCall(PetscInitialize(&argc, &argv, NULL, NULL));
+
   PetscCall(ParMGMCInitialize());
   PetscCall(MSCreate(MPI_COMM_WORLD, &ms));
   PetscCall(MSSetFromOptions(ms));
