@@ -13,7 +13,7 @@ import tqdm
 import emcee
 
 
-def get_rongelap_measurements(filename, measurement_interval=300):
+def get_rongelap_measurements(filename):
     df = pd.read_csv(filename)
     points = np.stack([df[dim].to_numpy() for dim in ("x", "y")]).T
     vom = fd.VertexOnlyMesh(mesh, points, reorder=False)
@@ -21,13 +21,11 @@ def get_rongelap_measurements(filename, measurement_interval=300):
 
     interp = fd.assemble(fd.interpolate(fd.TrialFunction(V), W))
     B_meas = interp.petscmat.transpose()
-    counts = np.round(
-        measurement_interval
-        * df["gamma_counts"].to_numpy()
-        / df["measurement_time"].to_numpy()
-    )
-    background_counts = 0.25 * measurement_interval
-    return B_meas, counts, background_counts
+    event_counts = df["gamma_counts"].to_numpy()
+    measurement_times = df["measurement_time"].to_numpy()
+    background_rate = 1
+
+    return B_meas, event_counts, measurement_times, background_rate
 
 
 def get_synthetic_measurements():
@@ -36,14 +34,15 @@ def get_synthetic_measurements():
     W = fd.FunctionSpace(vom, "DG", 0)
 
     interp = fd.assemble(fd.interpolate(fd.TrialFunction(V), W))
-    B = interp.petscmat.transpose()
-    counts = np.array([100, 50, 20], dtype=np.float64)
-    background_counts = 1
-    return B, counts, background_counts
+    B_meas = interp.petscmat.transpose()
+    event_counts = np.array([400, 300, 250], dtype=np.float64)
+    measurement_times = np.array([300, 300, 300], dtype=np.float64)
+    background_rate = 1
+    return B_meas, event_counts, measurement_times, background_rate
 
 
-# setup = "rongelap"
-setup = "synthetic"
+setup = "rongelap"
+# setup = "synthetic"
 
 if setup == "rongelap":
     mesh = fd.Mesh("../data/rongelap.msh", dim=2)
@@ -64,17 +63,19 @@ y = fd.Function(V, name="sample")
 
 # Attach measurements
 if setup == "rongelap":
-    B_meas, measured_counts, background_counts = get_rongelap_measurements(
-        "../data/rongelap_gamma.csv", measurement_interval=300
+    B_meas, measured_counts, measurement_times, background_rate = (
+        get_rongelap_measurements("../data/rongelap_gamma.csv")
     )
 else:
-    B_meas, measured_counts, background_counts = get_synthetic_measurements()
+    B_meas, measured_counts, measurement_times, background_rate = (
+        get_synthetic_measurements()
+    )
 
 event_counts = PETSc.Vec().createWithArray(measured_counts)
-nu = PETSc.Vec().createWithArray(np.zeros_like(event_counts))
+measurement_times = PETSc.Vec().createWithArray(np.zeros_like(measurement_times))
 
 # Construct mean field for RHS
-mu_rhs = fd.Function(V).interpolate(fd.Constant(np.log(background_counts)))
+mu_rhs = fd.Function(V).interpolate(fd.Constant(0))
 
 
 # Assemble system matrix
@@ -83,8 +84,8 @@ Q_prec = fd.assemble(a).M.handle
 snes = PETSc.SNES().create()
 snes.setOptionsPrefix("")
 snes.setFromOptions()
-
-pymgmc.SNESPoissonSetAppCtx(snes, event_counts, Q_prec, B_meas, nu)
+beta = np.log(background_rate)
+pymgmc.SNESPoissonSetAppCtx(snes, event_counts, measurement_times, beta, Q_prec, B_meas)
 
 n_samples = 128
 
