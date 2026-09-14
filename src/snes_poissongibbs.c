@@ -270,7 +270,6 @@ static PetscErrorCode SNESSample_PoissonGibbs(SNES snes)
   PetscCall(MatMultTransposeAdd(ctx->B_meas, theta, nu, nu_tilde));
 
   // Storage for local part of vectors
-  PetscCall(SNESPoissonGibbsGetMaxNnzPerRow_Private(Q_prec, &max_nnz_per_row));
   PetscCall(SNESPoissonGibbsGetMaxNnzPerRow_Private(B_meas, &max_nnz_per_row));
   PetscCall(PetscMalloc1(max_nnz_per_row, &n_local));
   PetscCall(PetscMalloc1(max_nnz_per_row, &nu_local));
