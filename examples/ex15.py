@@ -72,7 +72,7 @@ else:
     )
 
 event_counts = PETSc.Vec().createWithArray(measured_counts)
-measurement_times = PETSc.Vec().createWithArray(np.zeros_like(measurement_times))
+measurement_times = PETSc.Vec().createWithArray(measurement_times)
 
 # Construct mean field for RHS
 mu_rhs = fd.Function(V).interpolate(fd.Constant(0))
