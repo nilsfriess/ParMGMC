@@ -1,0 +1,358 @@
+\documentclass[11pt]{article}
+\usepackage[margin=2cm]{geometry}
+\usepackage{amssymb,amsmath}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\usepackage[colorlinks,bookmarksopen,bookmarksnumbered,citecolor=red,urlcolor=red]{hyperref}
+\usepackage[capitalise,nameinlink]{cleveref}
+
+\renewcommand{\vec}[1]{\boldsymbol{#1}}
+\title{MGMC for log-Gaussian Cox process}
+\author{Eike Mueller, University of Bath}
+\begin{document}
+\maketitle
+We describe MGMC~\cite{goodman1989multigrid} sampling for the posterior of a log-Gaussian Cox process as in~\cite{diggle1998model}. The key difference to~\cite{kazashi2026multigrid} is that the measurements are not assumed to have normally distributed errors, but that they follow a Poisson distribution conditioned on a latent Gaussian process with a sparse precision matrix.
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Model}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+Assume that on the domain $\Omega$ we have a Gaussian process $\theta:\Omega\rightarrow \mathbb{R}$ with mean $\mathbb{E}[\theta(x)]=\mu(x)$ and covariance $C(x,x')=\mathbb{E}[(\theta(x)-\mu(x))(\theta(x')-\mu(x'))]$. We also have $m$ integer-valued measurements $\{N_k\}_{k=1}^m$ which follow a Poisson process with rate $\widehat{r}_k$. In the following we use the non-dimensionalised rate $r_k=\widehat{r}_k T_{\text{unit}}$ where $T_{\text{unit}}$ is the unit time. As in \cite{diggle1998model} rhese rates are modelled by
+\begin{equation}
+    r_k = \exp[\beta + \mathcal{B}^{(k)}\theta]\label{eqn:rate_definition}.
+\end{equation}
+More explicitly, if the measurement interval at site $k$ is $t_k T_{\text{unit}}$, then  
+\begin{equation}
+    p(N_k=n|\theta) = \frac{(r_k t_k)^{n}}{n!}e^{-r_k t_k} = \frac{\Lambda_k^{n}}{n!}e^{-\Lambda_k}
+\end{equation}
+where
+\begin{equation}
+    \Lambda_k=\Lambda_k(\theta) = t_k r_k = \exp[\mathcal{B}^{(k)}\theta - \nu_k]
+    \qquad\text{with $\nu_k = - \beta - \log(t_k)$}
+\end{equation}
+follows from~\eqref{eqn:rate_definition}.
+For each $k=1,2,\dots,m$ the shift $\nu_k\in\mathbb{R}$ is a constant and $\mathcal{B}^{(k)}$ is a linear operator which can be written as
+\begin{equation}
+\mathcal{B}^{(k)}\theta = \int_\Omega \varphi_k(x)\theta(x)\;dx.\label{eqn:linear_measurement}
+\end{equation}
+For example, for point-measurements at positions $x^{(k)}$ one would have $\varphi^{(k)}(x) = \delta(x-x^{(k)})$, but one could also imagine some sort of spatial averaging with a mollifier.
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\subsection{Discretisation}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+We further assume that after discretisation the prior probability can be written as a multivariate normal density
+\begin{equation}
+p(\theta) \propto \exp\left[-\frac{1}{2}(\vec{\theta}-\vec{\mu})^\top Q(\vec{\theta}-\vec{\mu})\right] \propto \exp\left[-\frac{1}{2}\vec{\theta}^\top Q\vec{\theta}+\vec{f}^\top\vec{\theta}\right]
+\end{equation}
+for some sparse SPD precision matrix $Q$ and $\vec{f}=Q\vec{\mu}$. The discretised equivalent of~\eqref{eqn:linear_measurement} is 
+\begin{equation}
+(\vec{b}^{(k)})^\top\vec{\theta}.
+\end{equation}
+This also includes the case where the distribution is defined on a graph, with $A_{ij}\ne 0$ for all points that are connected by an edge. For later convenience, the $\vec{b}^{(k)}$ are interpreted as the columns of a $n\times m$ matrix
+\begin{equation}
+    B = (\vec{b}^{(1)}|\vec{b}^{(2)}|\dots|\vec{b}^{(m)})
+\end{equation}
+and we collect the $\{n_k\}_{k=1}^{m}$ in a vector $\vec{n}\in\mathbb{R}^m$.
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\subsection{Posterior probability}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+Using Bayes, the posterior probability density which we want to sample from is
+\begin{equation}
+    p(\vec{\theta}|\vec{n};Q,B,\vec{f},\vec{\nu}) \propto \prod_{k=1}^m \frac{(\Lambda_k(\vec{\theta}))^{n_k}}{n_k!}e^{-\Lambda_k(\vec{\theta})} \exp\left[-\frac{1}{2}\vec{\theta}^\top Q\vec{\theta}+\vec{f}^\top\vec{\theta} \right]\label{eqn:posterior_density}
+\end{equation}
+with
+\begin{equation}
+\Lambda_k(\vec{\theta}) = \Lambda_k(\vec{\theta};\vec{b}^{(k)},\nu_k) = \exp\left[(\vec{b}^{(k)})^\top \vec{\theta} - \nu_k\right].
+\end{equation}
+In the following we will often not write down the dependency on $\vec{n};\vec{f},Q,B,\vec{\nu}$ explicitly.
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\subsubsection{Incremental formulation}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+Suppose that instead of sampling $\vec{\theta}$ directly, we are given some initial $\vec{\theta}_0$ and want to sample $\delta\vec{\theta}\sim p_\delta$ such that $\vec{\theta}=\vec{\theta}_0+\delta\vec{\theta}$ is distributed according to $p(\cdot|\vec{n};\vec{f},Q,B,\vec{\nu})$ in~\eqref{eqn:posterior_density}. For a given $\vec{\theta}_0$ the distribution $p_\delta$ can be obtained as follows. First observe that
+\begin{equation}
+    \begin{aligned}
+    -\frac{1}{2} \vec{\theta}^\top Q \vec{\theta} + \vec{f}^\top \vec{\theta} &= -\frac{1}{2} (\vec{\theta}_0+\delta\vec{\theta})^\top Q (\vec{\theta}_0+\delta\vec{\theta}) + \vec{f}^\top (\vec{\theta}_0+\delta\vec{\theta})\\
+    &= -\frac{1}{2} \delta\vec{\theta}^\top Q \delta\vec{\theta} + (\vec{f}-Q\vec{\theta}_0)^\top \delta\vec{\theta} + \mathcal{R}(\vec{\theta_0})
+    \end{aligned}
+\end{equation}
+where $\mathcal{R}(\vec{\theta_0})$ does not depend on $\delta\vec{\theta}$. Further
+\begin{equation}
+    \begin{aligned}
+\Lambda_k(\vec{\theta};\vec{b}^{(k)},\nu_k) &= \Lambda_k(\vec{\theta}_0+\delta\vec{\theta};\vec{b}^{(k)},\nu_k) \\
+&=\exp\left[(\vec{b}^{(k)})^\top \delta \vec{\theta} + \left((\vec{b}^{(k)})^\top\vec{\theta}_0-\nu_k\right)\right]\\
+&= \Lambda_k(\delta \vec{\theta};\vec{b}^{(k)},\nu_k - (\vec{b}^{(k)})^\top\vec{\theta}_0)
+\end{aligned}.
+\end{equation}
+This immediately implies:
+\begin{equation}
+    p_\delta(\delta\vec{\theta}) = p(\delta\vec{\theta}|\vec{n};Q,B,\vec{f}-Q\vec{\theta}_0,\vec{\nu}-B^\top\vec{\theta}_0).\label{eqn:incremental_probability}
+\end{equation}
+Hence, we can obtain $\vec{\theta}$ according to~\cref{alg:incrementalsampler}.
+\begin{algorithm}
+    \caption{Incremental posterior sampler \\
+    \textit{Input}: Previous state $\vec{\theta}_0$, SPD prior matrix $Q\in\mathbb{R}^{n\times n}$, measurement matrix $B\in\mathbb{R}^{n\times m}$, bias vector $\vec{\nu}\in\mathbb{R}^m$, measurements $\vec{n}\in\mathbb{N}^m$, current state $\vec{\theta}\in\mathbb{R}^n$ \\
+    \textit{Output:} Updated state $\vec{\theta}\in\mathbb{R}^n$}\label{alg:incrementalsampler}
+\begin{algorithmic}[1]
+\State {Compute residual $\vec{r}=\vec{f}-Q\vec{\theta}_0$}
+\State {Compute bias $\vec{\nu}^*=\vec{\nu}-B^\top\vec{\theta}_0$}
+\State {Draw increment $\delta\vec{\theta}\sim p(\cdot|\vec{n};B,\vec{r},\vec{\nu}^*)$.}
+\State {Update $\vec{\theta}_0 \mapsto \vec{\theta}_0+\delta\vec{\theta}=:\vec{\theta}$}
+\State {\Return $\vec{\theta}$}
+\end{algorithmic}
+\end{algorithm}
+Crucially, this should be compared to the deterministic update implemented in a Richardson iteration, namely
+\begin{equation}
+\vec{x}\mapsto \vec{x} + P(\vec{r},\vec{x})\qquad \text{with $\vec{r} = \vec{f}-Q\vec{x}$}.
+\end{equation}
+Hence, in our code we need to be able to compute the equivalent of the preconditioner $P(\vec{r},\vec{x})$.
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Non-linear Gibbs sampler}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+Now consider a Gibbs sampler for the posterior density in~\eqref{eqn:posterior_density}. For each component $\theta_i$ of the vector $\theta$ we want to sample from
+\begin{equation}
+    p(\;\cdot\;|\{\theta_j\}_{j\ne i},\{n_k\}_{k=1}^{m}).\label{eqn:single_site_density}
+\end{equation}
+Let $\mathcal{N}_i=\{j\neq i:Q_{ij}\neq 0\}$ be the set of vertices connected to $i$ in the adjacency graph of $Q$ and $\mathcal{M}_i = \{k:b^{(k)}_i\ne 0\}$ the set of measurements which depend on $\theta_i$. With this, we can write for the posterior density of $\theta_i$ conditioned on all other $\theta_{j}$, $j\neq i$ and the measured values $\{n_k\}_{k=1}^m$:
+\begin{equation}
+    \begin{aligned}
+    p(\theta_i|\{\theta_j\}_{j\ne i},\{n_k\}_{k=1}^{m}) &= 
+    p(\theta_i|\{\theta_j\}_{j\in\mathcal{N}_i},\{n_k\}_{k\in \mathcal{M}_i})\\
+    &\propto\exp\left[-\sum_{k\in\mathcal{M}_i} e^{B_{ik} \theta_i -\nu_k+\sum_{j\ne i} B_{jk}\theta_j} \right]\times\\
+    &\qquad
+    \times \exp\left[\sum_{k\in\mathcal{M}_i} n_k B_{ik} \theta_i -\frac{1}{2}\Big(Q_{ii}\theta_i^2-2\theta_i\big(f_i-\sum_{j\in\mathcal{N}_i} Q_{ij}\theta_j\big)\Big)\right]\\
+    &\propto 
+    \exp\left[-\sum_{k\in\mathcal{M}_i} e^{B_{ik} \theta_i -\widetilde{\nu}_k^{(i)}} \right]\exp\left[-\frac{1}{2}\Big(\frac{\theta_i-\overline{\mu}_i}{\sigma_i}\Big)^2\right]\\
+    &\propto \exp\left[-F_i(\theta_i)\right] g(\theta_i|\overline{\mu}_i,\sigma_i)
+    \end{aligned}\label{eqn:posterior_density_single_site}
+\end{equation}
+where
+\begin{equation}
+\widetilde{\nu}_k^{(i)} = \nu_k - \sum_{j\neq i} B_{jk} \theta_j
+\end{equation}
+and
+\begin{equation}
+    g(\theta|\mu,\sigma) = \frac{1}{\sqrt{2\pi\sigma^2}}\exp\left[-\frac{1}{2}\Big(\frac{\theta-\mu}{\sigma}\Big)^2\right]
+\end{equation}
+is a Gaussian with mean $\mu$ and width $\sigma$ and the positive function $F_i$ is given by
+\begin{equation}
+F_i(\theta) = \sum_{k\in\mathcal{M}_i} e^{B_{ik} \theta -\widetilde{\nu}_k^{(i)}} \ge 0.
+\end{equation}
+In particular, the Gaussian that appears in~\eqref{eqn:posterior_density_single_site} has the following mean $\overline{\mu}_i$ and width $\sigma_i$
+\begin{xalignat}{2}
+\overline{\mu}_i &= \frac{1}{Q_{ii}}\left(f_i-\sum_{j\in\mathcal{N}_i} Q_{ij}\theta_j+ \sum_{k\in\mathcal{M}_i}B_{ik}n_k \right),&
+\sigma_i &= \frac{1}{\sqrt{Q_{ii}}}.\label{eqn:mu_sigma_definition}
+\end{xalignat}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\subsection{Sampling}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+If $\mathcal{M}_i=\emptyset$, i.e. no measurements depend on $\theta_i$, then the posterior density in~\eqref{eqn:posterior_density_single_site} reduces to $g(\theta_i|\overline{\mu}_i,\sigma_i)$
+with
+\begin{equation}
+\overline{\mu}_i = \frac{1}{Q_{ii}}\left(f_i - \sum_{j\in\mathcal{N}_i} Q_{ij}\theta_j\right)
+\end{equation}
+and $\sigma_i$ as in~\eqref{eqn:mu_sigma_definition}, which is readily sampled. Otherwise, one can use rejection sampling: draw a sample $\theta^*$ from $g(\cdot|\overline{\mu}_i,\sigma_i)$ and accept it with probability $0< \exp[-F_i(\theta^*)]\le 1$; repeat this process until a sample is accepted.
+
+Unfortunately, it is quite likely that $\exp[-F_i(\theta^*)]\ll 1$, so this method is not very efficient. A better method is obtained by tweaking the proposal density such that it is still Gaussian but forms a tigher envelope of the target density.
+
+For this, let 
+\begin{equation}
+\phi_i(\theta) := F_i(\theta) + \frac{1}{2}\left(\frac{\theta-\overline{\mu}_i}{\sigma_i}\right)^2
+\end{equation}
+It can easily be seen that $\phi$ is a positive strictly convex function:
+\begin{equation}
+    \begin{aligned}
+    \frac{\partial \phi_i}{\partial \theta} &=\sum_{k\in\mathcal{M}_i} B_{ik}e^{B_{ik} \theta -\widetilde{\nu}_k^{(i)}} + \frac{\theta-\overline{\mu}_i}{\sigma_i^2}\\
+    \frac{\partial^2 \phi_i}{\partial \theta^2} &=\sum_{k\in\mathcal{M}_i} B_{ik}^2e^{B_{ik} \theta -\widetilde{\nu}_k^{(i)}} + \frac{1}{\sigma_i^2} > 0
+    \end{aligned}
+\end{equation}
+Let $\overline{\theta}_i$ be the unique minimum of $\phi_i$ (i.e. the maximum of the single-site posterior density in~\eqref{eqn:posterior_density_single_site}), which satisfies
+\begin{equation}
+    \begin{aligned}
+    \frac{\partial \phi_i}{\partial \theta}\Big|_{\theta=\overline{\theta}_i} &=\sum_{k\in\mathcal{M}_i} B_{ik}e^{B_{ik} \overline{\theta}_i -\widetilde{\nu}_k^{(i)}} + \frac{\overline{\theta}_i-\overline{\mu}_i}{\sigma_i^2} = 0
+    \end{aligned}\label{eqn:mu_bar_definition}
+\end{equation}
+Write
+\begin{equation}
+\phi_i(\theta) = \underbrace{\phi_i(\theta)-\phi_i(\overline{\theta}_i)-\frac{1}{2}\left(\frac{\theta-\overline{\theta}_i}{\sigma_i}\right)^2}_{\overline{F}_i(\theta)} + \phi_i(\overline{\theta}_i)+\frac{1}{2}\left(\frac{\theta-\overline{\theta}_i}{\sigma_i}\right)^2.
+\end{equation}
+We now show that $\overline{F}_i(\theta)\ge0$ for arbitrary $\theta$ and that this bound is sharp:
+\begin{equation}
+    \begin{aligned}
+\overline{F}_i(\theta) &= \phi_i(\theta)-\phi_i(\overline{\theta}_i)-\frac{1}{2}\left(\frac{\theta-\overline{\theta}_i}{\sigma_i}\right)^2\\
+&= \sum_{k\in\mathcal{M}_i}\left(e^{B_{ik}\theta-\widetilde{\nu}_k^{(i)}}-e^{B_{ik}\overline{\theta}_i-\widetilde{\nu}_k^{(i)}}\right)
++ \underbrace{\frac{1}{2}\left(\left(\frac{\theta-\overline{\mu}_i}{\sigma_i}\right)^2-\left(\frac{\overline{\theta}_i-\overline{\mu}_i}{\sigma_i}\right)^2-\left(\frac{\theta-\overline{\theta}_i}{\sigma_i}\right)^2\right)}_{\frac{\overline{\mu}_i-\overline{\theta}_i}{\sigma_i^2}(\overline{\theta}_i-\theta)}\\
+&= \sum_{k\in\mathcal{M}_i}\left(e^{B_{ik}\theta-\widetilde{\nu}_k^{(i)}}-e^{B_{ik}\overline{\theta}_i-\widetilde{\nu}_k^{(i)}}\right)
++ (\overline{\theta}_i-\theta) \sum_{k\in\mathcal{M}_i} B_{ik} e^{B_{ik}\overline{\theta}_i-\widetilde{\nu}_k^{(i)}}
+    \end{aligned}
+\end{equation}
+where we have used~\eqref{eqn:mu_bar_definition} in the final step. Next, define for each $k\in\mathcal{M}_i$ 
+\begin{equation}
+\chi_{ik}(\theta) := e^{B_{ik}\theta-\widetilde{\nu}_k^{(i)}} - B_{ik}\theta e^{B_{ik}\overline{\theta}_i-\widetilde{\nu}_k^{(i)}}
+\end{equation}
+and observe that
+\begin{equation}
+\overline{F}_i(\theta) = \sum_{k\in\mathcal{M}_i} \left(\chi_{ik}(\theta)-\chi_{ik}(\overline{\theta}_i)\right)
+\end{equation}
+It is easy to see that since (by definition) $B_{ik}\neq 0$ for $k\in\mathcal{M}_i$ the function $\chi_{ik}$ is (strictly) convex with minimum at $\theta=\overline{\theta}_i$. As a consequence we obtain the sharp bound
+\begin{equation}
+\chi_{ik}(\theta) \ge \chi_{ik}(\overline{\theta}_i) = (1-B_{ik}\overline{\theta}_i) e^{B_{ik}\overline{\theta}_i-\widetilde{\nu}_k^{(i)}}.
+\end{equation}
+This implies that indeed $\overline{F}_i(\theta)\ge 0$ with $\overline{F}_i(\overline{\theta}_i)=0$.
+\begin{algorithm}
+    \caption{Non-linear Gibbs sampler for posterior density \\
+    \textit{Input}: SPD prior matrix $Q\in\mathbb{R}^{n\times n}$, measurement matrix $B\in\mathbb{R}^{n\times m}$, bias vector $\vec{\nu}\in\mathbb{R}^m$, measurements $\vec{n}\in\mathbb{N}^m$, current state $\vec{\theta}\in\mathbb{R}^n$ \\
+    \textit{Output:} Updated state $\vec{\theta}\in\mathbb{R}^n$}
+\begin{algorithmic}[1]
+\For{$i=1,2,\dots,n$}
+\State {Compute $\mu_i$, $\sigma_i$ according to~\eqref{eqn:mu_sigma_definition}}
+\If{$\mathcal{M}_i=\emptyset$}
+\State {Draw $\theta_i\sim\mathcal{N}(\overline{\mu}_i,\sigma_i)$}
+\Else
+\State {Compute $\overline{\theta}_i$ by solving~\eqref{eqn:mu_bar_definition}}
+\Repeat
+\State {Draw $\theta_i\sim\mathcal{N}(\overline{\theta}_i,\sigma_i)$}
+\State {Draw uniform $u\sim \mathcal{U}(0,1)$}
+\Until {$u\le\exp[-\overline{F}_i(\theta_i)]$}
+\EndIf
+\EndFor
+\end{algorithmic}
+\end{algorithm}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\subsection{Multigrid Monte Carlo}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+Given a prolongation matrix $P\in\mathbb{R}^{n\times n_c}$ the coarse density is~\cite[Section VII]{goodman1989multigrid}
+\begin{equation}
+    \begin{aligned}
+    p^{(c)}_\delta(\delta\vec{\theta}^{(c)}|\vec{\theta},\vec{n};Q,B,\vec{f},\vec{\nu}) &=p(\vec{\theta}+P\delta\vec{\theta}^{(c)}|\vec{n};Q,B,\vec{f},\vec{\nu})\\
+     &\propto \prod_{k=1}^m \frac{(\Lambda_k(\vec{\theta}+P\delta\vec{\theta}^{(c)}))^{n_k}}{n_k!}e^{-\Lambda_k(\vec{\theta}+P\delta\vec{\theta}^{(c)})}\\
+     &\qquad\times\exp\left[-\frac{1}{2}(\vec{\theta}+P\delta\vec{\theta}^{(c)})^\top Q(\vec{\theta}+P\delta\vec{\theta}^{(c)}) +\vec{f}^\top(\vec{\theta}+P\delta\vec{\theta}^{(c)}) \right]\\
+    &\propto \prod_{k=1}^m \frac{\Lambda^{(c)}_k(\delta\vec{\theta}^{(c)} )^{n_k}}{n_k!}e^{-\Lambda^{(c)}_k(\delta\vec{\theta}^{(c)})} \exp\left[-\frac{1}{2}(\delta\vec{\theta}^{(c)} )^\top Q^{(c)}\delta\vec{\theta}^{(c)} +(\vec{f}^{(c)})^\top\delta\vec{\theta}^{(c)} \right]
+    \end{aligned}\label{eqn:coarse_posterior}
+\end{equation}
+with
+\begin{xalignat}{2}
+    Q^{(c)} &= P^\top Q P \in\mathbb{R}^{n_c\times n_c}, &
+    \vec{f}^{(c)} &= P^\top (\vec{f}-Q\vec{\theta})\in\mathbb{R}^{n_c}.\label{eqn:Q_f_coarse}
+\end{xalignat}
+Here we have used the subscript $\delta$ to indicate that this is the density of the correction $\delta \delta\vec{\theta}^{(c)}$
+Further, observe that
+\begin{equation}
+    \begin{aligned}
+    \Lambda^{(c)}_k(\vec{\theta^{(c)}}) &=\exp\left[ (\vec{b}^{(k)})^\top(\vec{\theta} + P\delta\vec{\theta}^{(c)})- \nu_k\right]\\
+    &= \exp\left[(\vec{b}^{(c,k)})^\top \delta\vec{\theta}^{(c)} - \nu^{(c)}_k\right]
+    \end{aligned}
+\end{equation}
+where $\vec{b}^{(c,k)}$ is the $k$-th column of the matrix $B^{(c)}$ defined by
+\begin{equation}
+B^{(c)} = P^\top B\in\mathbb{R}^{n_c\times m}\label{eqn:B_coarse}
+\end{equation}
+and we have
+\begin{equation}
+\nu^{(c)}_k = \nu_k - (\vec{b}^{(k)})^\top \vec{\theta}
+\end{equation}
+or, more compactly:
+\begin{equation}
+\vec{\nu}^{(c)} = \vec{\nu} - B^\top \vec{\theta} \in\mathbb{R}^m.
+\label{eqn:nu_coarse}
+\end{equation}
+Crucially, the coarse posterior $p(\delta\vec{\theta}^{(c)}|\vec{\theta},\{n_k\}_{k=1}^{m})$ in~\eqref{eqn:coarse_posterior} has exactly the same structure as the fine posterior $p(\vec{\theta}|\{n_k\}_{k=1}^{m})$ in~\eqref{eqn:posterior_density}, provided we replace
+\begin{xalignat}{4}
+Q &\mapsto Q^{(c)}, &
+B &\mapsto B^{(c)}, &
+\vec{f}&\mapsto \vec{f}^{(c)}, &
+\vec{\nu}&\mapsto \vec{\nu}^{(c)}
+\end{xalignat}
+according to~\eqref{eqn:Q_f_coarse},~\eqref{eqn:B_coarse} and~\eqref{eqn:nu_coarse}.
+More explicitly we have that
+\begin{equation}
+    \begin{aligned}
+        p^{(c)}_\delta(\delta\vec{\theta}^{(c)}|\vec{\theta},\vec{n};Q,B,\vec{f},\vec{\nu}) &=
+        p(\delta\vec{\theta}^{(c)}|\vec{n};Q^{(c)},B^{(c)},\vec{f}^{(c)},\vec{\nu}^{c}) \\
+        &= p(\delta\vec{\theta}^{(c)}|\vec{n};P^\top QP,P^\top B,P^\top(\vec{f}-Q\vec{\theta}),\vec{\nu}-B^\top\vec{\theta}).
+    \end{aligned}
+\end{equation}
+It is beneficial to combine $\vec{f}$, $\vec{\nu}$ into a single vector $\vec{b}$ and $Q$, $B^\top$ into a single matrix $A$ as follows:
+\begin{xalignat}{2}
+\vec{b} &:= \begin{pmatrix}\vec{f}\\\vec{\nu}\end{pmatrix},& A &:= \begin{pmatrix}Q\\B^\top\end{pmatrix}.
+\end{xalignat}
+With this, we can write 
+\begin{equation}
+    \begin{aligned}
+        p^{(c)}_\delta(\delta\vec{\theta}^{(c)}|\vec{\theta},\vec{n};A,\vec{b}) &=
+        p(\delta\vec{\theta}^{(c)}|\vec{n};A^{(c)},\vec{b}^{(c)}) \\
+        &= p(\delta\vec{\theta}^{(c)}|\vec{n};R AP,R(\vec{b}-A\vec{\theta})).
+    \end{aligned}
+\end{equation}
+with the restriction operator
+\begin{equation}
+    R = \begin{pmatrix}P^\top & 0 \\ 0 & \mathbb{I}\end{pmatrix}.
+\end{equation}
+Observe that this also allows us to write~\eqref{eqn:incremental_probability} more compactly as
+\begin{equation}
+    p_\delta(\delta\vec{\theta}) = p(\delta\vec{\theta}|\vec{n};A,\vec{b}-A\vec{\theta}_0).\label{}
+\end{equation}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\subsection{Full approximation scheme}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+Define $\vec{\theta}^{(c)} := \hat{R}\vec{\theta} + \delta\vec{\theta}^{(c)}$ where $\hat{R}$ is an interpolation operator which should not be confused with the restriction $R$ which acts on dual vectors. Following the same derivation as above with $\vec{\theta}$ replaced by $\vec{\theta}-P\hat{R}\vec{\theta}$, the probability density of $\vec{\theta}^{(c)}$ is given by
+\begin{equation}
+    \begin{aligned}
+p^{(c)}(\vec{\theta}^{(c)}|\vec{\theta},\vec{n};A,\vec{b}) &= p^{(c)}_\delta(\delta\vec{\theta}^{(c)}|\vec{\theta},\vec{n};A,\vec{b})\\
+&= p(\vec{\theta}-P\hat{R}\vec{\theta} + P \vec{\theta}^{(c)}|\vec{n};A,\vec{b})\\
+&= p(\vec{\theta}^{(c)}|\vec{n};A^{(c)}, R(\vec{b}-A\vec{\theta})+A^{(c)}\hat{R}\vec{\theta})
+    \end{aligned}
+\end{equation}
+This leads to the following formulation of the MGMC method:
+\begin{algorithm}[H]
+    \caption{Multigrid Monte Carlo $\textsf{MGMC}(\vec{\theta}_i;\vec{n},A,\vec{b})$(non-incremental version)\\
+    \textit{Input}: Current state $\vec{\theta}_i$, observed rates $\vec{n}$, system matrix $A$ (consisting of precision matrix and observation matrix $B$), vector $\vec{b}$ (consisting of right hand side and offsets $\vec{\nu}$), Samplers $\mathcal{S}_{\text{pre}}$, $\mathcal{S}_{\text{post}}$ and $\mathcal{S}_{\text{coarse}}$, intergrid operators $P$, $R$ and $\hat{R}$\\
+    \textit{Output:} Updated state $\vec{\theta}_{i+1}$}\label{alg:mgmc}
+\begin{algorithmic}[1]
+    \If {\text{coarsest level}}
+    \State {Set $\vec{\theta}_{i+1} = \mathcal{S}_{\text{coarse}}(\vec{\theta}_i|\vec{n};A,\vec{b})$}
+    \Else
+    \State{Set $\vec{\theta}_s = \mathcal{S}_{\text{pre}}(\vec{\theta}_i|\vec{n};A,\vec{b})$}\Comment{Presmooth}
+    \State{Compute $\vec{b}^{(c)}=R(\vec{b}-A\vec{\theta})+A^{(c)}\hat{R}\vec{\theta}$ with $A^{(c)} = RAP$} \Comment{Coarse RHS}\label{line:mgmc_coarse_rhs}
+    \State{Set $\vec{\theta}^{(c)}_i = \hat{R}\vec{\theta}_s$}\Comment{Initial guess on coarse level}
+    \State{Set $\vec{\theta}^{(c)}_c = \textsf{MGMC}(\vec{\theta}^{(c)}_i;\vec{n},A^{(c)},\vec{b}^{(c)})$} \Comment{Recursive call}
+    \State{Update $\vec{\theta}_c = \vec{\theta}_s + P(\vec{\theta}^{(c)}_c-\vec{\theta}^{(c)}_i)$}\Comment{Coarse level correction}
+    \State{Set $\vec{\theta}_{i+1} = \mathcal{S}_{\text{post}}(\vec{\theta}_c|\vec{n};A,\vec{b})$}\Comment{Postsmooth}
+    \EndIf
+\end{algorithmic}
+\end{algorithm}
+Observe that for $\hat{R}=0$ the update in~\cref{alg:mgmc} reduces to the MGMC algorithm as written down in \cite{goodman1989multigrid}.
+
+Next, compare~\cref{alg:mgmc} to the Full Approximation Scheme (FAS) for solving the non-linear equation $F(\vec{x})=\vec{b}$ as written down in~\cite[Alg. 14]{brune2015composing}. For reference, we repeat this here in our notation as~\cref{alg:fas}.
+\begin{algorithm}[H]
+    \caption{Full Approximation scheme $\textsf{FAS}(\vec{x}_i;F,\vec{b})$\\
+    \textit{Input}: Current solution $\vec{y}_i$, non-linear function $F$, right hand side vector $\vec{b}$, Smoothers $\mathcal{S}_{\text{pre}}$, $\mathcal{S}_{\text{post}}$ and $\mathcal{S}_{\text{coarse}}$, intergrid operators $P$, $R$ and $\hat{R}$\\
+    \textit{Output:} Updated solution $\vec{x}_{i+1}$}\label{alg:fas}
+\begin{algorithmic}[1]
+    \If {\text{coarsest level}}
+    \State {Set $\vec{x}_{i+1} = \mathcal{S}_{\text{coarse}}(\vec{x}_i|F,\vec{b})$}
+    \Else
+    \State{Set $\vec{x}_s = \mathcal{S}_{\text{pre}}(\vec{x}_i|F,\vec{b})$}\Comment{Presmooth}
+    \State{Compute $\vec{b}^{(c)}=R(\vec{b}-F(\vec{x}))+F^{(c)}(\hat{R}\vec{\theta})$} \Comment{Coarse RHS}
+    \State{Set $\vec{x}^{(c)}_i = \hat{R}\vec{x}_s$}\Comment{Initial solution on coarse level}
+    \State{Set $\vec{x}^{(c)}_c = \textsf{FAS}(\vec{x}^{(c)}_i;F^{(c)},\vec{b}^{(c)})$} \Comment{Recursive call}
+    \State{Update $\vec{x}_c = \vec{x}_s + P(\vec{x}^{(c)}_c-\vec{x}^{(c)}_i)$}\Comment{Coarse level correction}
+    \State{Set $\vec{x}_{i+1} = \mathcal{S}_{\text{post}}(\vec{x}_c|F,\vec{b})$}\Comment{Postsmooth}
+    \EndIf
+\end{algorithmic}
+\end{algorithm}
+Crucially,~\cref{alg:mgmc} and~\cref{alg:fas} have exactly the same structure provided we replace smoothers by samplers. We can formally get the right hand side in~\cref{line:mgmc_coarse_rhs} of~\cref{alg:mgmc} if we define $F(\vec{\theta}) := A\vec{\theta}$, and therefore obviosuly $F^{(c)}(\vec{\theta}^{(c)}) = A^{(c)}\vec{\theta}^{(c)}$.
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\subsection{Implementation in PETSc}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+To implement~\cref{alg:mgmc} in PETSc we should proceed as follows:
+\begin{itemize}
+\item Implement the smoothers $\vec{\theta} \mapsto \mathcal{S}(\vec{\theta}|\vec{n};A,\vec{b})$ as SNES objects; the non-linear function is realised based on a nested matrix $A=\begin{pmatrix}Q\\B^\top\end{pmatrix}$
+\item Use GAMG to construct the intergrid operators and coarse grid matrices in multiple steps:
+\begin{itemize}
+\item Set up a AMG solver for the problem $Q\vec{x}=\vec{f}$
+\item Extract the prolongation $P$ 
+\item Use this to construct the prolongation matrix $R = \begin{pmatrix}P^\top & 0\\0&\mathbb{I}\end{pmatrix}$ for the FAS algorithm and to construct the coarse matrices $Q^{(c)}$, $B^{(c)}$ on all levels
+\end{itemize}
+\item Construct the coarse problems and coarse RHSs which are needed to define the coarse functions in the FAS algorithm
+\end{itemize} 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\bibliographystyle{unsrt}
+\bibliography{description}
+\end{document}
