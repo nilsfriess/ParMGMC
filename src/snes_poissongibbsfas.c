@@ -177,10 +177,13 @@ static PetscErrorCode SNESPoissonGibbsSetupMultigrid_Private(SNES snes)
       Mat Q_prec_P;
       PetscCall(MatMatMult(poissongibbsfas->smoother_ctx[ell + 1].Q_prec, P[ell], MAT_INITIAL_MATRIX, PETSC_DEFAULT, &Q_prec_P));
       PetscCall(MatTransposeMatMult(P[ell], Q_prec_P, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &poissongibbsfas->smoother_ctx[ell].Q_prec));
+      PetscCall(MatDestroy(&Q_prec_P));
       // B_c = P^T B
       PetscCall(MatTransposeMatMult(P[ell], poissongibbsfas->smoother_ctx[ell + 1].B_meas, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &poissongibbsfas->smoother_ctx[ell].B_meas));
     }
   }
+  for (PetscInt ell = 0; ell < nlevels - 1; ++ell) PetscCall(MatDestroy(&P[ell]));
+  PetscCall(PetscFree(P));
   poissongibbsfas->nlevels = nlevels;
   PetscFunctionReturn(PETSC_SUCCESS);
 }
@@ -327,7 +330,15 @@ static PetscErrorCode SNESPoissonGibbsFASSetupFAS_Private(SNES snes)
     PetscCall(MatCreateNest(PETSC_COMM_WORLD, 2, NULL, 2, NULL, blocks_inject, &I_2x2));
     PetscCall(MatNestSetVecType(I_2x2, VECNEST));
     PetscCall(SNESFASSetInjection(poissongibbsfas->fas, ell, I_2x2));
+    PetscCall(MatDestroy(&P_2x2));
+    PetscCall(MatDestroy(&R_2x2));
+    PetscCall(MatDestroy(&I_2x2));
+    PetscCall(MatDestroy(&P_T));
+    PetscCall(MatDestroy(&R_hat));
   }
+  PetscCall(MatDestroy(&Id));
+  for (PetscInt ell = 0; ell < nlevels - 1; ++ell) PetscCall(MatDestroy(&P[ell]));
+  PetscCall(PetscFree(P));
   // Do exactly one iteration
   PetscCall(SNESSetTolerances(poissongibbsfas->fas, PETSC_DEFAULT, PETSC_DEFAULT, PETSC_DEFAULT, 1, PETSC_DEFAULT));
   PetscCall(SNESSetForceIteration(poissongibbsfas->fas, true));
