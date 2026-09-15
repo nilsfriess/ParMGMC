@@ -269,6 +269,7 @@ static PetscErrorCode SNESSample_PoissonGibbs(SNES snes)
 
   // Construct the vector tilde(nu) = nu - B^T theta
   PetscCall(VecDuplicate(nu, &nu_tilde));
+  PetscCall(VecCopy(nu, nu_tilde));
   PetscCall(VecDuplicate(nu, &BT_theta));
   PetscCall(MatMultTranspose(ctx->B_meas, theta, BT_theta));
   PetscCall(VecAXPY(nu_tilde, -1.0, BT_theta));
