@@ -124,7 +124,7 @@ Let $\mathcal{N}_i=\{j\neq i:Q_{ij}\neq 0\}$ be the set of vertices connected to
 \end{equation}
 where
 \begin{equation}
-\widetilde{\nu}_k^{(i)} = \nu_k - \sum_{j\neq i} B_{jk} \theta_j
+\widetilde{\nu}_k^{(i)} = \nu_k - \sum_{j\neq i} B_{jk} \theta_j = \underbrace{\Big(\nu_k - \sum_{j} B_{jk} \theta_j\Big)}_{=:\widetilde{\nu}_k} + B_{ik} \theta_i
 \end{equation}
 and
 \begin{equation}
@@ -179,7 +179,9 @@ We now show that $\overline{F}_i(\theta)\ge0$ for arbitrary $\theta$ and that th
 &= \sum_{k\in\mathcal{M}_i}\left(e^{B_{ik}\theta-\widetilde{\nu}_k^{(i)}}-e^{B_{ik}\overline{\theta}_i-\widetilde{\nu}_k^{(i)}}\right)
 + \underbrace{\frac{1}{2}\left(\left(\frac{\theta-\overline{\mu}_i}{\sigma_i}\right)^2-\left(\frac{\overline{\theta}_i-\overline{\mu}_i}{\sigma_i}\right)^2-\left(\frac{\theta-\overline{\theta}_i}{\sigma_i}\right)^2\right)}_{\frac{\overline{\mu}_i-\overline{\theta}_i}{\sigma_i^2}(\overline{\theta}_i-\theta)}\\
 &= \sum_{k\in\mathcal{M}_i}\left(e^{B_{ik}\theta-\widetilde{\nu}_k^{(i)}}-e^{B_{ik}\overline{\theta}_i-\widetilde{\nu}_k^{(i)}}\right)
-+ (\overline{\theta}_i-\theta) \sum_{k\in\mathcal{M}_i} B_{ik} e^{B_{ik}\overline{\theta}_i-\widetilde{\nu}_k^{(i)}}
++ (\overline{\theta}_i-\theta) \sum_{k\in\mathcal{M}_i} B_{ik} e^{B_{ik}\overline{\theta}_i-\widetilde{\nu}_k^{(i)}}\\
+&= \sum_{k\in\mathcal{M}_i}e^{B_{ik}\theta-\widetilde{\nu}_k^{(i)}}
++ \sum_{k\in\mathcal{M}_i} \left((\overline{\theta}_i-\theta)B_{ik} -1\right) e^{B_{ik}\overline{\theta}_i-\widetilde{\nu}_k^{(i)}}
     \end{aligned}
 \end{equation}
 where we have used~\eqref{eqn:mu_bar_definition} in the final step. Next, define for each $k\in\mathcal{M}_i$ 
