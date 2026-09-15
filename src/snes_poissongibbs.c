@@ -140,7 +140,7 @@ static PetscErrorCode SNESPoissonGibbsStandardNormal_Private(SNES snes, PetscSca
 static PetscScalar grad_phi(const PetscScalar theta, const PetscScalar mu_bar, const PetscScalar sigma, const PetscInt n_k, const PetscScalar *nu, const PetscScalar *b)
 {
   PetscScalar g = (theta - mu_bar) / (sigma * sigma);
-  for (PetscInt k = 0; k < n_k; ++k) { g += b[k] * exp(b[k] * theta + nu[k]); }
+  for (PetscInt k = 0; k < n_k; ++k) { g += b[k] * exp(b[k] * theta - nu[k]); }
   return g;
 }
 
@@ -228,6 +228,7 @@ static PetscErrorCode SNESSample_PoissonGibbs(SNES snes)
   Vec                theta;
   Vec                f_rhs;
   Vec                nu;
+  Vec                BT_theta;
   PetscInt           rstart, rend, ncols_Q, ncols_B, max_nnz_per_row;
   const PetscInt    *cols_Q;
   const PetscScalar *vals_Q;
@@ -266,8 +267,11 @@ static PetscErrorCode SNESSample_PoissonGibbs(SNES snes)
     nu    = ctx->nu;
   }
 
+  // Construct the vector tilde(nu) = nu - B^T theta
   PetscCall(VecDuplicate(nu, &nu_tilde));
-  PetscCall(MatMultTransposeAdd(ctx->B_meas, theta, nu, nu_tilde));
+  PetscCall(VecDuplicate(nu, &BT_theta));
+  PetscCall(MatMultTranspose(ctx->B_meas, theta, BT_theta));
+  PetscCall(VecAXPY(nu_tilde, -1.0, BT_theta));
 
   // Storage for local part of vectors
   PetscCall(SNESPoissonGibbsGetMaxNnzPerRow_Private(B_meas, &max_nnz_per_row));
@@ -291,7 +295,10 @@ static PetscErrorCode SNESSample_PoissonGibbs(SNES snes)
       PetscCall(MatGetRow(B_meas, i, &ncols_B, &cols_B, &vals_B));
       PetscCall(VecGetValues(ctx->event_counts, ncols_B, cols_B, n_local));
       PetscCall(VecGetValues(nu_tilde, ncols_B, cols_B, nu_local));
-      for (PetscInt k = 0; k < ncols_B; ++k) { nu_local[k] -= theta_array[iloc] * vals_B[k]; }
+      // tilde(nu)_k^{(i)} = nu_k - sum_{j != i} B_{jk} theta_j =
+      //                   = tilde(nu)_k + B_{ik} theta_i
+      // and replace tilde(nu)_k by this
+      for (PetscInt k = 0; k < ncols_B; ++k) { nu_local[k] += theta_array[iloc] * vals_B[k]; }
       mu_bar = f_rhs_array[iloc];
       for (PetscInt j = 0; j < ncols_Q; ++j) {
         if (cols_Q[j] != i) mu_bar -= vals_Q[j] * theta_array[cols_Q[j] - rstart];
@@ -308,7 +315,11 @@ static PetscErrorCode SNESSample_PoissonGibbs(SNES snes)
           theta_prime = theta_bar + sigma * r;
           PetscCall(PetscRandomGetValueReal(poissongibbs->prand, &r));
           PetscScalar Fbar = 0;
-          for (PetscInt k = 0; k < ncols_B; ++k) { Fbar += exp(vals_B[k] * theta_prime + nu_local[k]) + ((theta_bar - theta_prime) * vals_B[k] - 1.0) * exp(vals_B[k] * theta_bar + nu_local[k]); }
+          for (PetscInt k = 0; k < ncols_B; ++k) {
+            Fbar += exp(vals_B[k] * theta_prime - nu_local[k]);
+            Fbar += ((theta_bar - theta_prime) * vals_B[k] - 1.0) * exp(vals_B[k] * theta_bar - nu_local[k]);
+          }
+
           if (isnan(Fbar) || isinf(Fbar)) { return PetscError(PETSC_COMM_SELF, __LINE__, PETSC_FUNCTION_NAME, __FILE__, PETSC_ERR_FP, PETSC_ERROR_INITIAL, "Encountered invalid Fbar value (NaN or Inf) in Poisson-Gibbs rejection step"); }
           accepted = (log(r) <= -Fbar);
         }
@@ -318,7 +329,8 @@ static PetscErrorCode SNESSample_PoissonGibbs(SNES snes)
         theta_prime = mu_bar + sigma * r;
       }
       theta_array[iloc] = theta_prime;
-      for (PetscInt k = 0; k < ncols_B; ++k) { nu_local[k] += theta_array[iloc] * vals_B[k]; }
+      // Restore tilde(nu)_k by subtracting B_{ik} tilde(theta)_k again
+      for (PetscInt k = 0; k < ncols_B; ++k) { nu_local[k] -= theta_array[iloc] * vals_B[k]; }
       // Restore values
       PetscCall(VecSetValues(nu_tilde, ncols_B, cols_B, nu_local, INSERT_VALUES));
       PetscCall(VecAssemblyBegin(nu_tilde));
@@ -337,6 +349,7 @@ static PetscErrorCode SNESSample_PoissonGibbs(SNES snes)
   PetscCall(PetscFree(nu_local));
   PetscCall(VecDestroy(&v_diag));
   PetscCall(VecDestroy(&nu_tilde));
+  PetscCall(VecDestroy(&BT_theta));
   PetscFunctionReturn(PETSC_SUCCESS);
 }
 
