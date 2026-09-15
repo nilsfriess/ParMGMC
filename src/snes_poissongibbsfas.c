@@ -6,7 +6,7 @@
     license details.
 */
 
-/** @file pc_poissongibbsfas.c
+/** @file snes_poissongibbsfas.c
     @brief Multigrid Monte Carlo sampler for posterior obtained by conditioning a Gaussian prior
     on a Poisson process.
 

@@ -6,7 +6,7 @@
     license details.
     */
 
-/** @file pc_poissongibbs.c
+/** @file snes_poissongibbs.c
     @brief Non-linear Gibbs sampler for posterior obtained by conditioning a Gaussian prior
     on a Poisson process
 
