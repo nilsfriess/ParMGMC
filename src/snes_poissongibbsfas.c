@@ -76,6 +76,8 @@ static PetscErrorCode SNESSample_PoissonGibbsFAS(SNES snes)
   PetscCall(VecCreateNest(PETSC_COMM_WORLD, 2, NULL, (Vec[]){snes->vec_sol, z}, &vec_sol));
   PetscCall(SNESSolve(poissongibbsfas->fas, vec_rhs, vec_sol));
   snes->reason = SNES_CONVERGED_ITS;
+  PetscCall(VecDestroy(&vec_rhs));
+  PetscCall(VecDestroy(&vec_sol));
   PetscCall(VecDestroy(&z));
   PetscFunctionReturn(PETSC_SUCCESS);
 }
@@ -318,7 +320,7 @@ static PetscErrorCode SNESPoissonGibbsFASSetupFAS_Private(SNES snes)
     PetscCall(MatNestSetVecType(R_2x2, VECNEST));
     PetscCall(SNESFASSetRestriction(poissongibbsfas->fas, ell, R_2x2));
     // Injection is given by
-    //                          [ 0   0 ]
+    //                          [ P^T 0 ]
     //                          [ 0   I ]
     PetscCall(MatDuplicate(P_T, MAT_COPY_VALUES, &R_hat));
     Mat blocks_inject[4] = {R_hat, NULL, NULL, Id};
