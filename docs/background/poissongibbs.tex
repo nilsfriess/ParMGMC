@@ -65,7 +65,7 @@ In the following we will often not write down the dependency on $\vec{n};\vec{f}
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 \subsubsection{Incremental formulation}
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-Suppose that instead of sampling $\vec{\theta}$ directly, we are given some initial $\vec{\theta}_0$ and want to sample $\delta\vec{\theta}\sim p_\delta$ such that $\vec{\theta}=\vec{\theta}_0+\delta\vec{\theta}$ is distributed according to $p(\cdot|\vec{n};\vec{f},Q,B,\vec{\nu})$ in~\eqref{eqn:posterior_density}. For a given $\vec{\theta}_0$ the distribution $p_\delta$ can be obtained as follows. First observe that
+Suppose that instead of sampling $\vec{\theta}$ directly, we are given some initial $\vec{\theta}_0$ and want to sample $\delta\vec{\theta}\sim p_\delta$ such that $\vec{\theta}=\vec{\theta}_0+\delta\vec{\theta}$ is distributed according to $p(\cdot|\vec{n};Q,B,\vec{f},\vec{\nu})$ in~\eqref{eqn:posterior_density}. For a given $\vec{\theta}_0$ the distribution $p_\delta$ can be obtained as follows. First observe that
 \begin{equation}
     \begin{aligned}
     -\frac{1}{2} \vec{\theta}^\top Q \vec{\theta} + \vec{f}^\top \vec{\theta} &= -\frac{1}{2} (\vec{\theta}_0+\delta\vec{\theta})^\top Q (\vec{\theta}_0+\delta\vec{\theta}) + \vec{f}^\top (\vec{\theta}_0+\delta\vec{\theta})\\
@@ -87,10 +87,10 @@ This immediately implies:
 Hence, we can obtain $\vec{\theta}$ according to~\cref{alg:incrementalsampler}.
 \begin{algorithm}
     \caption{Incremental posterior sampler \\
-    \textit{Input}: Previous state $\vec{\theta}_0$, SPD prior matrix $Q\in\mathbb{R}^{n\times n}$, measurement matrix $B\in\mathbb{R}^{n\times m}$, bias vector $\vec{\nu}\in\mathbb{R}^m$, measurements $\vec{n}\in\mathbb{N}^m$, current state $\vec{\theta}\in\mathbb{R}^n$ \\
+    \textit{Input}: Previous state $\vec{\theta}_0$, measurements $\vec{n}\in\mathbb{N}^m$, SPD prior matrix $Q\in\mathbb{R}^{n\times n}$, measurement matrix $B\in\mathbb{R}^{n\times m}$, right hand side vector $\vec{f}\in\mathbb{R}^n$, bias vector $\vec{\nu}\in\mathbb{R}^m$\\
     \textit{Output:} Updated state $\vec{\theta}\in\mathbb{R}^n$}\label{alg:incrementalsampler}
 \begin{algorithmic}[1]
-\Function{IncrementalPosteriorSampler}{$\vec{\theta}_0;\vec{n},Q,B,\vec{\nu}$}
+\Function{IncrementalPosteriorSampler}{$\vec{\theta}_0;\vec{n},Q,B,\vec{f},\vec{\nu}$}
 \State {Compute residual $\vec{r}=\vec{f}-Q\vec{\theta}_0$}
 \State {Compute bias $\vec{\nu}^*=\vec{\nu}-B^\top\vec{\theta}_0$}
 \State {Draw increment $\delta\vec{\theta}\sim p(\cdot|\vec{n};B,\vec{r},\vec{\nu}^*)$.}
@@ -201,10 +201,10 @@ It is easy to see that since (by definition) $B_{ik}\neq 0$ for $k\in\mathcal{M}
 This implies that indeed $\overline{F}_i(\theta)\ge 0$ with $\overline{F}_i(\overline{\theta}_i)=0$.
 \begin{algorithm}
     \caption{Non-linear Gibbs sampler for posterior density \\
-    \textit{Input}: SPD prior matrix $Q\in\mathbb{R}^{n\times n}$, measurement matrix $B\in\mathbb{R}^{n\times m}$, bias vector $\vec{\nu}\in\mathbb{R}^m$, measurements $\vec{n}\in\mathbb{N}^m$, current state $\vec{\theta}\in\mathbb{R}^n$ \\
+    \textit{Input}: Current state $\vec{\theta}\in\mathbb{R}^n$; measurements $\vec{n}\in\mathbb{N}^m$, SPD prior matrix $Q\in\mathbb{R}^{n\times n}$, measurement matrix $B\in\mathbb{R}^{n\times m}$, right hand side vector $\vec{f}\in\mathbb{R}^n$, bias vector $\vec{\nu}\in\mathbb{R}^m$ \\
     \textit{Output:} Updated state $\vec{\theta}\in\mathbb{R}^n$ (update in place)}
 \begin{algorithmic}[1]
-\Procedure{PoissonGibbs}{$\vec{\theta};\vec{n,Q,B,\vec{\nu}}$}
+\Procedure{PoissonGibbs}{$\vec{\theta};\vec{n},Q,B,\vec{f},\vec{\nu}$}
 \For{$i=1,2,\dots,n$}
 \State {Compute $\mu_i$, $\sigma_i$ according to~\eqref{eqn:mu_sigma_definition}}
 \If{$\mathcal{M}_i=\emptyset$}
@@ -384,7 +384,7 @@ In the simplest setup, the matrix $M$ is the $n$-dimensional identity matrix. A 
 \begin{equation}
 M_{ij} = - \frac{\partial^2 }{\partial \theta_i \partial \theta_j} \log(p(\vec{\theta})).\label{eqn:fisher_information_matrix}
 \end{equation}
-However, in this case $M$ in no longer independent of $\vec{\theta}$, which leads to seveal complications: the Langevin proposal in~\eqref{eqn:langevin_proposal} needs to modified and the normalisation constant no longer cancels in the ratio $\pi(\vec{\theta}^*|\vec{\theta})/\pi(\vec{\theta}|\vec{\theta}^*)$ which enters the acceptance rate. To address this, we will use a fixed value of $\vec{\theta}$ in~\eqref{eqn:fisher_information_matrix} as described below.
+However, in this case $M$ in no longer independent of $\vec{\theta}$, which leads to several complications: the Langevin proposal in~\eqref{eqn:langevin_proposal} needs to modified and the normalisation constant no longer cancels in the ratio $\pi(\vec{\theta}^*|\vec{\theta})/\pi(\vec{\theta}|\vec{\theta}^*)$ which enters the acceptance rate. To address this, we will use a fixed value of $\vec{\theta}$ in~\eqref{eqn:fisher_information_matrix} as described below.
 
 From~\eqref{eqn:posterior_density} we obtain
 \begin{equation}
@@ -394,7 +394,7 @@ where $\log(r_k(\theta_k)) = (\vec{b}^{(k)})^\top \vec{\theta} +\beta$. This giv
 \begin{equation}
     \begin{aligned}
 \nabla_\theta \log(p(\vec{\theta})) &= Q(\vec{\mu}-\vec{\theta}) + \sum_{k=1}^{m} \left(n_k - t_k r_k(\vec{\theta})\right)\vec{b}^{(k)}\\
-&= Q(\vec{\mu}-\vec{\theta}) + B \vec{\sigma}
+&= \vec{f}-Q\vec{\theta} + B \vec{\sigma}
 \qquad\text{with $\sigma_k=\sigma_k(\vec{\theta}) = n_k - t_k r_k(\vec{\theta})$}.
     \end{aligned}
 \end{equation}
@@ -420,16 +420,17 @@ where
 \begin{equation}
 G = \overline{B} \left(Z^{-1} + B^\top \overline{B}\right)^{-1}\label{eqn:def_G}
 \end{equation}
-and the $n\times m$ matrix $\overline{B} = Q^{-1} B$ is obtained by solving $m$ linear systems with the columns $\vec{b}^{(k)}$ of $B$ on the right hand side. With this, a sample $\vec{\xi}$ from $\mathcal{N}(0,M^{-1})$ can be drawn according to~\cref{alg:low_rank_sampler}.
+and the $n\times m$ matrix $\overline{B} = Q^{-1} B$ is obtained by solving $m$ linear systems with the columns $\vec{b}^{(k)}$ of $B$ on the right hand side. With this, a sample $\vec{\xi}$ from $\mathcal{N}(0,M^{-1})$ can be drawn according to~\cref{alg:low_rank_sampler}, as is shown in~\cref{sec:low_rank_sampler}.
 \begin{algorithm}[H]
     \caption{Sampler for $\mathcal{N}(0,M^{-1})$ with $M = Q + B Z B^\top$\\
     \textit{Input}: Prior precision matrix $Q\in \mathbb{R}^{n\times n}$, measurement matrix $B\in \mathbb{R}^{n\times m}$, diagonal matrix $Z\in\mathbb{R}^{m\times m}$, matrix $G\in\mathbb{R}^{n\times m}$ defined in~\eqref{eqn:def_G}.\\
     \textit{Output:} Sample $\vec{\xi}\sim \mathcal{N}(0,M^{-1})$\label{alg:low_rank_sampler}}
 \begin{algorithmic}[1]
-    \Function{MALANoiseSampler}{Q,B,Z,G}
+    \Function{MALANoiseSampler}{$Q,B,Z,G$}
     \State{Draw $\vec{\zeta}\sim \mathcal{N}(0,\mathbb{I}_{m})$}
     \State{Compute right hand side $\vec{f}^* = B Z^{1/2} \vec{\zeta}$}
-    \State{Draw $\vec{\xi}^* \sim \mathcal{N}(\vec{f}^*,Q^{-1})$}
+    \State{Solve $Q\vec{\mu}^*=\vec{f}^*$ for $\vec{\mu}^*$}
+    \State{Draw $\vec{\xi}^* \sim \mathcal{N}(\vec{\mu}^*,Q^{-1})$}
     \State{Set $\vec{\xi} = \vec{\xi}^* - G(B^\top \vec{\xi}^*)$}
     \State{\Return $\vec{\xi}$}
     \EndFunction
@@ -438,11 +439,11 @@ and the $n\times m$ matrix $\overline{B} = Q^{-1} B$ is obtained by solving $m$ 
 To compute the acceptance ratio, note that
 \begin{equation}
     \begin{aligned}
-        \delta_1 := \log(p(\vec{\theta}^*)/p(\vec{\theta})) &= \frac{1}{2} \left((\vec{\theta}-\vec{\mu})^\top Q (\vec{\theta}-\vec{\mu})- (\vec{\theta}^*-\vec{\mu})^\top Q (\vec{\theta}^*-\vec{\mu})\right)\\
+        \delta_1 := \log(p(\vec{\theta}^*)/p(\vec{\theta})) &= \frac{1}{2} \left(\vec{\theta}^\top Q \vec{\theta}- (\vec{\theta}^*)^\top Q \vec{\theta}^*\right) + \vec{f}^\top (\vec{\theta}^*-\vec{\theta})\\
         &\quad+\;\; \sum_{k=1}^m \left(n_k \log(\Lambda_k(\vec{\theta}^*)/\Lambda_k(\vec{\theta})) + \Lambda_k(\vec{\theta}) - \Lambda_k(\vec{\theta}^*)  \right)\\
-        &= \frac{1}{2} \left((\vec{\theta}-\vec{\mu})^\top Q (\vec{\theta}-\vec{\mu})- (\vec{\theta}^*-\vec{\mu})^\top Q (\vec{\theta}^*-\vec{\mu})\right)\\
+        &= \frac{1}{2} \left(\vec{\theta}^\top Q \vec{\theta}- (\vec{\theta}^*)^\top Q \vec{\theta}^*\right) + \vec{f}^\top (\vec{\theta}^*-\vec{\theta})\\
         &\quad+\;\; \sum_{k=1}^m \left(n_k (\vec{b}^{(k)})^\top(\vec{\theta}^*-\vec{\theta}) + \exp\left[(\vec{b}^{(k)})^\top \vec{\theta}-\nu_k\right] - \exp\left[(\vec{b}^{(k)})^\top \vec{\theta}^*-\nu_k\right] \right)\\
-        &= \frac{1}{2} \left((\vec{\theta}-\vec{\mu})^\top Q (\vec{\theta}-\vec{\mu})- (\vec{\theta}^*-\vec{\mu})^\top Q (\vec{\theta}^*-\vec{\mu})\right)\\
+        &= \frac{1}{2} \left(\vec{\theta}^\top Q \vec{\theta}- (\vec{\theta}^*)^\top Q \vec{\theta}^*\right) + \vec{f}^\top (\vec{\theta}^*-\vec{\theta})\\
         &\quad+\;\; Z \vec{B}^\top (\vec{\theta}^*-\vec{\theta}) + \sum_{k=1}^m e^{-\nu_k}\left(\exp\left[(\vec{b}^{(k)})^\top \vec{\theta}\right] - \exp\left[(\vec{b}^{(k)})^\top \vec{\theta}^*\right] \right)
     \end{aligned}\label{eqn:delta_1}
 \end{equation}
@@ -461,47 +462,73 @@ where
 \end{xalignat}
 \begin{algorithm}[H]
     \caption{Compute bias $\vec{\Phi}(\vec{\theta})$ in MALA proposal~\eqref{eqn:langevin_proposal}\\
-    \textit{Input}: State $\vec{\theta}$, measurement vector $\vec{n}\in\mathbb{R}^m$, prior precision matrix $Q\in \mathbb{R}^{n\times n}$, offset $\vec{\mu}\in\mathbb{R}^n$, measurement matrix $B\in \mathbb{R}^{n\times m}$, matrix $G\in\mathbb{R}^{n\times m}$ defined in~\eqref{eqn:def_G},  offset vector $\vec{\nu}\in\mathbb{R}^m$, MALA step size $\epsilon$.\\
+    \textit{Input}: State $\vec{\theta}$, measurement vector $\vec{n}\in\mathbb{R}^m$, prior precision matrix $Q\in \mathbb{R}^{n\times n}$, measurement matrix $B\in \mathbb{R}^{n\times m}$, matrix $G\in\mathbb{R}^{n\times m}$ defined in~\eqref{eqn:def_G}, right hand side $\vec{f}\in\mathbb{R}^n$, offset vector $\vec{\nu}\in\mathbb{R}^m$, MALA step size $\epsilon$.\\
     \textit{Output:} $\vec{\Phi}(\vec{\theta})$\label{alg:MALA_bias}}
 \begin{algorithmic}[1]
-    \Function{$\vec{\Phi}$}{$\vec{\theta};\vec{n},Q,\vec{\mu},B,G,\vec{\nu},\epsilon$}
+    \Function{$\vec{\Phi}$}{$\vec{\theta};\vec{n},Q,B,G,\vec{f},\vec{\nu},\epsilon$}
     \State {Compute $\vec{\sigma}$ with $\sigma_k = n_k - t_k r_k(\vec{\theta}) = n_k - \exp[(\vec{b}^{(k)})^\top \vec{\theta} - \nu_k]$ for $k=1,2,\dots,m$}
-    \State {Set $\vec{s} = Q(\vec{\mu}-\vec{\theta}) + B\vec{\sigma}$}
-    \State {Solve $Q \vec{\tau} = \vec{s}$}
+    \State {Set $\vec{s} = \vec{f}-Q\vec{\theta} + B\vec{\sigma}$}
+    \State {Solve $Q \vec{\tau} = \vec{s}$ for $\vec{\tau}$}
     \State {Set $\vec{\Phi} = \vec{\theta} + \frac{\epsilon^2}{2}\left(\vec{\tau} - G(B^\top \vec{\tau})\right)$}
     \State{\Return $\vec{\Phi}$}    
-    
-\EndFunction
+    \EndFunction
 \end{algorithmic}
 \end{algorithm}
-
+The full preconditioned MALA sampler is written down in~\cref{alg:preconditioned_mala_sampler}. Obviously, the construction of the matrices $Z$ and $G$ is only required once at setup.
 \begin{algorithm}[H]
     \caption{Preconditioned MALA sampler\\
-    \textit{Input}: Current state $\vec{\theta}$, prior precision matrix $Q\in \mathbb{R}^{n\times n}$, measurement matrix $B\in \mathbb{R}^{n\times m}$.\\
+    \textit{Input}: Current state $\vec{\theta}$, measurement vector $\vec{n}\in\mathbb{R}^n$, prior precision matrix $Q\in \mathbb{R}^{n\times n}$, measurement matrix $B\in \mathbb{R}^{n\times m}$, right hand side $\vec{f}\in\mathbb{R}^n$, offset vector $\vec{\nu}\in\mathbb{R}^m$, step size $\epsilon$\\
     \textit{Output:} New sample $\vec{\theta}'$\label{alg:preconditioned_mala_sampler}}
 \begin{algorithmic}[1]
-    \Function{PreconditionedMALASampler}{}
-    \State {Compute bias $\vec{\phi} = \vec{\Phi}(\vec{\theta};\vec{n},Q,\vec{\mu},B,G,\vec{\nu},\epsilon)$ in~\eqref{eqn:langevin_proposal} with~\cref{alg:MALA_bias}}
-    \State{Draw $\vec{\xi}\sim \mathcal{N}(0,M^{-1})$ with~\cref{alg:low_rank_sampler}}
-    \State{Set proposal $\vec{\theta}^*=\vec{\phi} + \epsilon \vec{\xi}$}
-    \State{Compute $\vec{\phi}^* = \vec{\Phi}(\vec{\theta}^*;\vec{n},Q,\vec{\mu},B,G,\vec{\nu},\epsilon)$ with~\cref{alg:MALA_bias}}
-    \State{Compute $\delta = \delta_1 + \delta_2$} according to~\eqref{eqn:delta_1} and~\eqref{eqn:delta_2}.
+    \Function{PreconditionedMALASampler}{$\vec{n},Q,B,\vec{f},\vec{\nu},\epsilon$}
+    \State {Construct the diagonal $m\times m$ matrix $Z$ with $Z_{k\ell} = n_k \delta_{k\ell}$.}
+    \For {$k=1,2,\dots,m$}
+        \State {Solve $Q\overline{\vec{b}}^{(k)} = \vec{b}^{(k)}$ for $\overline{\vec{b}}^{(k)}$}
+    \EndFor
+    \State {Set $\overline{B} = \left(\overline{\vec{b}}^{(1)}|\overline{\vec{b}}^{(2)}|\dots|\overline{\vec{b}}^{(m)}\right).$}
+    \State {Construct the $n\times m$ matrix $G$ according to~\eqref{eqn:def_G}.}
+    \State {Compute bias $\vec{\phi} = \vec{\Phi}(\vec{\theta};\vec{n},Q,B,G,\vec{f},\vec{\nu},\epsilon)$ in~\eqref{eqn:langevin_proposal} with~\cref{alg:MALA_bias}.}
+    \State{Draw $\vec{\xi}\sim \mathcal{N}(0,M^{-1})$ with~\cref{alg:low_rank_sampler}.}
+    \State{Set proposal $\vec{\theta}^*=\vec{\phi} + \epsilon \vec{\xi}$.}
+    \State{Compute $\vec{\phi}^* = \vec{\Phi}(\vec{\theta}^*;\vec{n},Q,B,G,\vec{f},\vec{\nu},\epsilon)$ with~\cref{alg:MALA_bias}.}
+    \State{Compute $\delta = \delta_1 + \delta_2$ according to~\eqref{eqn:delta_1} and~\eqref{eqn:delta_2}.}
     \If {$\delta \ge 0$}
-        \State{Set $\vec{\theta}' = \vec{\theta}^*$}
+        \State{Set $\vec{\theta}' = \vec{\theta}^*$.}
     \Else
         \State Draw uniform random number $u\sim \mathcal{U}(0,1)$
         \If {$\log(u) < \delta$}
-        \State{Set $\vec{\theta}' = \vec{\theta}^*$}
+        \State{Set $\vec{\theta}' = \vec{\theta}^*$.}
         \Else
-        \State{Set $\vec{\theta}' = \vec{\theta}$}
+        \State{Set $\vec{\theta}' = \vec{\theta}$.}
         \EndIf
     \EndIf
     \State{\Return $\vec{\theta}'$}
     \EndFunction    
 \end{algorithmic}
 \end{algorithm}
-
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\appendix
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Low rank sampler}\label{sec:low_rank_sampler}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+To show that~\cref{alg:low_rank_sampler} indeed produces samples from the desired distribution, first observe that
+\begin{equation}
+\vec{\xi}^* = Q^{-1} B Z^{1/2} \vec{\zeta} + Q^{-1/2} \vec{\omega}\qquad\text{with $\vec{\zeta}\sim\mathcal{N}(0,\mathbb{I}_m)$ and $\vec{\omega}\sim\mathcal{N}(0,\mathbb{I}_n)$.}
+\end{equation}
+Further, since $\mathbb{I}-GB^\top = M^{-1}Q$ we also have
+\begin{equation}
+\vec{\xi} = M^{-1} \left(B Z^{1/2} \vec{\zeta} + Q^{1/2} \vec{\omega}\right).
+\end{equation}
+Obviously $\vec{\xi}$ is Gaussian with mean zero. Further, since $\vec{\zeta}$ and $\vec{\omega}$ are independent, the covariance of $\vec{\xi}$ is
+\begin{equation}
+    \begin{aligned}
+\mathbb{E}[\vec{\xi}\vec{\xi}^\top] &= M^{-1} \mathbb{E}\left[\left(B Z^{1/2} \vec{\zeta} + Q^{1/2} \vec{\omega}\right)\left(\vec{\zeta}^\top Z^{1/2} B^\top +  \vec{\omega}^\top Q^{1/2}\right)\right]M^{-1}\\
+&= M^{-1} \left(B Z^{1/2} \mathbb{E}\left[\vec{\zeta}\vec{\zeta}^\top\right]Z^{1/2} B^\top + Q^{1/2} \mathbb{E}\left[\vec{\omega}\vec{\omega}^\top\right] Q^{1/2}\right)M^{-1}\\
+&= M^{-1}\left(BZB^\top + Q\right)M^{-1} \\
+&= M^{-1}.
+    \end{aligned}
+\end{equation}
+Hence, as required $\vec{\xi}\sim\mathcal{N}(0,M^{-1})$.
 \bibliographystyle{unsrt}
 \bibliography{poissongibbs}
 \end{document}
