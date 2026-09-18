@@ -34,11 +34,12 @@
 
 /* Internal workspace for Poisson MALA sampler SNES */
 typedef struct {
-  PetscRandom prand;   // Random number generator
-  Mat         Z_diag;  // Diagonal matrix Z
-  Mat         G_lr;    // The n x m matrix G used for the low rank update
-  KSP         ksp;     // internal linear solver
-  PetscScalar epsilon; // MALA stepsize
+  PetscRandom prand;             // Random number generator
+  Mat         Z_diag;            // Diagonal matrix Z
+  Mat         G_lr;              // The n x m matrix G used for the low rank update
+  KSP         ksp;               // internal linear solver
+  KSP         ksp_prior_sampler; // KSP for sampling from the prior
+  PetscScalar epsilon;           // MALA stepsize
 } SNES_PoissonMALA;
 
 /* Compute the MALA proposal bias Phi(theta) 
@@ -243,6 +244,7 @@ static PetscErrorCode SNESReset_PoissonMALA(SNES snes)
   poissonmala = (SNES_PoissonMALA *)snes->data;
   PetscCall(PetscRandomDestroy(&poissonmala->prand));
   PetscCall(KSPReset(poissonmala->ksp));
+  PetscCall(KSPReset(poissonmala->ksp_prior_sampler));
   PetscCall(MatDestroy(&poissonmala->Z_diag));
   PetscFunctionReturn(PETSC_SUCCESS);
 }
@@ -263,6 +265,7 @@ static PetscErrorCode SNESDestroy_PoissonMALA(SNES snes)
   poissonmala = (SNES_PoissonMALA *)snes->data;
   PetscCall(SNESReset_PoissonMALA(snes));
   PetscCall(KSPDestroy(&poissonmala->ksp));
+  PetscCall(KSPDestroy(&poissonmala->ksp_prior_sampler));
   PetscCall(PetscFree(poissonmala));
   PetscFunctionReturn(PETSC_SUCCESS);
 }
@@ -288,8 +291,11 @@ static PetscErrorCode SNESSetUp_PoissonMALA(SNES snes)
   poissonmala = (SNES_PoissonMALA *)snes->data;
   PetscCall(SNESGetApplicationContext(snes, &ctx));
   if (!poissonmala->prand) PetscCall(ParMGMCGetPetscRandom(&poissonmala->prand));
-  // Set linear operators of KSP
+  // Set linear operators of KSPs
   PetscCall(KSPSetOperators(poissonmala->ksp, ctx->Q_prec, ctx->Q_prec));
+  PetscCall(KSPSetOperators(poissonmala->ksp_prior_sampler, ctx->Q_prec, ctx->Q_prec));
+  PetscCall(KSPSetUp(poissonmala->ksp));
+  PetscCall(KSPSetUp(poissonmala->ksp_prior_sampler));
   // Create diagonal matrix Z
   PetscCall(MatCreateDiagonal(ctx->event_counts, &poissonmala->Z_diag));
   // Create matrix bar(B) = Q^{-1} B
@@ -361,6 +367,8 @@ static PetscErrorCode SNESView_PoissonMALA(SNES snes, PetscViewer viewer)
   PetscCall(PetscViewerASCIIPrintf(viewer, "  stepsize=%g\n", (double)poissonmala->epsilon));
   PetscCall(PetscViewerASCIIPrintf(viewer, "Linear solver\n"));
   PetscCall(KSPView(poissonmala->ksp, viewer));
+  PetscCall(PetscViewerASCIIPrintf(viewer, "Prior sampler\n"));
+  PetscCall(KSPView(poissonmala->ksp_prior_sampler, viewer));
   PetscFunctionReturn(PETSC_SUCCESS);
 }
 
@@ -387,11 +395,18 @@ PetscErrorCode SNESCreate_PoissonMALA(SNES snes)
 
   snes->usesksp = PETSC_FALSE;
   snes->usesnpc = PETSC_FALSE;
-  PetscCall(KSPCreate(PETSC_COMM_WORLD, &poissonmala->ksp));
 
+  // Create KSP for prior solver
+  PetscCall(KSPCreate(PETSC_COMM_WORLD, &poissonmala->ksp));
   PetscCall(KSPSetType(poissonmala->ksp, KSPPREONLY));
   PetscCall(KSPGetPC(poissonmala->ksp, &pc));
   PetscCall(PCSetType(pc, PCLU));
+
+  // Create KSP for prior sampler
+  PetscCall(KSPCreate(PETSC_COMM_WORLD, &poissonmala->ksp_prior_sampler));
+  PetscCall(KSPSetType(poissonmala->ksp_prior_sampler, KSPPREONLY));
+  PetscCall(KSPGetPC(poissonmala->ksp_prior_sampler, &pc));
+  PetscCall(PCSetType(pc, PCCHOLSAMPLER));
 
   poissonmala->epsilon = 0.1;
 
