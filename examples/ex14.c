@@ -35,7 +35,7 @@ Command line options:
 #include <parmgmc/ms.h>
 #include <parmgmc/obs.h>
 #include <parmgmc/parmgmc.h>
-#include <parmgmc/snes/snes_poissongibbs.h>
+#include <parmgmc/poisson.h>
 #include <parmgmc/problems.h>
 
 #include <petsc.h>

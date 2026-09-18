@@ -12,7 +12,7 @@
 
 #include "petsc_caster.hh"
 #include "parmgmc/parmgmc.h"
-#include "parmgmc/snes/snes_poissongibbs.h"
+#include "parmgmc/poisson.h"
 
 namespace py = pybind11;
 

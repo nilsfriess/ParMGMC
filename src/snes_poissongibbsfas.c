@@ -29,7 +29,9 @@
     multigrid object, which is can be configured through the options database.
 */
 
+#include "parmgmc/snes/snes_poissongibbsfas.h"
 #include "parmgmc/snes/snes_poissongibbs.h"
+#include "parmgmc/poisson.h"
 #include "parmgmc/parmgmc.h"
 
 #include <petsc/private/snesimpl.h>

@@ -8,9 +8,13 @@
 
 #pragma once
 
-#include <petscsnes.h>
+#include <petscvec.h>
+#include <petscmat.h>
 
-// Create Poisson Gibbs SNES
-PETSC_EXTERN PetscErrorCode SNESCreate_PoissonGibbs(SNES snes);
-// Set number of Gibbs sweeps
-PETSC_EXTERN PetscErrorCode SNESPoissonGibbsSetIterations(SNES snes, PetscInt its);
+/* User context for Poisson problem */
+typedef struct {
+  Vec event_counts; // measured event counts
+  Mat Q_prec;       // precision matrix
+  Mat B_meas;       // measurement matrix
+  Vec nu;           // offset vector
+} PoissonGibbsCtx;

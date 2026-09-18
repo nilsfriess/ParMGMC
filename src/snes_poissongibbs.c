@@ -48,6 +48,7 @@
 */
 
 #include "parmgmc/snes/snes_poissongibbs.h"
+#include "parmgmc/poisson.h"
 #include "parmgmc/parmgmc.h"
 
 #include <petsc/private/snesimpl.h>

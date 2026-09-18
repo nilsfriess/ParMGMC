@@ -10,7 +10,5 @@
 
 #include <petscsnes.h>
 
-// Create Poisson Gibbs SNES
-PETSC_EXTERN PetscErrorCode SNESCreate_PoissonGibbs(SNES snes);
-// Set number of Gibbs sweeps
-PETSC_EXTERN PetscErrorCode SNESPoissonGibbsSetIterations(SNES snes, PetscInt its);
+// Create hierarchical Poisson Gibbs SNES
+PETSC_EXTERN PetscErrorCode SNESCreate_PoissonGibbsFAS(SNES snes);

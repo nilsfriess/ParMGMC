@@ -14,6 +14,7 @@
 #include "parmgmc/pc/pc_sorgibbs.h"
 #include "parmgmc/pc/woodbury.h"
 #include "parmgmc/snes/snes_poissongibbs.h"
+#include "parmgmc/snes/snes_poissongibbsfas.h"
 
 #include <petsc/private/pcimpl.h>
 #include <petsc/private/petscimpl.h>
@@ -149,6 +150,6 @@ PetscErrorCode PCRegisterSetSampleCallback(PC pc, PetscErrorCode (*set)(PC pc, P
 PetscErrorCode PCSetSampleCallback(PC pc, PetscErrorCode (*cb)(PetscInt, Vec, void *), void *ctx, PetscErrorCode (*deleter)(void *))
 {
   PetscFunctionBeginUser;
-  PetscUseMethod((PetscObject)pc, "PCSetSampleCallback_C", (PC, PetscErrorCode (*)(PetscInt, Vec, void *), void *, PetscErrorCode (*)(void *)), (pc, cb, ctx, deleter));
+  PetscUseMethod((PetscObject)pc, "PCSetSampleCallback_C", (PC, PetscErrorCode(*)(PetscInt, Vec, void *), void *, PetscErrorCode (*)(void *)), (pc, cb, ctx, deleter));
   PetscFunctionReturn(PETSC_SUCCESS);
 }
