@@ -355,6 +355,58 @@ To implement~\cref{alg:mgmc} in PETSc we should proceed as follows:
 \item Construct the coarse problems and coarse RHSs which are needed to define the coarse functions in the FAS algorithm
 \end{itemize} 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{MALA sampling}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+The MALA sampler \cite{roberts1996exponential} implements the update $\vec{\theta}\mapsto\vec{\theta}'$ by first drawing a proposal $\vec{\theta}^*$ from a multivariant normal distribution by setting
+\begin{equation}
+\vec{\theta}^*=\vec{\theta}+\frac{\epsilon^2}{2} M^{-1}\nabla_\theta \log(p(\vec{\theta}))+\epsilon \vec{\xi}\qquad\text{with $\vec{\xi}\sim \mathcal{N}(\vec{0},M^{-1})$}\label{eqn:langevin_proposal}
+\end{equation}
+and then accepting it with the probability
+\begin{equation}
+\alpha = \min\left\{\frac{p(\vec{\theta}^*)\pi(\vec{\theta}^*\gets\vec{\theta})}{p(\vec{\theta})\pi(\vec{\theta}\gets\vec{\theta}^*)}\right\}
+\end{equation}
+where $p = p(\cdot|\vec{n};Q,B,\vec{f},\vec{\nu})$ is the posterior density defined in~\eqref{eqn:posterior_density}. $\pi(\vec{\theta}^*\gets\vec{\theta})$ is the density for the transion \eqref{eqn:langevin_proposal}, namely
+\begin{equation}
+    \pi(\vec{\theta}^*\gets\vec{\theta}) = \mathcal{Z}\exp\left[-\frac{1}{2\epsilon^2}(\vec{\theta}^*-\vec{\Phi}(\vec{\theta}))^\top M (\vec{\theta}^*-\vec{\Phi}(\vec{\theta}))\right]\qquad\text{with $\vec{\Phi}(\vec{\theta})=\vec{\theta}+\frac{\epsilon^2}{2}M^{-1}\nabla_\theta \log(p(\vec{\theta}))$}.
+\end{equation}
+In the simplest setup, matrix $M$ is the $n$-dimensional identity matrix. A better choice would be the precision matrix $Q$ of the prior or the Fisher information matrix, namely
+\begin{equation}
+M_{ij} = - \frac{\partial^2 }{\partial \theta_i \partial \theta_j} \log(p(\vec{\theta})).\label{eqn:fisher_information_matrix}
+\end{equation}
+However, in this case $M$ in no longer independent of $\vec{\theta}$, which leads to seveal complications: the Langevin proposal in~\eqref{eqn:langevin_proposal} needs to modified and the normalisation constant no longer cancels in the contribution $\pi(\vec{\theta}^*\gets\vec{\theta})/\pi(\vec{\theta}\gets\vec{\theta}^*)$. To address this, we will use a fixed value of $\vec{\theta}$ in~\eqref{eqn:fisher_information_matrix} as described below.
+
+From~\eqref{eqn:posterior_density} we obtain
+\begin{equation}
+\log(p(\vec{\theta})) = -\frac{1}{2} (\vec{\theta}-\vec{\mu})^\top Q (\vec{\theta}-\vec{\mu}) + \sum_{k=1}^{m} \left(n_k\log(r_k(\vec{\theta})) - t_k r_k(\vec{\theta})\right) + \text{constant}
+\end{equation}
+where $\log(r_k(\theta_k)) = (\vec{b}^{(k)})^\top \vec{\theta} +\beta$. This gives
+\begin{equation}
+    \begin{aligned}
+\nabla_\theta \log(p(\vec{\theta})) &= Q(\vec{\mu}-\vec{\theta}) + \sum_{k=1}^{m} \left(n_k - t_k r_k(\vec{\theta})\right)\vec{b}^{(k)}\\
+&= Q(\vec{\mu}-\vec{\theta}) + B \vec{\sigma}
+\qquad\text{with $\sigma_k=\sigma_k(\vec{\theta}) = n_k - t_k r_k(\vec{\theta})$}.
+    \end{aligned}
+\end{equation}
+The (negative) Hessian is 
+\begin{equation}
+    \begin{aligned}
+-\nabla^2_\theta \log(p(\vec{\theta})) &= Q + \sum_{k=1}^{m} t_k r_k(\vec{\theta})\vec{b}^{(k)} (\vec{b}^{(k)})^\top\\
+&= Q + B Z B^\top.
+    \end{aligned}
+\end{equation}
+where $Z$ is the diagonal $m\times m$ matrix with $Z_{kk} = Z_{kk}(\vec{\theta}) = t_k r_k(\vec{\theta})$. Since $r_k(\vec{\theta})$ is the rate, $t_kr_k(\vec{\theta})$ is the number of events counted at site $k$, which can be estimated as $n_k$. To obtain a constant preconditioning matrix we therefore set
+\begin{equation}
+M = Q + B Z B^\top\qquad\text{with $Z_{kk} = n_k$, $Z_{k\ell}=0$ for $k\neq \ell$.}
+\end{equation}
+The computation of $\vec{\Phi}(\vec{\theta})$ requires the solution of a linear system $M \vec{u} = \vec{r}$. Since $M$ is the sum of a sparse $n\times n$ matrix and a rank-$m$ correction, the Woodbury matrix identity can be used to write
+\begin{equation}
+    \begin{aligned}
+M^{-1} &= Q^{-1} - Q^{-1} B\left(Z^{-1} + B^\top Q^{-1} B\right)^{-1} B^\top Q^{-1}\\
+&= \left(\mathbb{I} - GB^\top\right) Q^{-1}
+    \end{aligned}
+\end{equation}
+where $G = \overline{B} \left(Z^{-1} + B^\top \overline{B}\right)^{-1}$ and the $n\times m$ matrix $\overline{B} = Q^{-1} B$ is obtained by solving $m$ linear systems with the columns $\vec{b}^{(k)}$ of $B$ on the right hand side.
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 \bibliographystyle{unsrt}
 \bibliography{poissongibbs}
 \end{document}
