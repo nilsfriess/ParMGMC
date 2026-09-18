@@ -41,14 +41,14 @@ def get_synthetic_measurements():
     return B_meas, event_counts, measurement_times, background_rate
 
 
-setup = "rongelap"
-# setup = "synthetic"
+# setup = "rongelap"
+setup = "synthetic"
 
 if setup == "rongelap":
     mesh = fd.Mesh("../data/rongelap.msh", dim=2)
     correlation_length = 500.0  # m
 else:
-    n = 64
+    n = 8
     mesh = fd.UnitSquareMesh(n, n)
     correlation_length = 0.1
 
