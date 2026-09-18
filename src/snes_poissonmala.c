@@ -142,25 +142,25 @@ static PetscErrorCode SNESPoissonMALAProposalDelta_Private(SNES snes, Vec theta,
   PetscCall(VecCopy(ctx->event_counts, sqrt_Z));
   PetscCall(VecSqrtAbs(sqrt_Z));
   delta_2_prime = 0;
-  PetscCall(VecCopy(theta, Delta));
-  PetscCall(VecAXPY(Delta, -1.0, phi_star));
+  PetscCall(VecCopy(theta_star, Delta));
+  PetscCall(VecAXPY(Delta, -1.0, phi));
   PetscCall(VecDuplicate(Delta, &Q_Delta));
   PetscCall(MatMult(ctx->Q_prec, Delta, Q_Delta));
   PetscCall(VecDot(Delta, Q_Delta, &Delta_Q_Delta));
-  delta_2_prime += Delta_Q_Delta; // + (Delta*)^T Q Delta *
+  delta_2_prime += Delta_Q_Delta; // + (Delta)^T Q Delta
   PetscCall(MatMultTranspose(ctx->B_meas, Delta, sqrt_Z_B_Delta));
   PetscCall(VecPointwiseMult(sqrt_Z_B_Delta, sqrt_Z_B_Delta, sqrt_Z));
   PetscCall(VecNorm(sqrt_Z_B_Delta, NORM_2, &Delta_B_Z_B_T_Delta));
-  delta_2_prime += Delta_B_Z_B_T_Delta * Delta_B_Z_B_T_Delta;
-  PetscCall(VecCopy(theta_star, Delta));
-  PetscCall(VecAXPY(Delta, -1.0, phi));
+  delta_2_prime += Delta_B_Z_B_T_Delta * Delta_B_Z_B_T_Delta; // + (B^T Delta)^T Z (B^T Delta)
+  PetscCall(VecCopy(theta, Delta));
+  PetscCall(VecAXPY(Delta, -1.0, phi_star));
   PetscCall(MatMult(ctx->Q_prec, Delta, Q_Delta));
   PetscCall(VecDot(Delta, Q_Delta, &Delta_Q_Delta));
-  delta_2_prime -= Delta_Q_Delta; // + (Delta*)^T Q Delta *
+  delta_2_prime -= Delta_Q_Delta; // - (Delta*)^T Q Delta *
   PetscCall(MatMultTranspose(ctx->B_meas, Delta, sqrt_Z_B_Delta));
   PetscCall(VecPointwiseMult(sqrt_Z_B_Delta, sqrt_Z_B_Delta, sqrt_Z));
   PetscCall(VecNorm(sqrt_Z_B_Delta, NORM_2, &Delta_B_Z_B_T_Delta));
-  delta_2_prime -= Delta_B_Z_B_T_Delta * Delta_B_Z_B_T_Delta;
+  delta_2_prime -= Delta_B_Z_B_T_Delta * Delta_B_Z_B_T_Delta; // - (B^T Delta*)^T Z (B^T Delta*)
   // Final result
   *delta = delta_1 + delta_2_prime / (2 * poissonmala->epsilon * poissonmala->epsilon);
   // Free memory

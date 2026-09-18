@@ -374,7 +374,7 @@ The MALA sampler \cite{roberts1996exponential} implements the update $\vec{\thet
 \end{equation}
 This proposal is accepted with the Metropolis Hasting \cite{metropolis1953equation,hastings1970monte} probability
 \begin{equation}
-\alpha = \min\left\{\frac{p(\vec{\theta}^*)\pi(\vec{\theta}^*|\vec{\theta})}{p(\vec{\theta})\pi(\vec{\theta}|\vec{\theta}^*)},1\right\}
+\alpha = \min\left\{\frac{p(\vec{\theta}^*)\pi(\vec{\theta}|\vec{\theta}^*)}{p(\vec{\theta})\pi(\vec{\theta}^*|\vec{\theta})},1\right\}
 \end{equation}
 where $p = p(\cdot|\vec{n};Q,B,\vec{f},\vec{\nu})$ is the posterior density defined in~\eqref{eqn:posterior_density} and $\pi(\vec{\theta}^*|\vec{\theta})$ is the density for the transition \eqref{eqn:langevin_proposal}, namely
 \begin{equation}
@@ -450,9 +450,9 @@ To compute the acceptance ratio, note that $\log(\alpha) = \delta_1+\delta_2$ wi
 and 
 \begin{equation}
     \begin{aligned}
-        \delta_2 := \log(\pi(\vec{\theta}^*|\vec{\theta})/\pi(\vec{\theta}|\vec{\theta}^*)) &=
-        \frac{1}{2\epsilon^2} \left((\vec{\theta}-\vec{\Phi}(\vec{\theta}^*))^\top M (\vec{\theta}-\vec{\Phi}(\vec{\theta}^*)) - (\vec{\theta}^*-\vec{\Phi}(\vec{\theta}))^\top M (\vec{\theta}^*-\vec{\Phi}(\vec{\theta}))\right)\\
-        &= \frac{1}{2\epsilon^2} \left( (\vec{\Delta}^*)^\top Q \vec{\Delta}^* - \vec{\Delta}^\top Q \vec{\Delta} + (B^\top \vec{\Delta}^*)^\top Z (B^\top \vec{\Delta}^*) - (B^\top \vec{\Delta})^\top Z (B^\top\vec{\Delta})\right)
+        \delta_2 := \log(\pi(\vec{\theta}|\vec{\theta}^*)/\pi(\vec{\theta}^*|\vec{\theta})) &=
+        \frac{1}{2\epsilon^2} \left( (\vec{\theta}^*-\vec{\Phi}(\vec{\theta}))^\top M (\vec{\theta}^*-\vec{\Phi}(\vec{\theta}))-(\vec{\theta}-\vec{\Phi}(\vec{\theta}^*))^\top M (\vec{\theta}-\vec{\Phi}(\vec{\theta}^*))\right)\\
+        &= \frac{1}{2\epsilon^2} \left( \vec{\Delta}^\top Q \vec{\Delta} - (\vec{\Delta}^*)^\top Q \vec{\Delta}^* + (B^\top \vec{\Delta})^\top Z (B^\top \vec{\Delta}) - (B^\top \vec{\Delta}^*)^\top Z (B^\top\vec{\Delta}^*)\right)
     \end{aligned}\label{eqn:delta_2}
 \end{equation}
 where
