@@ -136,7 +136,7 @@ static PetscErrorCode SNESSetUp_PoissonMALA(SNES snes)
   // Solve S G^T = bar(B)^T
   PetscCall(MatTranspose(B_bar, MAT_INPLACE_MATRIX, &B_bar));
   PetscCall(MatDuplicate(B_bar, MAT_DO_NOT_COPY_VALUES, &poissonmala->G_lr));
-  PetscCall(KSPCreate(PetscObjectComm(snes), &ksp_dense));
+  PetscCall(KSPCreate(PETSC_COMM_WORLD, &ksp_dense));
   PetscCall(KSPSetType(ksp_dense, KSPPREONLY));
   PetscCall(KSPGetPC(ksp_dense, &pc_dense));
   PetscCall(PCSetType(pc_dense, PCLU));
@@ -217,7 +217,7 @@ PetscErrorCode SNESCreate_PoissonMALA(SNES snes)
 
   snes->usesksp = PETSC_FALSE;
   snes->usesnpc = PETSC_FALSE;
-  PetscCall(KSPCreate(PetscObjectComm(snes), &poissonmala->ksp));
+  PetscCall(KSPCreate(PETSC_COMM_WORLD, &poissonmala->ksp));
 
   PetscCall(KSPSetType(poissonmala->ksp, KSPPREONLY));
   PetscCall(KSPGetPC(poissonmala->ksp, &pc));
