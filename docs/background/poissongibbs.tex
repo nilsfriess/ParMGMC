@@ -444,7 +444,7 @@ To compute the acceptance ratio, note that $\log(\alpha) = \delta_1+\delta_2$ wi
         &= \frac{1}{2} \left(\vec{\theta}^\top Q \vec{\theta}- (\vec{\theta}^*)^\top Q \vec{\theta}^*\right) + \vec{f}^\top (\vec{\theta}^*-\vec{\theta})\\
         &\quad+\;\; \sum_{k=1}^m \left(n_k (\vec{b}^{(k)})^\top(\vec{\theta}^*-\vec{\theta}) + \exp\left[(\vec{b}^{(k)})^\top \vec{\theta}-\nu_k\right] - \exp\left[(\vec{b}^{(k)})^\top \vec{\theta}^*-\nu_k\right] \right)\\
         &= \frac{1}{2} \left(\vec{\theta}^\top Q \vec{\theta}- (\vec{\theta}^*)^\top Q \vec{\theta}^*\right) + \vec{f}^\top (\vec{\theta}^*-\vec{\theta})\\
-        &\quad+\;\; Z \vec{B}^\top (\vec{\theta}^*-\vec{\theta}) + \sum_{k=1}^m e^{-\nu_k}\left(\exp\left[(\vec{b}^{(k)})^\top \vec{\theta}\right] - \exp\left[(\vec{b}^{(k)})^\top \vec{\theta}^*\right] \right)
+        &\quad+\;\; \vec{n}^\top \vec{B}^\top (\vec{\theta}^*-\vec{\theta}) + \sum_{k=1}^m e^{-\nu_k}\left(\exp\left[(\vec{b}^{(k)})^\top \vec{\theta}\right] - \exp\left[(\vec{b}^{(k)})^\top \vec{\theta}^*\right] \right)
     \end{aligned}\label{eqn:delta_1}
 \end{equation}
 and 
