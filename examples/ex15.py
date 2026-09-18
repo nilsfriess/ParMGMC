@@ -46,11 +46,11 @@ setup = "synthetic"
 
 if setup == "rongelap":
     mesh = fd.Mesh("../data/rongelap.msh", dim=2)
-    correlation_length = 500.0  # m
+    correlation_length = 1000.0  # m
 else:
     n = 8
     mesh = fd.UnitSquareMesh(n, n)
-    correlation_length = 0.1
+    correlation_length = 0.2
 
 V = fd.FunctionSpace(mesh, "CG", 1)
 w = fd.TrialFunction(V)
@@ -87,7 +87,7 @@ snes.setFromOptions()
 beta = np.log(background_rate)
 pymgmc.SetPoissonCtx(snes, event_counts, measurement_times, beta, Q_prec, B_meas)
 
-n_samples = 128
+n_samples = 1024
 
 if setup == "rongelap":
     points_qoi = [[-3000, -1000]]
@@ -107,7 +107,9 @@ for k in tqdm.tqdm(range(n_samples)):
     chain.append(z)
     _y = y.copy(deepcopy=True)
     _y.rename(f"sample_{k:04d}")
+    w = fd.Function(V, name=f"exp_sample_{k:04d}").interpolate(fd.exp(y))
     y_samples.append(_y)
+    y_samples.append(w)
 chain = np.asarray(chain)
 mean = np.average(chain)
 std = np.std(chain)
