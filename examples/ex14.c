@@ -55,7 +55,7 @@ Command line options:
 #include <petscviewer.h>
 #include <time.h>
 
-PetscErrorCode initialise_ctx(Mat Q_prec, PetscInt nobs, PoissonGibbsCtx *ctx)
+PetscErrorCode initialise_ctx(Mat Q_prec, PetscInt nobs, PoissonCtx *ctx)
 {
   PetscInt ndof, m;
   Vec      nu;
@@ -111,7 +111,7 @@ int main(int argc, char *argv[])
   PetscCall(SNESCreate(MPI_COMM_WORLD, &snes));
   PetscCall(SNESSetDM(snes, dm));
 
-  PoissonGibbsCtx ctx;
+  PoissonCtx ctx;
   PetscCall(initialise_ctx(Q_prec, nobs, &ctx));
   PetscCall(SNESSetApplicationContext(snes, &ctx));
 

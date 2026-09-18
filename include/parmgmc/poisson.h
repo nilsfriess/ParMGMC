@@ -17,4 +17,4 @@ typedef struct {
   Mat Q_prec;       // precision matrix
   Mat B_meas;       // measurement matrix
   Vec nu;           // offset vector
-} PoissonGibbsCtx;
+} PoissonCtx;

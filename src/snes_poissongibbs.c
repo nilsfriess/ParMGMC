@@ -30,7 +30,7 @@
     where \f$b^{(k)}\f$ is the k-th column of \f$B\f$.
 
     The vectors n (size m), nu (size m) and the matrices Q (shape N x N) and B (shape N x m)
-    are collected in the user context PoissonGibbsCtx defined in snes_poissongibbs.h.
+    are collected in the user context PoissonCtx defined in snes_poissongibbs.h.
 
     The mean mu is provided via the right hand side vector \f$f = Q\mu\f$ which is passed to the
     solve routine.
@@ -248,7 +248,7 @@ static PetscErrorCode SNESSample_PoissonGibbs(SNES snes)
   Mat                Q_prec;
   Mat                B_meas;
   PetscInt           it;
-  PoissonGibbsCtx   *ctx;
+  PoissonCtx        *ctx;
 
   PetscFunctionBeginUser;
   poissongibbs = (SNES_PoissonGibbs *)snes->data;

@@ -85,7 +85,7 @@ snes = PETSc.SNES().create()
 snes.setOptionsPrefix("")
 snes.setFromOptions()
 beta = np.log(background_rate)
-pymgmc.SNESPoissonSetAppCtx(snes, event_counts, measurement_times, beta, Q_prec, B_meas)
+pymgmc.SetPoissonCtx(snes, event_counts, measurement_times, beta, Q_prec, B_meas)
 
 n_samples = 128
 

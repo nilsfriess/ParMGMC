@@ -22,7 +22,7 @@
     The Multigrid Monte Carlo sampler for the posterior obtained by conditioning a Gaussian prior
     on a Poisson process is constructed by wrapping a `SNESFAS` instance. See
     `snes_poissongibbs.c` for the definition of the posterior distribution and how to configure
-    its parameters through the user context of type `PoissonGibbsCtx` defined in
+    its parameters through the user context of type `PoissonCtx` defined in
     `snes_poissongibbs.h` and the right hand side vector. On each level of the hierarchy a
     `SNESPoissonGibbs` sampler is used for pre- and post-smoothinh.
     This hierarchy is constructed by coarsening the precision matrix \f$Q\f$ with the specified
@@ -45,14 +45,14 @@
 
 /* Internal workspace of MGMC sampler */
 typedef struct {
-  SNES             fas;          // internal FAS
-  PC               mg;           // internal multigrid
-  PetscInt         nlevels;      // number of multigrid levels
-  PetscInt         its;          // Number of iterations (=FAS cycles)
-  PetscInt         its_up;       // Number of pre-smoother iterations
-  PetscInt         its_down;     // Number of post-smoother iterations
-  PetscInt         its_coarse;   // Number of coarse-smoother iterations
-  PoissonGibbsCtx *smoother_ctx; // User context for smoothers on all levels
+  SNES        fas;          // internal FAS
+  PC          mg;           // internal multigrid
+  PetscInt    nlevels;      // number of multigrid levels
+  PetscInt    its;          // Number of iterations (=FAS cycles)
+  PetscInt    its_up;       // Number of pre-smoother iterations
+  PetscInt    its_down;     // Number of post-smoother iterations
+  PetscInt    its_coarse;   // Number of coarse-smoother iterations
+  PoissonCtx *smoother_ctx; // User context for smoothers on all levels
 } SNES_PoissonGibbsFAS;
 
 /* Generate a new sample by updating y -> y'
@@ -67,7 +67,7 @@ static PetscErrorCode SNESSample_PoissonGibbsFAS(SNES snes)
 {
   Vec                   vec_rhs, vec_sol, z;
   SNES_PoissonGibbsFAS *poissongibbsfas;
-  PoissonGibbsCtx      *ctx;
+  PoissonCtx           *ctx;
 
   PetscFunctionBeginUser;
   poissongibbsfas = (SNES_PoissonGibbsFAS *)snes->data;
@@ -102,7 +102,7 @@ static PetscErrorCode SNESReset_PoissonGibbsFAS(SNES snes)
   if (poissongibbsfas->smoother_ctx) {
     PetscCall(PCMGGetLevels(poissongibbsfas->mg, &nlevels));
     for (PetscInt ell = 0; ell < nlevels; ++ell) {
-      PoissonGibbsCtx ctx = poissongibbsfas->smoother_ctx[ell];
+      PoissonCtx ctx = poissongibbsfas->smoother_ctx[ell];
       if (ctx.Q_prec) PetscCall(MatDestroy(&ctx.Q_prec));
       if (ctx.B_meas) PetscCall(MatDestroy(&ctx.B_meas));
       if (ctx.event_counts) PetscCall(VecDestroy(&ctx.event_counts));
@@ -151,7 +151,7 @@ static PetscErrorCode SNESPoissonGibbsSetupMultigrid_Private(SNES snes)
 
   PetscFunctionBeginUser;
   SNES_PoissonGibbsFAS *poissongibbsfas = (SNES_PoissonGibbsFAS *)snes->data;
-  PoissonGibbsCtx      *ctx;
+  PoissonCtx           *ctx;
   PetscCall(SNESGetApplicationContext(snes, &ctx));
   PetscCall(PCSetDM(poissongibbsfas->mg, snes->dm));
   PetscCall(PCSetOperators(poissongibbsfas->mg, ctx->Q_prec, ctx->Q_prec));
@@ -208,7 +208,7 @@ static PetscErrorCode SNESPoissonGibbs_Function(SNES snes, Vec y, Vec b, void *c
 {
   Vec theta, f_rhs, nu;
   (void)snes;
-  PoissonGibbsCtx *poissongibbs = (PoissonGibbsCtx *)ctx;
+  PoissonCtx *poissongibbs = (PoissonCtx *)ctx;
 
   PetscFunctionBeginUser;
   PetscCall(VecNestGetSubVec(y, 0, &theta));
@@ -221,18 +221,18 @@ static PetscErrorCode SNESPoissonGibbs_Function(SNES snes, Vec y, Vec b, void *c
 
 /* Set the function of a specific SNES to SNESPoissonGibbs_Function() 
  *
- * It is assumed that the passed snes already has a user context of type PoissonGibbsCtx
+ * It is assumed that the passed snes already has a user context of type PoissonCtx
  * attached; this is required to work out the size of the nested vector and to
  * correctly pass this context to SNESPoissonGibbs_Function.
  * 
  * Parameters
- *   snes [inout] : SNES object, must have a user context of type PoissonGibbsCtx
+ *   snes [inout] : SNES object, must have a user context of type PoissonCtx
  */
 static PetscErrorCode SNESPoissonGibbsSetFunction_Private(SNES snes)
 {
-  PoissonGibbsCtx *ctx;
-  PetscInt         ndof, nobs;
-  Vec              f_rhs, nu, b_rhs;
+  PoissonCtx *ctx;
+  PetscInt    ndof, nobs;
+  Vec         f_rhs, nu, b_rhs;
 
   PetscFunctionBeginUser;
   PetscCall(SNESGetApplicationContext(snes, &ctx));
@@ -259,7 +259,7 @@ static PetscErrorCode SNESPoissonGibbsFASSetupFAS_Private(SNES snes)
   PetscInt              nlevels;
   Mat                  *P;
   SNES_PoissonGibbsFAS *poissongibbsfas;
-  PoissonGibbsCtx      *ctx;
+  PoissonCtx           *ctx;
 
   PetscFunctionBeginUser;
   poissongibbsfas = (SNES_PoissonGibbsFAS *)snes->data;

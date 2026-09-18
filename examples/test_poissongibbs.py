@@ -219,7 +219,7 @@ class Sampler:
         }
         for key, value in solver_parameters.items():
             opts[key] = value
-        pymgmc.SNESPoissonSetAppCtx(
+        pymgmc.SetPoissonCtx(
             snes,
             event_count_petsc,
             measurement_interval_petsc,

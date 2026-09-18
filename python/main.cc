@@ -50,8 +50,8 @@ PYBIND11_MODULE(pymgmc, m)
     PetscCallVoid(PetscRandomDestroy(&pr)); // release the ref given by ParMGMCGetPetscRandom
     PetscFunctionReturnVoid();
   });
-  m.def("SNESPoissonSetAppCtx", [](SNES snes, Vec event_counts, Vec measurement_intervals, PetscScalar beta, Mat Q_prec, Mat B_meas) {
-    PoissonGibbsCtx *ctx;
+  m.def("SetPoissonCtx", [](SNES snes, Vec event_counts, Vec measurement_intervals, PetscScalar beta, Mat Q_prec, Mat B_meas) {
+    PoissonCtx *ctx;
 
     PetscFunctionBegin;
     PetscCallVoid(PetscNew(&ctx));
