@@ -134,6 +134,7 @@ static PetscErrorCode SNESPoissonMALAProposalDelta_Private(SNES snes, Vec theta,
   PetscCall(VecExp(exp_B_theta_star));
   PetscCall(VecAXPY(exp_B_theta, -1.0, exp_B_theta_star));
   PetscCall(VecCopy(ctx->nu, exp_nu));
+  PetscCall(VecScale(exp_nu, -1.0));
   PetscCall(VecExp(exp_nu));
   PetscCall(VecDot(exp_nu, exp_B_theta, &exp_dot));
   delta_1 += exp_dot; // + (e^nu)^T (e^(B^T theta) - e^(B^T theta*))
@@ -150,17 +151,16 @@ static PetscErrorCode SNESPoissonMALAProposalDelta_Private(SNES snes, Vec theta,
   PetscCall(MatMultTranspose(ctx->B_meas, Delta, sqrt_Z_B_Delta));
   PetscCall(VecPointwiseMult(sqrt_Z_B_Delta, sqrt_Z_B_Delta, sqrt_Z));
   PetscCall(VecNorm(sqrt_Z_B_Delta, NORM_2, &Delta_B_Z_B_T_Delta));
-  delta_2_prime += Delta_B_Z_B_T_Delta;
+  delta_2_prime += Delta_B_Z_B_T_Delta * Delta_B_Z_B_T_Delta;
   PetscCall(VecCopy(theta_star, Delta));
   PetscCall(VecAXPY(Delta, -1.0, phi));
-  PetscCall(VecDuplicate(Delta, &Q_Delta));
   PetscCall(MatMult(ctx->Q_prec, Delta, Q_Delta));
   PetscCall(VecDot(Delta, Q_Delta, &Delta_Q_Delta));
   delta_2_prime -= Delta_Q_Delta; // + (Delta*)^T Q Delta *
   PetscCall(MatMultTranspose(ctx->B_meas, Delta, sqrt_Z_B_Delta));
   PetscCall(VecPointwiseMult(sqrt_Z_B_Delta, sqrt_Z_B_Delta, sqrt_Z));
   PetscCall(VecNorm(sqrt_Z_B_Delta, NORM_2, &Delta_B_Z_B_T_Delta));
-  delta_2_prime -= Delta_B_Z_B_T_Delta;
+  delta_2_prime -= Delta_B_Z_B_T_Delta * Delta_B_Z_B_T_Delta;
   // Final result
   *delta = delta_1 + delta_2_prime / (2 * poissonmala->epsilon * poissonmala->epsilon);
   // Free memory
