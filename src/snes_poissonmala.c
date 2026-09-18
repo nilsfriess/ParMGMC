@@ -33,6 +33,7 @@
 
 /* Internal workspace for Poisson MALA sampler SNES */
 typedef struct {
+  PetscRandom prand;   // Random number generator
   Mat         Z_diag;  // Diagonal matrix Z
   Mat         G_lr;    // The n x m matrix G used for the low rank update
   KSP         ksp;     // internal linear solver
@@ -187,7 +188,8 @@ static PetscErrorCode SNESSample_PoissonMALA(SNES snes)
   KSP               ksp;
   PoissonCtx       *ctx;
   Vec               theta, f_rhs, xi, phi, phi_star, theta_star;
-  PetscScalar       delta;
+  PetscScalar       delta, u_random;
+  PetscBool         accepted;
 
   PetscFunctionBeginUser;
   poissonmala = (SNES_PoissonMALA *)snes->data;
@@ -209,6 +211,12 @@ static PetscErrorCode SNESSample_PoissonMALA(SNES snes)
   PetscCall(SNESPoissonMALAProposalBias_Private(snes, theta_star, f_rhs, phi_star));
   // Proposal delta
   PetscCall(SNESPoissonMALAProposalDelta_Private(snes, theta, theta_star, f_rhs, phi, phi_star, &delta));
+  accepted = true;
+  if (delta < 0) {
+    PetscCall(PetscRandomGetValueReal(poissonmala->prand, &u_random));
+    accepted = log(1 - u_random) < delta; // Use 1-u since u is in [0,1)
+  }
+  if (accepted) PetscCall(VecCopy(theta_star, theta));
   // Free memory
   PetscCall(VecDestroy(&phi));
   PetscCall(VecDestroy(&phi_star));
@@ -232,6 +240,7 @@ static PetscErrorCode SNESReset_PoissonMALA(SNES snes)
 
   PetscFunctionBeginUser;
   poissonmala = (SNES_PoissonMALA *)snes->data;
+  PetscCall(PetscRandomDestroy(&poissonmala->prand));
   PetscCall(KSPReset(poissonmala->ksp));
   PetscCall(MatDestroy(&poissonmala->Z_diag));
   PetscFunctionReturn(PETSC_SUCCESS);
@@ -277,6 +286,7 @@ static PetscErrorCode SNESSetUp_PoissonMALA(SNES snes)
   PetscFunctionBeginUser;
   poissonmala = (SNES_PoissonMALA *)snes->data;
   PetscCall(SNESGetApplicationContext(snes, &ctx));
+  if (!poissonmala->prand) PetscCall(ParMGMCGetPetscRandom(&poissonmala->prand));
   // Set linear operators of KSP
   PetscCall(KSPSetOperators(poissonmala->ksp, ctx->Q_prec, ctx->Q_prec));
   // Create diagonal matrix Z
