@@ -20,6 +20,7 @@
 
 #include "parmgmc/snes/snes_poissonmala.h"
 #include "parmgmc/poisson.h"
+#include "parmgmc/parmgmc.h"
 
 #include <petsc/private/snesimpl.h>
 #include <petscerror.h>
