@@ -23,6 +23,7 @@
 #define PCWOODBURY          "woodbury"
 #define SNESPOISSONGIBBS    "poissongibbs"
 #define SNESPOISSONGIBBSFAS "poissongibbsfas"
+#define SNESPOISSONMALA     "poissonmala"
 
 PETSC_EXTERN PetscClassId  PARMGMC_CLASSID;
 PETSC_EXTERN PetscLogEvent MULTICOL_SOR;
