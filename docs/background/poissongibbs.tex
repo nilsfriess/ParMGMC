@@ -436,10 +436,14 @@ and the $n\times m$ matrix $\overline{B} = Q^{-1} B$ is obtained by solving $m$ 
     \EndFunction
 \end{algorithmic}
 \end{algorithm}
-To compute the acceptance ratio, note that $\log(\alpha) = \delta_1+\delta_2$ with
+To compute the acceptance ratio, note that
+\begin{equation}
+\log(\alpha) = \delta^{(1)}+\frac{\delta^{(2)}}{2\epsilon^2}\label{eqn:alpha}
+\end{equation}
+ with
 \begin{equation}
     \begin{aligned}
-        \delta_1 := \log(p(\vec{\theta}^*)/p(\vec{\theta})) &= \frac{1}{2} \left(\vec{\theta}^\top Q \vec{\theta}- (\vec{\theta}^*)^\top Q \vec{\theta}^*\right) + \vec{f}^\top (\vec{\theta}^*-\vec{\theta})\\
+        \delta^{(1)} := \log(p(\vec{\theta}^*)/p(\vec{\theta})) &= \frac{1}{2} \left(\vec{\theta}^\top Q \vec{\theta}- (\vec{\theta}^*)^\top Q \vec{\theta}^*\right) + \vec{f}^\top (\vec{\theta}^*-\vec{\theta})\\
         &\quad+\;\; \sum_{k=1}^m \left(n_k \log(\Lambda_k(\vec{\theta}^*)/\Lambda_k(\vec{\theta})) + \Lambda_k(\vec{\theta}) - \Lambda_k(\vec{\theta}^*)  \right)\\
         &= \frac{1}{2} \left(\vec{\theta}^\top Q \vec{\theta}- (\vec{\theta}^*)^\top Q \vec{\theta}^*\right) + \vec{f}^\top (\vec{\theta}^*-\vec{\theta})\\
         &\quad+\;\; \sum_{k=1}^m \left(n_k (\vec{b}^{(k)})^\top(\vec{\theta}^*-\vec{\theta}) + \exp\left[(\vec{b}^{(k)})^\top \vec{\theta}-\nu_k\right] - \exp\left[(\vec{b}^{(k)})^\top \vec{\theta}^*-\nu_k\right] \right)\\
@@ -450,9 +454,9 @@ To compute the acceptance ratio, note that $\log(\alpha) = \delta_1+\delta_2$ wi
 and 
 \begin{equation}
     \begin{aligned}
-        \delta_2 := \log(\pi(\vec{\theta}|\vec{\theta}^*)/\pi(\vec{\theta}^*|\vec{\theta})) &=
-        \frac{1}{2\epsilon^2} \left( (\vec{\theta}^*-\vec{\Phi}(\vec{\theta}))^\top M (\vec{\theta}^*-\vec{\Phi}(\vec{\theta}))-(\vec{\theta}-\vec{\Phi}(\vec{\theta}^*))^\top M (\vec{\theta}-\vec{\Phi}(\vec{\theta}^*))\right)\\
-        &= \frac{1}{2\epsilon^2} \left( \vec{\Delta}^\top Q \vec{\Delta} - (\vec{\Delta}^*)^\top Q \vec{\Delta}^* + (B^\top \vec{\Delta})^\top Z (B^\top \vec{\Delta}) - (B^\top \vec{\Delta}^*)^\top Z (B^\top\vec{\Delta}^*)\right)
+        \delta^{(2)} := \log(\pi(\vec{\theta}|\vec{\theta}^*)/\pi(\vec{\theta}^*|\vec{\theta})) &=
+         (\vec{\theta}^*-\vec{\Phi}(\vec{\theta}))^\top M (\vec{\theta}^*-\vec{\Phi}(\vec{\theta}))-(\vec{\theta}-\vec{\Phi}(\vec{\theta}^*))^\top M (\vec{\theta}-\vec{\Phi}(\vec{\theta}^*))\\
+        &=  \vec{\Delta}^\top Q \vec{\Delta} + (B^\top \vec{\Delta})^\top Z (B^\top \vec{\Delta})- (\vec{\Delta}^*)^\top Q \vec{\Delta}^*  - (B^\top \vec{\Delta}^*)^\top Z (B^\top\vec{\Delta}^*)
     \end{aligned}\label{eqn:delta_2}
 \end{equation}
 where
@@ -491,7 +495,7 @@ The full preconditioned MALA sampler is written down in~\cref{alg:preconditioned
     \State{Draw $\vec{\xi}\sim \mathcal{N}(0,M^{-1})$ with~\cref{alg:low_rank_sampler}.}
     \State{Set proposal $\vec{\theta}^*=\vec{\phi} + \epsilon \vec{\xi}$.}
     \State{Compute $\vec{\phi}^* = \vec{\Phi}(\vec{\theta}^*;\vec{n},Q,B,G,\vec{f},\vec{\nu},\epsilon)$ with~\cref{alg:MALA_bias}.}
-    \State{Compute $\delta = \delta_1 + \delta_2$ according to~\eqref{eqn:delta_1} and~\eqref{eqn:delta_2}.}
+    \State{Compute $\delta = \delta^{(1)} + \delta^{(2)}/(2\epsilon^2)$ according to~\eqref{eqn:alpha},~\eqref{eqn:delta_1} and~\eqref{eqn:delta_2}.}
     \If {$\delta \ge 0$}
         \State{Set $\vec{\theta}' = \vec{\theta}^*$.}
     \Else
