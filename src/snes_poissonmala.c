@@ -281,10 +281,12 @@ static PetscErrorCode SNESReset_PoissonMALA(SNES snes)
   PetscCall(KSPReset(poissonmala->ksp_prior_sampler));
   if (poissonmala->exp_nu) PetscCall(VecDestroy(&poissonmala->exp_nu));
   if (poissonmala->sqrt_n) PetscCall(VecDestroy(&poissonmala->sqrt_n));
-  for (PetscInt i = 0; i < 8; ++i) {
-    if (poissonmala->work[i] != NULL) PetscCall(VecDestroy(&poissonmala->work[i]));
+  if (poissonmala->work) {
+    for (PetscInt i = 0; i < 8; ++i) {
+      if (poissonmala->work[i] != NULL) PetscCall(VecDestroy(&poissonmala->work[i]));
+    }
+    PetscCall(PetscFree(poissonmala->work));
   }
-  PetscCall(PetscFree(poissonmala->work));
   PetscFunctionReturn(PETSC_SUCCESS);
 }
 
