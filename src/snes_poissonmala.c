@@ -54,7 +54,6 @@ typedef struct {
 static PetscErrorCode SNESPoissonMALAProposalBias_Private(SNES snes, Vec theta, Vec f_rhs, Vec phi)
 {
   SNES_PoissonMALA *poissonmala;
-  KSP               ksp;
   PoissonCtx       *ctx;
   Vec               kappa, sigma, s, tau;
   PetscScalar       alpha;
@@ -217,7 +216,6 @@ static PetscErrorCode SNESPoissonMALAProposalDraw_Private(SNES snes, Vec xi)
 static PetscErrorCode SNESSample_PoissonMALA(SNES snes)
 {
   SNES_PoissonMALA *poissonmala;
-  KSP               ksp;
   PoissonCtx       *ctx;
   Vec               theta, f_rhs, xi, phi, phi_star, theta_star;
   PetscScalar       delta, u_random;
