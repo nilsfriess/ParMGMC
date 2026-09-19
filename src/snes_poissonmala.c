@@ -40,6 +40,7 @@ typedef struct {
   KSP         ksp;               // internal linear solver
   KSP         ksp_prior_sampler; // KSP for sampling from the prior
   PetscScalar epsilon;           // MALA stepsize
+  PetscInt    its;               // Number of iterations
 } SNES_PoissonMALA;
 
 /* Compute the MALA proposal bias Phi(theta) 
@@ -177,6 +178,35 @@ static PetscErrorCode SNESPoissonMALAProposalDelta_Private(SNES snes, Vec theta,
   PetscFunctionReturn(PETSC_SUCCESS);
 }
 
+static PetscErrorCode SNESPoissonMALAProposalDraw_Private(SNES snes, Vec xi)
+{
+  SNES_PoissonMALA *poissonmala;
+  PoissonCtx       *ctx;
+  Vec               zeta, sqrt_Z, f_rhs;
+
+  PetscFunctionBeginUser;
+  poissonmala = (SNES_PoissonMALA *)snes->data;
+  PetscCall(SNESGetApplicationContext(snes, &ctx));
+  // Draw zeta ~ N(0,I)
+  PetscCall(VecDuplicate(ctx->nu, &zeta));
+  PetscCall(VecDuplicate(ctx->event_counts, &sqrt_Z));
+  PetscCall(VecSetRandomStandardNormal(zeta, poissonmala->prand));
+  PetscCall(VecCopy(ctx->event_counts, sqrt_Z));
+  PetscCall(VecSqrtAbs(sqrt_Z));
+  PetscCall(VecPointwiseMult(zeta, zeta, sqrt_Z));
+  PetscCall(MatCreateVecs(ctx->B_meas, NULL, &f_rhs));
+  PetscCall(MatMult(ctx->B_meas, zeta, f_rhs));
+  PetscCall(KSPSolve(poissonmala->ksp_prior_sampler, f_rhs, xi));
+  PetscCall(MatMultTranspose(ctx->B_meas, xi, zeta));
+  PetscCall(MatMult(poissonmala->G_lr, zeta, f_rhs));
+  PetscCall(VecAXPY(xi, -1.0, f_rhs));
+  // Free memory
+  PetscCall(VecDestroy(&zeta));
+  PetscCall(VecDestroy(&sqrt_Z));
+  PetscCall(VecDestroy(&f_rhs));
+  PetscFunctionReturn(PETSC_SUCCESS);
+}
+
 /* Generate a new sample by updating theta -> theta' 
  *
  * This is the key computational routine for generating a new sample. 
@@ -202,23 +232,25 @@ static PetscErrorCode SNESSample_PoissonMALA(SNES snes)
   PetscCall(VecDuplicate(theta, &phi_star));
   PetscCall(VecDuplicate(theta, &theta_star));
   PetscCall(VecDuplicate(theta, &xi));
-  // Compute proposal bias
-  PetscCall(SNESPoissonMALAProposalBias_Private(snes, theta, f_rhs, phi));
-  // Draw xi ~ N(0,M^{-1})
-  // TODO
-  // Compute proposal theta^*+ epsilon*xi
-  PetscCall(VecCopy(phi, theta_star));
-  PetscCall(VecAXPY(theta_star, poissonmala->epsilon, xi));
-  // Compute reverse proposal bias
-  PetscCall(SNESPoissonMALAProposalBias_Private(snes, theta_star, f_rhs, phi_star));
-  // Proposal delta
-  PetscCall(SNESPoissonMALAProposalDelta_Private(snes, theta, theta_star, f_rhs, phi, phi_star, &delta));
-  accepted = true;
-  if (delta < 0) {
-    PetscCall(PetscRandomGetValueReal(poissonmala->prand, &u_random));
-    accepted = log(1 - u_random) < delta; // Use 1-u since u is in [0,1)
+  for (PetscInt it = 0; it < poissonmala->its; ++it) {
+    // Compute proposal bias
+    PetscCall(SNESPoissonMALAProposalBias_Private(snes, theta, f_rhs, phi));
+    // Draw xi ~ N(0,M^{-1})
+    PetscCall(SNESPoissonMALAProposalDraw_Private(snes, xi));
+    // Compute proposal theta^*+ epsilon*xi
+    PetscCall(VecCopy(phi, theta_star));
+    PetscCall(VecAXPY(theta_star, poissonmala->epsilon, xi));
+    // Compute reverse proposal bias
+    PetscCall(SNESPoissonMALAProposalBias_Private(snes, theta_star, f_rhs, phi_star));
+    // Proposal delta
+    PetscCall(SNESPoissonMALAProposalDelta_Private(snes, theta, theta_star, f_rhs, phi, phi_star, &delta));
+    accepted = true;
+    if (delta < 0) {
+      PetscCall(PetscRandomGetValueReal(poissonmala->prand, &u_random));
+      accepted = log(1 - u_random) < delta; // Use 1-u since u is in [0,1)
+    }
+    if (accepted) PetscCall(VecCopy(theta_star, theta));
   }
-  if (accepted) PetscCall(VecCopy(theta_star, theta));
   // Free memory
   PetscCall(VecDestroy(&phi));
   PetscCall(VecDestroy(&phi_star));
@@ -344,6 +376,7 @@ static PetscErrorCode SNESSetFromOptions_PoissonMALA(SNES snes, PetscOptionItems
   poissonmala = (SNES_PoissonMALA *)snes->data;
   PetscOptionsHeadBegin(PetscOptionsObject, "Poisson MALA options");
   PetscCall(PetscOptionsReal("-poissonmala_epsilon", "Stepsize", NULL, poissonmala->epsilon, &poissonmala->epsilon, NULL));
+  PetscCall(PetscOptionsInt("-poissonmala_its", "Number of Poisson MALA iterations", NULL, poissonmala->its, &poissonmala->its, NULL));
   PetscCall(KSPAppendOptionsPrefix(poissonmala->ksp, "poissonmala_"));
   PetscCall(KSPSetFromOptions(poissonmala->ksp));
   PetscOptionsHeadEnd();
@@ -365,6 +398,7 @@ static PetscErrorCode SNESView_PoissonMALA(SNES snes, PetscViewer viewer)
   PetscFunctionBeginUser;
   poissonmala = (SNES_PoissonMALA *)snes->data;
   PetscCall(PetscViewerASCIIPrintf(viewer, "  stepsize=%g\n", (double)poissonmala->epsilon));
+  PetscCall(PetscViewerASCIIPrintf(viewer, "  number of iterations=%" PetscInt_FMT "\n", poissonmala->its));
   PetscCall(PetscViewerASCIIPrintf(viewer, "Linear solver\n"));
   PetscCall(KSPView(poissonmala->ksp, viewer));
   PetscCall(PetscViewerASCIIPrintf(viewer, "Prior sampler\n"));
@@ -395,6 +429,8 @@ PetscErrorCode SNESCreate_PoissonMALA(SNES snes)
 
   snes->usesksp = PETSC_FALSE;
   snes->usesnpc = PETSC_FALSE;
+
+  poissonmala->its = 1;
 
   // Create KSP for prior solver
   PetscCall(KSPCreate(PETSC_COMM_WORLD, &poissonmala->ksp));
