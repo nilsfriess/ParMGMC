@@ -255,7 +255,7 @@ static PetscErrorCode SNESSample_PoissonMALA(SNES snes)
     accepted = true;
     if (delta < 0) {
       PetscCall(PetscRandomGetValueReal(poissonmala->prand, &u_random));
-      accepted = log(1 - u_random) < delta; // Use 1-u since u is in [0,1)
+      accepted = log(1 - u_random) < delta; // Use 1-u since u is in [0,1), but log(0) is undefined
     }
     if (accepted) PetscCall(VecCopy(theta_star, theta));
   }
