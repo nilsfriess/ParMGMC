@@ -47,6 +47,7 @@
 typedef struct {
   SNES        fas;          // internal FAS
   PC          mg;           // internal multigrid
+  Vec         z_dummy;      // dummy vector of same size as nu, contains only zeros
   PetscInt    nlevels;      // number of multigrid levels
   PetscInt    its;          // Number of iterations (=FAS cycles)
   PetscInt    its_up;       // Number of pre-smoother iterations
@@ -65,22 +66,19 @@ typedef struct {
  */
 static PetscErrorCode SNESSample_PoissonGibbsFAS(SNES snes)
 {
-  Vec                   vec_rhs, vec_sol, z;
+  Vec                   vec_rhs, vec_sol;
   SNES_PoissonGibbsFAS *poissongibbsfas;
   PoissonCtx           *ctx;
 
   PetscFunctionBeginUser;
   poissongibbsfas = (SNES_PoissonGibbsFAS *)snes->data;
   PetscCall(SNESGetApplicationContext(snes, &ctx));
-  PetscCall(VecDuplicate(ctx->nu, &z));
-  PetscCall(VecSet(z, 0.0));
   PetscCall(VecCreateNest(PETSC_COMM_WORLD, 2, NULL, (Vec[]){snes->vec_rhs, ctx->nu}, &vec_rhs));
-  PetscCall(VecCreateNest(PETSC_COMM_WORLD, 2, NULL, (Vec[]){snes->vec_sol, z}, &vec_sol));
+  PetscCall(VecCreateNest(PETSC_COMM_WORLD, 2, NULL, (Vec[]){snes->vec_sol, poissongibbsfas->z_dummy}, &vec_sol));
   PetscCall(SNESSolve(poissongibbsfas->fas, vec_rhs, vec_sol));
   snes->reason = SNES_CONVERGED_ITS;
   PetscCall(VecDestroy(&vec_rhs));
   PetscCall(VecDestroy(&vec_sol));
-  PetscCall(VecDestroy(&z));
   PetscFunctionReturn(PETSC_SUCCESS);
 }
 
@@ -110,6 +108,7 @@ static PetscErrorCode SNESReset_PoissonGibbsFAS(SNES snes)
     }
     PetscCall(PetscFree(poissongibbsfas->smoother_ctx));
   }
+  if (poissongibbsfas->z_dummy) PetscCall(VecDestroy(&poissongibbsfas->z_dummy));
   PetscCall(PCDestroy(&poissongibbsfas->mg));
   PetscCall(SNESDestroy(&poissongibbsfas->fas));
   PetscFunctionReturn(PETSC_SUCCESS);
@@ -358,7 +357,16 @@ static PetscErrorCode SNESPoissonGibbsFASSetupFAS_Private(SNES snes)
  */
 static PetscErrorCode SNESSetUp_PoissonGibbsFAS(SNES snes)
 {
+  SNES_PoissonGibbsFAS *poissongibbsfas;
+  PoissonCtx           *ctx;
+
   PetscFunctionBeginUser;
+  poissongibbsfas = (SNES_PoissonGibbsFAS *)snes->data;
+  PetscCall(SNESGetApplicationContext(snes, &ctx));
+  if (!poissongibbsfas->z_dummy) {
+    PetscCall(VecDuplicate(ctx->nu, &poissongibbsfas->z_dummy));
+    PetscCall(VecSet(poissongibbsfas->z_dummy, 0.0));
+  }
   PetscCall(SNESPoissonGibbsSetupMultigrid_Private(snes));
   PetscCall(SNESPoissonGibbsFASSetupFAS_Private(snes));
   PetscFunctionReturn(PETSC_SUCCESS);
@@ -377,9 +385,10 @@ static PetscErrorCode SNESSetFromOptions_PoissonGibbsFAS(SNES snes, PetscOptionI
 {
   const char           *pc_type;
   PetscBool             isgamg, ismg;
-  SNES_PoissonGibbsFAS *poissongibbsfas = (SNES_PoissonGibbsFAS *)snes->data;
+  SNES_PoissonGibbsFAS *poissongibbsfas;
 
   PetscFunctionBegin;
+  poissongibbsfas = (SNES_PoissonGibbsFAS *)snes->data;
   // Set multigrid from options
   PetscCall(PCSetFromOptions(poissongibbsfas->mg));
   PetscCall(PCGetType(poissongibbsfas->mg, &pc_type));
