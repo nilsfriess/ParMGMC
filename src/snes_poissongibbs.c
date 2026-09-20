@@ -245,16 +245,13 @@ static PetscErrorCode SNESSample_PoissonGibbs(SNES snes)
   const PetscScalar *diag;
   const PetscScalar *f_rhs_array;
   PetscScalar        r, theta_prime;
-  Mat                Q_prec;
-  Mat                B_meas;
   PetscInt           it;
   PoissonCtx        *ctx;
 
   PetscFunctionBeginUser;
   poissongibbs = (SNES_PoissonGibbs *)snes->data;
   PetscCall(SNESGetApplicationContext(snes, &ctx));
-  Q_prec = ctx->Q_prec;
-  B_meas = ctx->B_meas;
+
   // Check whether RHS is a nested vector and extract RHS and solution
   PetscBool is_nest;
   PetscCall(PetscObjectTypeCompare((PetscObject)snes->vec_rhs, VECNEST, &is_nest));
@@ -276,16 +273,16 @@ static PetscErrorCode SNESSample_PoissonGibbs(SNES snes)
   PetscCall(VecAXPY(nu_tilde, -1.0, BT_theta));
 
   // Storage for local part of vectors
-  PetscCall(SNESPoissonGibbsGetMaxNnzPerRow_Private(B_meas, &max_nnz_per_row));
+  PetscCall(SNESPoissonGibbsGetMaxNnzPerRow_Private(ctx->B_meas, &max_nnz_per_row));
   PetscCall(PetscMalloc1(max_nnz_per_row, &n_local));
   PetscCall(PetscMalloc1(max_nnz_per_row, &nu_local));
 
   PetscCall(VecDuplicate(theta, &v_diag));
-  PetscCall(MatGetDiagonal(Q_prec, v_diag));
+  PetscCall(MatGetDiagonal(ctx->Q_prec, v_diag));
   PetscCall(VecGetArrayRead(v_diag, &diag));
   PetscCall(VecGetArrayRead(f_rhs, &f_rhs_array));
   PetscCall(VecGetArray(theta, &theta_array));
-  PetscCall(MatGetOwnershipRange(Q_prec, &rstart, &rend));
+  PetscCall(MatGetOwnershipRange(ctx->Q_prec, &rstart, &rend));
   // Loop over sweeps
   for (it = 0; it < poissongibbs->its; ++it) {
     // Iterate over unknowns
@@ -293,8 +290,8 @@ static PetscErrorCode SNESSample_PoissonGibbs(SNES snes)
       // Construct mean and variance of 1d Gaussian distribution
       PetscInt iloc = i - rstart;
       sigma         = 1. / sqrt(diag[iloc]);
-      PetscCall(MatGetRow(Q_prec, i, &ncols_Q, &cols_Q, &vals_Q));
-      PetscCall(MatGetRow(B_meas, i, &ncols_B, &cols_B, &vals_B));
+      PetscCall(MatGetRow(ctx->Q_prec, i, &ncols_Q, &cols_Q, &vals_Q));
+      PetscCall(MatGetRow(ctx->B_meas, i, &ncols_B, &cols_B, &vals_B));
       PetscCall(VecGetValues(ctx->event_counts, ncols_B, cols_B, n_local));
       PetscCall(VecGetValues(nu_tilde, ncols_B, cols_B, nu_local));
       // tilde(nu)_k^{(i)} = nu_k - sum_{j != i} B_{jk} theta_j =
@@ -337,8 +334,8 @@ static PetscErrorCode SNESSample_PoissonGibbs(SNES snes)
       PetscCall(VecSetValues(nu_tilde, ncols_B, cols_B, nu_local, INSERT_VALUES));
       PetscCall(VecAssemblyBegin(nu_tilde));
       PetscCall(VecAssemblyEnd(nu_tilde));
-      PetscCall(MatRestoreRow(Q_prec, i, &ncols_Q, &cols_Q, &vals_Q));
-      PetscCall(MatRestoreRow(B_meas, i, &ncols_B, &cols_B, &vals_B));
+      PetscCall(MatRestoreRow(ctx->Q_prec, i, &ncols_Q, &cols_Q, &vals_Q));
+      PetscCall(MatRestoreRow(ctx->B_meas, i, &ncols_B, &cols_B, &vals_B));
     }
   }
   snes->reason = SNES_CONVERGED_ITS;
