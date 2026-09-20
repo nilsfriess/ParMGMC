@@ -29,7 +29,7 @@
 
     where \f$p(\theta)\f$ is the posterior probability density and \f$\xi\sim \mathcal{N}(0,M^{-1})\f$
     is a multivariate normal random variable. The preconditioning matrix is set to the sum of the 
-    prior covariance \f$Q\f$ and a data term, namely:
+    prior precision \f$Q\f$ and a data term, namely:
 
       \f$M = Q + B Z B^\top \f$
 
@@ -97,7 +97,7 @@ PetscErrorCode SNESPoissonMALAGetAcceptanceStatistics(SNES snes, unsigned long *
   PetscCheck(is_mala, PETSC_COMM_WORLD, PETSC_ERR_ARG_WRONG, "SNES must be of type %s got %s", SNESPOISSONMALA, snes_type);
   poissonmala = (SNES_PoissonMALA *)snes->data;
   if (n_samples) *n_samples = poissonmala->n_samples;
-  if (n_accepted_samples) *n_samples = poissonmala->n_accepted_samples;
+  if (n_accepted_samples) *n_accepted_samples = poissonmala->n_accepted_samples;
   if (poissonmala->n_samples == 0) *acceptance_rate = 0;
   else *acceptance_rate = (PetscScalar)(poissonmala->n_accepted_samples) / (PetscScalar)(poissonmala->n_samples);
   PetscFunctionReturn(PETSC_SUCCESS);
@@ -197,7 +197,7 @@ static PetscErrorCode SNESPoissonMALAProposalDelta1_Private(SNES snes, Vec theta
   PetscCall(MatMultTranspose(ctx->B_meas, tmp_1, tmp_2)); // tmp_2 = B^T (theta* - theta)
   PetscCall(VecDot(ctx->event_counts, tmp_2, &dot_product));
   *delta_1 += dot_product;
-  // Step 5: + (e^nu)^T (e^(B^T theta) - e^(B^T theta*))
+  // Step 5: + (e^{-nu})^T (e^(B^T theta) - e^(B^T theta*))
   PetscCall(MatMultTranspose(ctx->B_meas, theta, tmp_2));
   PetscCall(VecExp(tmp_2)); // tmp_2 = exp(B^T theta)
   PetscCall(MatMultTranspose(ctx->B_meas, theta_star, tmp_3));
