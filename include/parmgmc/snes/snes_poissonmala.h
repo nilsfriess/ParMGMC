@@ -12,3 +12,6 @@
 
 // Create Poisson MALA SNES
 PETSC_EXTERN PetscErrorCode SNESCreate_PoissonMALA(SNES snes);
+
+// Collect acceptance statistics
+PETSC_EXTERN PetscErrorCode SNESPoissonMALAGetAcceptanceStatistics(SNES snes, unsigned long *n_samples, unsigned long *n_accepted_samples, PetscScalar *acceptance_rate);

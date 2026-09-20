@@ -11,7 +11,8 @@
     on a Poisson process
 
     # Options database keys
-    - `-poissonmala_epsilon` MALA stepsize
+    - `-poissonmala_stepsize` MALA stepsize epsilon
+    - `-poissonmala_its`      Number of iterations
 
     # Notes
 
@@ -34,24 +35,52 @@
 
 /* Internal workspace for Poisson MALA sampler SNES */
 typedef struct {
-  PetscRandom prand;             // Random number generator
-  Vec         exp_nu;            // Vector exp(-nu) [data]
-  Vec         sqrt_n;            // Vector sqrt(n)  [data]
-  Mat         G_lr;              // The n x m matrix G used for the low rank update
-  Vec        *work;              // Temporary vectors
-                                 //   0: theta*    [state]
-                                 //   1: phi       [state]
-                                 //   2: phi*      [state]
-                                 //   3: xi        [state]
-                                 //   4: (various) [state]
-                                 //   5: (various) [state]
-                                 //   6: (various) [data]
-                                 //   7: (various) [data]
-  KSP         ksp;               // internal linear solver
-  KSP         ksp_prior_sampler; // KSP for sampling from the prior
-  PetscScalar epsilon;           // MALA stepsize
-  PetscInt    its;               // Number of iterations
+  PetscRandom prand;                // Random number generator
+  Vec         exp_nu;               // Vector exp(-nu) [data]
+  Vec         sqrt_n;               // Vector sqrt(n)  [data]
+  Mat         G_lr;                 // The n x m matrix G used for the low rank update
+  Vec        *work;                 // Temporary vectors
+                                    //   0: theta*    [state]
+                                    //   1: phi       [state]
+                                    //   2: phi*      [state]
+                                    //   3: xi        [state]
+                                    //   4: (various) [state]
+                                    //   5: (various) [state]
+                                    //   6: (various) [data]
+                                    //   7: (various) [data]
+  KSP           ksp;                // internal linear solver
+  KSP           ksp_prior_sampler;  // KSP for sampling from the prior
+  PetscScalar   epsilon;            // MALA stepsize
+  PetscInt      its;                // Number of iterations
+  unsigned long n_samples;          // Number of samples
+  unsigned long n_accepted_samples; // Number of accepted samples
 } SNES_PoissonMALA;
+
+/* Return information on acceptance
+ *
+ * Returns the number of (accepted) samples and the acceptance rate
+ *
+ * Parameters
+ *   snes : SNES object
+ */
+PetscErrorCode SNESPoissonMALAGetAcceptanceStatistics(SNES snes, unsigned long *n_samples, unsigned long *n_accepted_samples, PetscScalar *acceptance_rate)
+{
+  SNES_PoissonMALA *poissonmala;
+  SNESType          snes_type;
+  PetscBool         is_mala;
+
+  PetscFunctionBeginUser;
+  // Check that the SNES is of the correct type
+  PetscCall(SNESGetType(snes, &snes_type));
+  PetscCall(PetscStrcmp(snes_type, SNESPOISSONMALA, &is_mala));
+  PetscCheck(is_mala, PETSC_COMM_WORLD, PETSC_ERR_ARG_WRONG, "SNES must be of type %s got %s", SNESPOISSONMALA, snes_type);
+  poissonmala = (SNES_PoissonMALA *)snes->data;
+  if (n_samples) *n_samples = poissonmala->n_samples;
+  if (n_accepted_samples) *n_samples = poissonmala->n_accepted_samples;
+  if (poissonmala->n_samples == 0) *acceptance_rate = 0;
+  else *acceptance_rate = (PetscScalar)(poissonmala->n_accepted_samples) / (PetscScalar)(poissonmala->n_samples);
+  PetscFunctionReturn(PETSC_SUCCESS);
+}
 
 /* Compute the MALA proposal bias Phi(theta) 
  *
@@ -258,6 +287,8 @@ static PetscErrorCode SNESSample_PoissonMALA(SNES snes)
       accepted = log(1 - u_random) < delta; // Use 1-u since u is in [0,1), but log(0) is undefined
     }
     if (accepted) PetscCall(VecCopy(theta_star, theta));
+    poissonmala->n_samples++;
+    poissonmala->n_accepted_samples += (int)accepted;
   }
   snes->reason = SNES_CONVERGED_ITS;
   PetscFunctionReturn(PETSC_SUCCESS);
@@ -287,6 +318,8 @@ static PetscErrorCode SNESReset_PoissonMALA(SNES snes)
     }
     PetscCall(PetscFree(poissonmala->work));
   }
+  poissonmala->n_samples          = 0;
+  poissonmala->n_accepted_samples = 0;
   PetscFunctionReturn(PETSC_SUCCESS);
 }
 
@@ -394,7 +427,7 @@ static PetscErrorCode SNESSetFromOptions_PoissonMALA(SNES snes, PetscOptionItems
   PetscFunctionBegin;
   poissonmala = (SNES_PoissonMALA *)snes->data;
   PetscOptionsHeadBegin(PetscOptionsObject, "Poisson MALA options");
-  PetscCall(PetscOptionsReal("-poissonmala_epsilon", "Stepsize", NULL, poissonmala->epsilon, &poissonmala->epsilon, NULL));
+  PetscCall(PetscOptionsReal("-poissonmala_stepsize", "Stepsize", NULL, poissonmala->epsilon, &poissonmala->epsilon, NULL));
   PetscCall(PetscOptionsInt("-poissonmala_its", "Number of Poisson MALA iterations", NULL, poissonmala->its, &poissonmala->its, NULL));
   PetscCall(KSPAppendOptionsPrefix(poissonmala->ksp, "poissonmala_"));
   PetscCall(KSPSetFromOptions(poissonmala->ksp));
@@ -449,7 +482,9 @@ PetscErrorCode SNESCreate_PoissonMALA(SNES snes)
   snes->usesksp = PETSC_FALSE;
   snes->usesnpc = PETSC_FALSE;
 
-  poissonmala->its = 1;
+  poissonmala->its                = 1;
+  poissonmala->n_samples          = 0;
+  poissonmala->n_accepted_samples = 0;
 
   // Create KSP for prior solver
   PetscCall(KSPCreate(PETSC_COMM_WORLD, &poissonmala->ksp));

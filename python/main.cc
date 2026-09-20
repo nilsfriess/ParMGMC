@@ -13,6 +13,7 @@
 #include "petsc_caster.hh"
 #include "parmgmc/parmgmc.h"
 #include "parmgmc/poisson.h"
+#include "parmgmc/snes/snes_poissonmala.h"
 
 namespace py = pybind11;
 
@@ -70,5 +71,10 @@ PYBIND11_MODULE(pymgmc, m)
     PetscCallVoid(VecScale(ctx->nu, -1.0));
     PetscCallVoid(SNESSetApplicationContext(snes, ctx));
     PetscFunctionReturnVoid();
+  });
+  m.def("GetMALAAcceptanceRate", [](SNES snes) -> double {
+    PetscScalar acceptance_rate;
+    PetscCallAbort(PETSC_COMM_WORLD, SNESPoissonMALAGetAcceptanceStatistics(snes, NULL, NULL, &acceptance_rate));
+    return (double)acceptance_rate;
   });
 };

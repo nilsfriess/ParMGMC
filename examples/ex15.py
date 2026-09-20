@@ -114,6 +114,10 @@ chain = np.asarray(chain)
 mean = np.average(chain)
 std = np.std(chain)
 
+if snes.getType() == "poissonmala":
+    acceptance_rate = pymgmc.GetMALAAcceptanceRate(snes)
+    print(f"MALA acceptance rate = {100 * acceptance_rate:6.2f} %")
+
 iact = emcee.autocorr.integrated_time(chain, quiet=True)[0]
 print(f"mean = {mean:8.4f}")
 print(f"std  = {std:8.4f}")
