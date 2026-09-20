@@ -66,6 +66,7 @@ typedef struct {
   Vec         random_workspace; // Workspace vector containing normally distributed random numbers
   PetscInt    random_work_ptr;  // Pointer to current entry in random number vector
   PetscInt    its;              // Number of iterations
+  Vec         Q_diag;           // Diagonal of precision matrix
 } SNES_PoissonGibbs;
 
 #define RANDOM_BUFFER_SIZE 64 // Size of workspace vector with random numbers
@@ -240,7 +241,7 @@ static PetscErrorCode SNESSample_PoissonGibbs(SNES snes)
   PetscScalar       *n_local;
   PetscScalar       *nu_local;
   PetscScalar        theta_bar;
-  Vec                v_diag, nu_tilde, BT_theta;
+  Vec                nu_tilde, BT_theta;
   const PetscScalar *diag;
   const PetscScalar *f_rhs_array;
   PetscScalar        r, theta_prime;
@@ -275,10 +276,7 @@ static PetscErrorCode SNESSample_PoissonGibbs(SNES snes)
   PetscCall(SNESPoissonGibbsGetMaxNnzPerRow_Private(ctx->B_meas, &max_nnz_per_row));
   PetscCall(PetscMalloc1(max_nnz_per_row, &n_local));
   PetscCall(PetscMalloc1(max_nnz_per_row, &nu_local));
-
-  PetscCall(VecDuplicate(theta, &v_diag));
-  PetscCall(MatGetDiagonal(ctx->Q_prec, v_diag));
-  PetscCall(VecGetArrayRead(v_diag, &diag));
+  PetscCall(VecGetArrayRead(poissongibbs->Q_diag, &diag));
   PetscCall(VecGetArrayRead(f_rhs, &f_rhs_array));
   PetscCall(VecGetArray(theta, &theta_array));
   PetscCall(MatGetOwnershipRange(ctx->Q_prec, &rstart, &rend));
@@ -338,14 +336,13 @@ static PetscErrorCode SNESSample_PoissonGibbs(SNES snes)
     }
   }
   snes->reason = SNES_CONVERGED_ITS;
-  PetscCall(VecRestoreArrayRead(v_diag, &diag));
+  PetscCall(VecRestoreArrayRead(poissongibbs->Q_diag, &diag));
   // Restore solution and right hand side vectors
   PetscCall(VecRestoreArrayRead(f_rhs, &f_rhs_array));
   PetscCall(VecRestoreArray(theta, &theta_array));
   // Free temporary storage
   PetscCall(PetscFree(n_local));
   PetscCall(PetscFree(nu_local));
-  PetscCall(VecDestroy(&v_diag));
   PetscCall(VecDestroy(&nu_tilde));
   PetscCall(VecDestroy(&BT_theta));
   PetscFunctionReturn(PETSC_SUCCESS);
@@ -364,8 +361,10 @@ static PetscErrorCode SNESReset_PoissonGibbs(SNES snes)
 
   PetscFunctionBeginUser;
   poissongibbs = (SNES_PoissonGibbs *)snes->data;
-  PetscCall(PetscRandomDestroy(&poissongibbs->prand));
-  PetscCall(VecDestroy(&poissongibbs->random_workspace));
+  if (poissongibbs->prand) PetscCall(PetscRandomDestroy(&poissongibbs->prand));
+  if (poissongibbs->random_workspace) PetscCall(VecDestroy(&poissongibbs->random_workspace));
+  if (poissongibbs->Q_diag) PetscCall(VecDestroy(&poissongibbs->Q_diag));
+
   PetscCall(SNESPoissonGibbsSetIterations(snes, 1));
   PetscFunctionReturn(PETSC_SUCCESS);
 }
@@ -413,6 +412,12 @@ static PetscErrorCode SNESSetUp_PoissonGibbs(SNES snes)
   // Point to the end of vector to trigger re-population when the
   // next random number if requested
   poissongibbs->random_work_ptr = RANDOM_BUFFER_SIZE;
+  // Extract diagonal of prior precision matrix
+  if (!poissongibbs->Q_diag) {
+    PetscCall(MatCreateVecs(ctx->Q_prec, NULL, &poissongibbs->Q_diag));
+    PetscCall(MatGetDiagonal(ctx->Q_prec, poissongibbs->Q_diag));
+  }
+
   PetscFunctionReturn(PETSC_SUCCESS);
 }
 
