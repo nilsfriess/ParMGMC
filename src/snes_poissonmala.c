@@ -424,6 +424,7 @@ static PetscErrorCode SNESSetUp_PoissonMALA(SNES snes)
   PetscFunctionBeginUser;
   poissonmala = (SNES_PoissonMALA *)snes->data;
   PetscCall(SNESGetApplicationContext(snes, &ctx));
+  PetscCheck(ctx, PETSC_COMM_WORLD, PETSC_ERR_POINTER, "User context for Poisson sampling has not been set");
   if (!poissonmala->prand) PetscCall(ParMGMCGetPetscRandom(&poissonmala->prand));
   // Create temporary work vectors
   PetscCall(PetscMalloc1(8, &poissonmala->work));

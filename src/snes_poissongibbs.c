@@ -229,7 +229,6 @@ static PetscErrorCode SNESSample_PoissonGibbs(SNES snes)
   Vec                theta;
   Vec                f_rhs;
   Vec                nu;
-  Vec                BT_theta;
   PetscInt           rstart, rend, ncols_Q, ncols_B, max_nnz_per_row;
   const PetscInt    *cols_Q;
   const PetscScalar *vals_Q;
@@ -241,7 +240,7 @@ static PetscErrorCode SNESSample_PoissonGibbs(SNES snes)
   PetscScalar       *n_local;
   PetscScalar       *nu_local;
   PetscScalar        theta_bar;
-  Vec                v_diag, nu_tilde;
+  Vec                v_diag, nu_tilde, BT_theta;
   const PetscScalar *diag;
   const PetscScalar *f_rhs_array;
   PetscScalar        r, theta_prime;
@@ -401,9 +400,12 @@ static PetscErrorCode SNESDestroy_PoissonGibbs(SNES snes)
 static PetscErrorCode SNESSetUp_PoissonGibbs(SNES snes)
 {
   SNES_PoissonGibbs *poissongibbs;
+  PoissonCtx        *ctx;
 
   PetscFunctionBeginUser;
   poissongibbs = (SNES_PoissonGibbs *)snes->data;
+  PetscCall(SNESGetApplicationContext(snes, &ctx));
+  PetscCheck(ctx, PETSC_COMM_WORLD, PETSC_ERR_POINTER, "User context for Poisson sampling has not been set");
   // Create random number generator and vector which will store
   // random numbers
   if (!poissongibbs->prand) PetscCall(ParMGMCGetPetscRandom(&poissongibbs->prand));
