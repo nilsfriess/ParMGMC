@@ -184,11 +184,13 @@ class Sampler:
     :math:`\\Lambda(y) = e^{b y - \\nu}`.
     """
 
-    def __init__(self, Q, f, b, beta, event_count, measurement_interval):
+    def __init__(self, snes_type, Q, f, b, beta, event_count, measurement_interval):
         """Initialise new instance
 
         Parameters
         ==========
+        snes_type :
+            SNES to use for sampler
         Q :
             precision matrix :math:`Q`
         f_rhs :
@@ -212,11 +214,7 @@ class Sampler:
         event_count_petsc = PETSc.Vec().createWithArray([event_count])
         snes = PETSc.SNES().create()
         opts = PETSc.Options()
-        solver_parameters = {
-            "snes_type": "poissongibbs",
-            "poissongibbs_its": 1,
-            "snes_view": ":snes_view.txt",
-        }
+        solver_parameters = self.get_solver_parameters(snes_type)
         for key, value in solver_parameters.items():
             opts[key] = value
         pymgmc.SetPoissonCtx(
@@ -231,6 +229,30 @@ class Sampler:
         self._snes = snes
         self._y = PETSc.Vec().createWithArray([0, 0])
 
+    def get_solver_parameters(self, snes_type):
+        """Return solver parameters
+
+        Parameters
+        ==========
+        snes_type :
+            type of SNES to use for sampling
+        """
+        if snes_type == "poissongibbs":
+            return {
+                "snes_type": "poissongibbs",
+                "poissongibbs_its": 1,
+                "snes_view": ":snes_view.txt",
+            }
+        elif snes_type == "poissonmala":
+            return {
+                "snes_type": "poissonmala",
+                "poissonmala_its": 1,
+                "poissonmala_stepsize": 1.0,
+                "snes_view": ":snes_view.txt",
+            }
+        else:
+            raise RuntimeError(f"Invalid SNES : {snes_type}")
+
     def __iter__(self):
         """Iterator"""
         while True:
@@ -239,6 +261,7 @@ class Sampler:
 
 
 def visualise(
+    snes_type,
     Q_prec,
     f_rhs,
     b_measurement,
@@ -255,6 +278,8 @@ def visualise(
 
     Parameters
     ==========
+    snes_type :
+        sampler to use
     Q_prec :
         precision matrix :math:`Q`
     f_rhs :
@@ -282,7 +307,7 @@ def visualise(
         Q_prec, f_rhs, b_measurement, beta, event_count, measurement_interval
     )
     sampler = Sampler(
-        Q_prec, f_rhs, b_measurement, beta, event_count, measurement_interval
+        snes_type, Q_prec, f_rhs, b_measurement, beta, event_count, measurement_interval
     )
     samples = np.asarray(list(itertools.islice(sampler, n_samples)))[:, 0]
     ks = distribution.kolmogorov_smirnov(samples)
@@ -308,17 +333,20 @@ test_data = [
 ]
 
 
+@pytest.mark.parametrize("snes_type", ["poissongibbs", "poissonmala"])
 @pytest.mark.parametrize(
     "Q_prec,f_rhs,b_measurement,beta,event_count,measurement_interval", test_data
 )
-def test_sampler(Q_prec, f_rhs, b_measurement, beta, event_count, measurement_interval):
+def test_sampler(
+    snes_type, Q_prec, f_rhs, b_measurement, beta, event_count, measurement_interval
+):
     """Verify that samples satisfy the Kolmogorov Smirnov test"""
     n_samples = 20000
     distribution = MarginalisedDistribution(
         Q_prec, f_rhs, b_measurement, beta, event_count, measurement_interval
     )
     sampler = Sampler(
-        Q_prec, f_rhs, b_measurement, beta, event_count, measurement_interval
+        snes_type, Q_prec, f_rhs, b_measurement, beta, event_count, measurement_interval
     )
     samples = np.asarray(list(itertools.islice(sampler, n_samples)))[:, 0]
     tolerance = 1.0e-2
@@ -332,6 +360,14 @@ if __name__ == "__main__":
     beta = 0.5
     event_count = 2
     measurement_interval = 1
-    visualise(
-        A_precision, f_rhs, b_measurement, beta, event_count, measurement_interval
-    )
+    for snes_type in ("poissongibbs", "poissonmala"):
+        visualise(
+            snes_type,
+            A_precision,
+            f_rhs,
+            b_measurement,
+            beta,
+            event_count,
+            measurement_interval,
+            filename=f"marginal_{snes_type}.pdf",
+        )
