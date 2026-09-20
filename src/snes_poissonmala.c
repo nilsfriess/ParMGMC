@@ -374,6 +374,7 @@ static PetscErrorCode SNESReset_PoissonMALA(SNES snes)
     }
     PetscCall(PetscFree(poissonmala->work));
   }
+  if (poissonmala->G_lr) PetscCall(MatDestroy(&poissonmala->G_lr));
   poissonmala->n_samples          = 0;
   poissonmala->n_accepted_samples = 0;
   PetscFunctionReturn(PETSC_SUCCESS);
