@@ -454,6 +454,7 @@ PetscErrorCode SNESCreate_PoissonGibbsFAS(SNES snes)
 
   // Create multigrid PC
   PetscCall(PCCreate(PETSC_COMM_WORLD, &poissongibbsfas->mg));
+  PetscCall(PCSetType(poissongibbsfas->mg, PCGAMG));
   // Create SNES
   PetscCall(SNESCreate(PETSC_COMM_WORLD, &poissongibbsfas->fas));
   PetscFunctionReturn(PETSC_SUCCESS);
