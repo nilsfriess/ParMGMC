@@ -62,11 +62,15 @@
 
 /* Internal workspace for Poisson Gibbs sampler SNES */
 typedef struct {
-  PetscRandom prand;            // Random number generator
-  Vec         random_workspace; // Workspace vector containing normally distributed random numbers
-  PetscInt    random_work_ptr;  // Pointer to current entry in random number vector
-  PetscInt    its;              // Number of iterations
-  Vec         Q_diag;           // Diagonal of precision matrix
+  PetscRandom  prand;            // Random number generator
+  Vec          random_workspace; // Workspace vector containing normally distributed random numbers
+  PetscInt     random_work_ptr;  // Pointer to current entry in random number vector
+  PetscInt     its;              // Number of iterations
+  Vec          Q_diag;           // Diagonal of precision matrix
+  Vec         *work;             // Temporary vectors
+  PetscScalar *n_local;          // Temporary storage for local part of measurement
+  PetscScalar *nu_local;         // Temporary storage for local part of nu
+
 } SNES_PoissonGibbs;
 
 #define RANDOM_BUFFER_SIZE 64 // Size of workspace vector with random numbers
@@ -230,7 +234,7 @@ static PetscErrorCode SNESSample_PoissonGibbs(SNES snes)
   Vec                theta;
   Vec                f_rhs;
   Vec                nu;
-  PetscInt           rstart, rend, ncols_Q, ncols_B, max_nnz_per_row;
+  PetscInt           rstart, rend, ncols_Q, ncols_B;
   const PetscInt    *cols_Q;
   const PetscScalar *vals_Q;
   const PetscInt    *cols_B;
@@ -238,10 +242,8 @@ static PetscErrorCode SNESSample_PoissonGibbs(SNES snes)
   PetscScalar        sigma;
   PetscScalar        mu_bar;
   PetscScalar       *theta_array;
-  PetscScalar       *n_local;
-  PetscScalar       *nu_local;
   PetscScalar        theta_bar;
-  Vec                nu_tilde, BT_theta;
+  Vec                tmp_1, tmp_2;
   const PetscScalar *diag;
   const PetscScalar *f_rhs_array;
   PetscScalar        r, theta_prime;
@@ -264,18 +266,14 @@ static PetscErrorCode SNESSample_PoissonGibbs(SNES snes)
     f_rhs = snes->vec_rhs;
     nu    = ctx->nu;
   }
+  tmp_1 = poissongibbs->work[0];
+  tmp_2 = poissongibbs->work[1];
 
   // Construct the vector tilde(nu) = nu - B^T theta
-  PetscCall(VecDuplicate(nu, &nu_tilde));
-  PetscCall(VecCopy(nu, nu_tilde));
-  PetscCall(VecDuplicate(nu, &BT_theta));
-  PetscCall(MatMultTranspose(ctx->B_meas, theta, BT_theta));
-  PetscCall(VecAXPY(nu_tilde, -1.0, BT_theta));
+  PetscCall(VecCopy(nu, tmp_1));
+  PetscCall(MatMultTranspose(ctx->B_meas, theta, tmp_2));
+  PetscCall(VecAXPY(tmp_1, -1.0, tmp_2));
 
-  // Storage for local part of vectors
-  PetscCall(SNESPoissonGibbsGetMaxNnzPerRow_Private(ctx->B_meas, &max_nnz_per_row));
-  PetscCall(PetscMalloc1(max_nnz_per_row, &n_local));
-  PetscCall(PetscMalloc1(max_nnz_per_row, &nu_local));
   PetscCall(VecGetArrayRead(poissongibbs->Q_diag, &diag));
   PetscCall(VecGetArrayRead(f_rhs, &f_rhs_array));
   PetscCall(VecGetArray(theta, &theta_array));
@@ -289,22 +287,22 @@ static PetscErrorCode SNESSample_PoissonGibbs(SNES snes)
       sigma         = 1. / sqrt(diag[iloc]);
       PetscCall(MatGetRow(ctx->Q_prec, i, &ncols_Q, &cols_Q, &vals_Q));
       PetscCall(MatGetRow(ctx->B_meas, i, &ncols_B, &cols_B, &vals_B));
-      PetscCall(VecGetValues(ctx->event_counts, ncols_B, cols_B, n_local));
-      PetscCall(VecGetValues(nu_tilde, ncols_B, cols_B, nu_local));
+      PetscCall(VecGetValues(ctx->event_counts, ncols_B, cols_B, poissongibbs->n_local));
+      PetscCall(VecGetValues(tmp_1, ncols_B, cols_B, poissongibbs->nu_local));
       // tilde(nu)_k^{(i)} = nu_k - sum_{j != i} B_{jk} theta_j =
       //                   = tilde(nu)_k + B_{ik} theta_i
       // and replace tilde(nu)_k by this
-      for (PetscInt k = 0; k < ncols_B; ++k) { nu_local[k] += theta_array[iloc] * vals_B[k]; }
+      for (PetscInt k = 0; k < ncols_B; ++k) { poissongibbs->nu_local[k] += theta_array[iloc] * vals_B[k]; }
       mu_bar = f_rhs_array[iloc];
       for (PetscInt j = 0; j < ncols_Q; ++j) {
         if (cols_Q[j] != i) mu_bar -= vals_Q[j] * theta_array[cols_Q[j] - rstart];
       }
-      for (PetscInt j = 0; j < ncols_B; ++j) { mu_bar += vals_B[j] * n_local[j]; }
+      for (PetscInt j = 0; j < ncols_B; ++j) { mu_bar += vals_B[j] * poissongibbs->n_local[j]; }
       mu_bar *= sigma * sigma;
       if (ncols_B > 0) {
         // Sample with rejection sampling if unknown couples to at least one
         // measurement
-        theta_bar          = find_argmax_phi(mu_bar, sigma, ncols_B, nu_local, vals_B);
+        theta_bar          = find_argmax_phi(mu_bar, sigma, ncols_B, poissongibbs->nu_local, vals_B);
         PetscBool accepted = PETSC_FALSE;
         while (!accepted) {
           PetscCall(SNESPoissonGibbsStandardNormal_Private(snes, &r));
@@ -312,8 +310,8 @@ static PetscErrorCode SNESSample_PoissonGibbs(SNES snes)
           PetscCall(PetscRandomGetValueReal(poissongibbs->prand, &r));
           PetscScalar Fbar = 0;
           for (PetscInt k = 0; k < ncols_B; ++k) {
-            Fbar += exp(vals_B[k] * theta_prime - nu_local[k]);
-            Fbar += ((theta_bar - theta_prime) * vals_B[k] - 1.0) * exp(vals_B[k] * theta_bar - nu_local[k]);
+            Fbar += exp(vals_B[k] * theta_prime - poissongibbs->nu_local[k]);
+            Fbar += ((theta_bar - theta_prime) * vals_B[k] - 1.0) * exp(vals_B[k] * theta_bar - poissongibbs->nu_local[k]);
           }
 
           if (isnan(Fbar) || isinf(Fbar)) { return PetscError(PETSC_COMM_SELF, __LINE__, PETSC_FUNCTION_NAME, __FILE__, PETSC_ERR_FP, PETSC_ERROR_INITIAL, "Encountered invalid Fbar value (NaN or Inf) in Poisson-Gibbs rejection step"); }
@@ -326,11 +324,11 @@ static PetscErrorCode SNESSample_PoissonGibbs(SNES snes)
       }
       theta_array[iloc] = theta_prime;
       // Restore tilde(nu)_k by subtracting B_{ik} tilde(theta)_k again
-      for (PetscInt k = 0; k < ncols_B; ++k) { nu_local[k] -= theta_array[iloc] * vals_B[k]; }
+      for (PetscInt k = 0; k < ncols_B; ++k) { poissongibbs->nu_local[k] -= theta_array[iloc] * vals_B[k]; }
       // Restore values
-      PetscCall(VecSetValues(nu_tilde, ncols_B, cols_B, nu_local, INSERT_VALUES));
-      PetscCall(VecAssemblyBegin(nu_tilde));
-      PetscCall(VecAssemblyEnd(nu_tilde));
+      PetscCall(VecSetValues(tmp_1, ncols_B, cols_B, poissongibbs->nu_local, INSERT_VALUES));
+      PetscCall(VecAssemblyBegin(tmp_1));
+      PetscCall(VecAssemblyEnd(tmp_1));
       PetscCall(MatRestoreRow(ctx->Q_prec, i, &ncols_Q, &cols_Q, &vals_Q));
       PetscCall(MatRestoreRow(ctx->B_meas, i, &ncols_B, &cols_B, &vals_B));
     }
@@ -340,11 +338,6 @@ static PetscErrorCode SNESSample_PoissonGibbs(SNES snes)
   // Restore solution and right hand side vectors
   PetscCall(VecRestoreArrayRead(f_rhs, &f_rhs_array));
   PetscCall(VecRestoreArray(theta, &theta_array));
-  // Free temporary storage
-  PetscCall(PetscFree(n_local));
-  PetscCall(PetscFree(nu_local));
-  PetscCall(VecDestroy(&nu_tilde));
-  PetscCall(VecDestroy(&BT_theta));
   PetscFunctionReturn(PETSC_SUCCESS);
 }
 
@@ -364,6 +357,15 @@ static PetscErrorCode SNESReset_PoissonGibbs(SNES snes)
   if (poissongibbs->prand) PetscCall(PetscRandomDestroy(&poissongibbs->prand));
   if (poissongibbs->random_workspace) PetscCall(VecDestroy(&poissongibbs->random_workspace));
   if (poissongibbs->Q_diag) PetscCall(VecDestroy(&poissongibbs->Q_diag));
+  if (poissongibbs->work) {
+    for (PetscInt i = 0; i < 2; ++i) {
+      if (poissongibbs->work[i] != NULL) PetscCall(VecDestroy(&poissongibbs->work[i]));
+    }
+    PetscCall(PetscFree(poissongibbs->work));
+  }
+  // Free temporary storage
+  if (poissongibbs->n_local) PetscCall(PetscFree(poissongibbs->n_local));
+  if (poissongibbs->nu_local) PetscCall(PetscFree(poissongibbs->nu_local));
 
   PetscCall(SNESPoissonGibbsSetIterations(snes, 1));
   PetscFunctionReturn(PETSC_SUCCESS);
@@ -400,6 +402,7 @@ static PetscErrorCode SNESSetUp_PoissonGibbs(SNES snes)
 {
   SNES_PoissonGibbs *poissongibbs;
   PoissonCtx        *ctx;
+  PetscInt           max_nnz_per_row;
 
   PetscFunctionBeginUser;
   poissongibbs = (SNES_PoissonGibbs *)snes->data;
@@ -417,7 +420,13 @@ static PetscErrorCode SNESSetUp_PoissonGibbs(SNES snes)
     PetscCall(MatCreateVecs(ctx->Q_prec, NULL, &poissongibbs->Q_diag));
     PetscCall(MatGetDiagonal(ctx->Q_prec, poissongibbs->Q_diag));
   }
-
+  // Temporary vectors
+  PetscCall(PetscMalloc1(2, &poissongibbs->work));
+  for (int i = 0; i < 2; ++i) { PetscCall(MatCreateVecs(ctx->B_meas, &poissongibbs->work[i], NULL)); }
+  // Storage for local part of vectors
+  PetscCall(SNESPoissonGibbsGetMaxNnzPerRow_Private(ctx->B_meas, &max_nnz_per_row));
+  PetscCall(PetscMalloc1(max_nnz_per_row, &poissongibbs->n_local));
+  PetscCall(PetscMalloc1(max_nnz_per_row, &poissongibbs->nu_local));
   PetscFunctionReturn(PETSC_SUCCESS);
 }
 
