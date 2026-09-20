@@ -13,10 +13,31 @@
     # Options database keys
     - `-poissonmala_stepsize` MALA stepsize epsilon
     - `-poissonmala_its`      Number of iterations
+    
+    In addition, the KSP which is used to solve linear problems \f$Qu=b\f$ involving the prior 
+    precision matrix \f$Q\f$ is configured with
+
+    - `-poissonmala_ksp_type` KSP for prior precision matrix solves
+
+    The default is to use a direct solver: `-poissonmala_ksp_type preonly -poissonmala_pc_type lu`
 
     # Notes
 
-    TODO
+    The MALA sampler uses the Langevin proposal
+
+      \f$ \theta^* = \theta + \frac{\epsilon^2}{2} M^{-1} \nabla_\theta p(\theta) + \epsilon \xi\f$
+
+    where \f$p(\theta)\f$ is the posterior probability density and \f$\xi\sim \mathcal{N}(0,M^{-1})\f$
+    is a multivariate normal random variable. The preconditioning matrix is set to the sum of the 
+    prior covariance \f$Q\f$ and a data term, namely:
+
+      \f$M = Q + B Z B^\top \f$
+
+    where \f$Z\f$ is a diagonal matrix with \f$Z_{ii} = n_i\f$ the event counts. The proposal is accepted
+    with the Metropolis-Hastin acceptance rate. As a consequence, the samples are drawn from the correct
+    distribution.    
+
+    See `snes_poissongibbs.c` for a detailled description of the probability distribution.
 */
 
 #include "parmgmc/snes/snes_poissonmala.h"
@@ -48,10 +69,10 @@ typedef struct {
                                     //   5: (various) [state]
                                     //   6: (various) [data]
                                     //   7: (various) [data]
-  KSP           ksp;                // internal linear solver
-  KSP           ksp_prior_sampler;  // KSP for sampling from the prior
+  KSP           ksp;                // internal linear solver KSP
+  KSP           ksp_prior_sampler;  // internal KSP for sampling from the prior
   PetscScalar   epsilon;            // MALA stepsize
-  PetscInt      its;                // Number of iterations
+  PetscInt      its;                // Number of iterations in each call
   unsigned long n_samples;          // Number of samples
   unsigned long n_accepted_samples; // Number of accepted samples
 } SNES_PoissonMALA;
@@ -82,7 +103,9 @@ PetscErrorCode SNESPoissonMALAGetAcceptanceStatistics(SNES snes, unsigned long *
   PetscFunctionReturn(PETSC_SUCCESS);
 }
 
-/* Compute the MALA proposal bias Phi(theta) 
+/* MALA proposal bias Phi(theta) 
+ *
+ * Compute the deterministic part of the Langevin proposal \f$\theta^* = \Phi(\theta) + \epsilon \xi\f$.
  *
  * Parameters
  *   snes [in] : underlying SNES object
@@ -129,7 +152,18 @@ static PetscErrorCode SNESPoissonMALAProposalBias_Private(SNES snes, Vec theta, 
   PetscFunctionReturn(PETSC_SUCCESS);
 }
 
-/* Compute delta_1 = log(p(theta*)/p(theta)) */
+/* Contribution to acceptance rate due to ratio of target distributions
+ *
+ * Computes ratio \f$\delta^{(1)} = \log(p(\theta^*)/p(\theta))\f$ of target probability density evaluated
+ * at proposal \f$\theta^*\f$ and current state \f$\theta\f$.
+ *
+ * Parameters
+ *   snes [in] : SNES object
+ *   theta [in] : current state \f$\theta\f$
+ *   theta_star [in] : proposal state \f$\theta^*\f$
+ *   f_rhs [in] : right hand side vector \f$f=Q\mu\f$ passed to sampler
+ *   delta_1 [out] : resulting value \f$\delta^{(1)}\f$
+ */
 static PetscErrorCode SNESPoissonMALAProposalDelta1_Private(SNES snes, Vec theta, Vec theta_star, Vec f_rhs, PetscScalar *delta_1)
 {
   SNES_PoissonMALA *poissonmala;
@@ -174,7 +208,19 @@ static PetscErrorCode SNESPoissonMALAProposalDelta1_Private(SNES snes, Vec theta
   PetscFunctionReturn(PETSC_SUCCESS);
 }
 
-/* Compute delta_2 = log(pi(theta*|theta)/pi(theta|theta*)) */
+/* Contribution to acceptance rate due to ratio of proposal distributions
+ *
+ * Compute ratio \f$\delta^{(2)} = \frac{\epsilon^2}{2} \log(\pi(\theta|\theta^*)/\pi(\theta^*|\theta))\f$
+ * of proposal densities
+ * 
+ * Parameters
+ *   snes [in] : SNES object
+ *   theta [in] : current state \f$\theta\f$
+ *   theta_star [in] : proposal state \f$\theta^*\f$
+ *   phi [in] : bias \f$\Phi(\theta)\f$
+ *   phi_star [in] : bias \f$\Phi(\theta^*)\f$
+ *   delta_2 [out] : resulting value \f$\delta^{(2)}\f$
+ */
 static PetscErrorCode SNESPoissonMALAProposalDelta2_Private(SNES snes, Vec theta, Vec theta_star, Vec phi, Vec phi_star, PetscScalar *delta_2)
 {
   SNES_PoissonMALA *poissonmala;
@@ -216,6 +262,14 @@ static PetscErrorCode SNESPoissonMALAProposalDelta2_Private(SNES snes, Vec theta
   PetscFunctionReturn(PETSC_SUCCESS);
 }
 
+/* Draw multivariate normal for Langevin proposal 
+ * 
+ * Draws the random vector \f$\xi\sim\mathcal{N}(0,M^{-1})\f$ from a multivariate normal distribution.
+ *
+ * Parameters
+ *   snes [in] : SNES object
+ *   xi [out] : Resulting random vector \f$\xi\f$
+ */
 static PetscErrorCode SNESPoissonMALAProposalDraw_Private(SNES snes, Vec xi)
 {
   SNES_PoissonMALA *poissonmala;
@@ -244,7 +298,9 @@ static PetscErrorCode SNESPoissonMALAProposalDraw_Private(SNES snes, Vec xi)
 
 /* Generate a new sample by updating theta -> theta' 
  *
- * This is the key computational routine for generating a new sample. 
+ * This is the key computational routine for generating a new sample. Performs a number of MALA steps,
+ * each of which consists in generating a proposal \f$\theta^* = \Phi(\theta) + \epsilon \xi\f$ and 
+ * the screening this according to Metropolis Hastings.
  *
  * Parameters
  *   snes [inout] : underlying SNES object
@@ -296,7 +352,7 @@ static PetscErrorCode SNESSample_PoissonMALA(SNES snes)
 
 /* Reset SNES object
  *
- * Free contents of temporary workspace to prepare object for reuse
+ * Free contents of temporary workspace and resets sampling data to prepare object for reuse.
  *
  * Parameters
  *   snes [inout] : SNES object
@@ -345,6 +401,10 @@ static PetscErrorCode SNESDestroy_PoissonMALA(SNES snes)
 }
 
 /* Set up SNES object
+ *
+ * Construct the matrix \f$G\f$ that are required for the low-rank corrections, set up auxilliary vectors.
+ * Set up internal KSPs for drawing the random variable \f$\xi\sim\mathcal{N}(0,M^{-1})\f$ in the Langevin
+ * proposal.
  *   
  * Parameters
  *   snes [inout] : SNES object
@@ -414,7 +474,7 @@ static PetscErrorCode SNESSetUp_PoissonMALA(SNES snes)
 
 /* Inspect options database to set SNES parameters
  *
- * The only parameter that can be set is the stepsize epsilon
+ * The two parameter that can be set are the stepsize epsilon and the number of iterations
  *
  * Parameters
  *   snes [inout] : SNES object
