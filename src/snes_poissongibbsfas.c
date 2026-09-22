@@ -109,8 +109,8 @@ static PetscErrorCode SNESReset_PoissonGibbsFAS(SNES snes)
     PetscCall(PetscFree(poissongibbsfas->smoother_ctx));
   }
   if (poissongibbsfas->z_dummy) PetscCall(VecDestroy(&poissongibbsfas->z_dummy));
-  PetscCall(PCDestroy(&poissongibbsfas->mg));
-  PetscCall(SNESDestroy(&poissongibbsfas->fas));
+  PetscCall(PCReset(poissongibbsfas->mg));
+  PetscCall(SNESReset(poissongibbsfas->fas));
   PetscFunctionReturn(PETSC_SUCCESS);
 }
 
@@ -127,6 +127,9 @@ static PetscErrorCode SNESDestroy_PoissonGibbsFAS(SNES snes)
   SNES_PoissonGibbsFAS *poissongibbsfas = (SNES_PoissonGibbsFAS *)snes->data;
 
   PetscFunctionBeginUser;
+  PetscCall(SNESReset_PoissonGibbsFAS(snes));
+  PetscCall(PCDestroy(&poissongibbsfas->mg));
+  PetscCall(SNESDestroy(&poissongibbsfas->fas));
   PetscCall(PetscFree(poissongibbsfas));
   PetscFunctionReturn(PETSC_SUCCESS);
 }
@@ -156,7 +159,7 @@ static PetscErrorCode SNESPoissonGibbsSetupMultigrid_Private(SNES snes)
   PetscCall(PCSetOperators(poissongibbsfas->mg, ctx->Q_prec, ctx->Q_prec));
   PetscCall(PCSetUp(poissongibbsfas->mg));
   PetscCall(PCMGGetLevels(poissongibbsfas->mg, &nlevels));
-  PetscCall(PetscMalloc1(nlevels, &poissongibbsfas->smoother_ctx));
+  if (poissongibbsfas->smoother_ctx == NULL) PetscCall(PetscMalloc1(nlevels, &poissongibbsfas->smoother_ctx));
   // Extract prolongation operators
   PetscCall(PCGetInterpolations(poissongibbsfas->mg, &nlevels, &P));
   // Construct precision- and measurement matrices on all levels
