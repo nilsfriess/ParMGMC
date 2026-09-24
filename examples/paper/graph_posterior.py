@@ -12,17 +12,17 @@ The QoI is the same ball average as for the prior; its exact posterior mean and 
 """
 
 import sys
+import time
 
 import numpy as np
 import petsc4py
 
 petsc4py.init(sys.argv)
 import pymgmc  # noqa: E402
-from emcee.autocorr import integrated_time  # noqa: E402
 from petsc4py import PETSc  # noqa: E402
 
 import graph  # noqa: E402
-from graph_prior import sample  # noqa: E402
+from graph_prior import iact, sample  # noqa: E402
 
 UNOBSERVED = ("bgr", "root")  # background / unassigned atlas labels
 
@@ -78,18 +78,29 @@ def main() -> None:
     pymgmc.seed(seed)
     comm = PETSc.COMM_WORLD
 
+    graph.log(f"loading {filename} ...")
+    t = time.perf_counter()
     G = graph.load(filename)
+    t_load = time.perf_counter() - t
     w = graph.ball_mean_weights_petsc(G, radius)
+    ginfo = G.info()
+    graph.log("building the observation operator ...")
+    t = time.perf_counter()
     B = observation_operator(G)
-    PETSc.Sys.Print(f"{filename}: n = {G.n}, {B.getSize()[1]} observed regions, {comm.getSize()} ranks")
+    t_obs = time.perf_counter() - t
+    nobs = B.getSize()[1]
+    graph.log(f"{filename}: n = {G.n}, {nobs} observed regions, {comm.getSize()} ranks")
 
+    rows = []
     for kappa in kappas:
+        graph.log(f"kappa {kappa:.0e}:")
         Q = graph.precision_petsc(G.L, kappa)
 
         # Synthetic data from a prior sample
+        graph.log("  drawing the true field from the prior ...")
         zero = Q.createVecLeft()
         zero.zeroEntries()
-        _, _, truth = sample(Q, zero, w, nburnin, 0)
+        _, truth_stats, truth = sample(Q, zero, w, nburnin, 0)
         y, _ = B.createVecs()
         B.multTranspose(truth, y)
         sigma = noise * np.sqrt(y.dot(y) / y.getSize())
@@ -105,20 +116,61 @@ def main() -> None:
         Sy.pointwiseMult(S, y)
         B.mult(Sy, f)
 
-        qoi, t_sample, _ = sample(A, f, w, nburnin, nsamples)
-        tau = integrated_time(qoi, quiet=True)[0]
+        graph.log("  sampling the posterior ...")
+        qoi, stats, _ = sample(A, f, w, nburnin, nsamples)
+        tau_raw, tau = iact(qoi)
+        graph.log("  computing the exact posterior mean and variance ...")
+        t = time.perf_counter()
         mean = w.dot(solve(A, Q, f))
         var = w.dot(solve(A, Q, w))
         var_prior = w.dot(solve(Q, Q, w))
-        PETSc.Sys.Print(
-            f"kappa {kappa:.0e}: {1e3 * t_sample:.1f} ms/sample, IACT {tau:.1f}, "
-            f"{1e3 * t_sample * tau:.1f} ms/independent sample\n"
-            f"    QoI: truth {w.dot(truth):+.4f}, posterior mean {qoi.mean():+.4f} "
-            f"(+- {2 * np.sqrt(var * tau / nsamples):.4f}, exact {mean:+.4f}), "
+        t_exact = time.perf_counter() - t
+        t_indep = stats["t_per_sample"] * tau
+        err = 2 * np.sqrt(var * tau / nsamples)
+        truth_qoi = w.dot(truth)
+        graph.log(
+            f"kappa {kappa:.0e}: {1e3 * stats['t_per_sample']:.1f} ms/sample, IACT {tau:.1f}, "
+            f"{1e3 * t_indep:.1f} ms/independent sample\n"
+            f"    QoI: truth {truth_qoi:+.4f}, posterior mean {qoi.mean():+.4f} "
+            f"(+- {err:.4f}, exact {mean:+.4f}), "
             f"var {qoi.var():.2e} (exact {var:.2e}, prior {var_prior:.2e})"
+        )
+        rows.append(
+            {
+                **graph.run_info("graph_posterior.py"),  # after sampling, so it includes the sampler's default options
+                "graph": filename,
+                **ginfo,
+                "nnz_Q": int(Q.getInfo(PETSc.Mat.InfoType.GLOBAL_SUM)["nz_used"]),
+                "kappa": kappa,
+                "seed": seed,
+                "nburnin": nburnin,
+                "nsamples": nsamples,
+                "qoi_radius": radius,
+                "qoi_nodes": graph.count_nonzero(w),
+                "observations": nobs,
+                "noise_rel": noise,
+                "sigma": sigma,
+                "t_load": t_load,
+                "t_observation_operator": t_obs,
+                "t_truth_ksp_setup": truth_stats["t_ksp_setup"],
+                "t_truth_burnin": truth_stats["t_burnin"],
+                **stats,
+                "iact_raw": tau_raw,
+                "iact": tau,
+                "t_per_indep_sample": t_indep,
+                "qoi_truth": truth_qoi,
+                "qoi_mean": qoi.mean(),
+                "qoi_mean_err_2sigma": err,
+                "qoi_mean_exact": mean,
+                "qoi_var": qoi.var(),
+                "qoi_var_exact": var,
+                "qoi_var_prior_exact": var_prior,
+                "t_exact": t_exact,
+            }
         )
         A.destroy()
         Q.destroy()
+    graph.print_csv(rows)
 
 
 if __name__ == "__main__":

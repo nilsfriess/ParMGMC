@@ -17,19 +17,14 @@ import pyvista as pv  # noqa: E402
 from petsc4py import PETSc  # noqa: E402
 
 import graph  # noqa: E402
-from graph_prior import make_sampler  # noqa: E402
+from graph_prior import sample  # noqa: E402
 
 
 def draw_sample(A: PETSc.Mat, nsteps: int) -> PETSc.Vec:
     """State of the chain after nsteps iterations started from zero."""
-    ksp = make_sampler(A)
-    b, x = A.createVecs()
+    b = A.createVecLeft()
     b.zeroEntries()
-    x.zeroEntries()
-    ksp.setTolerances(max_it=nsteps)
-    ksp.solve(b, x)
-    ksp.destroy()
-    return x
+    return sample(A, b, None, nsteps, 0)[2]
 
 
 def gather(x: PETSc.Vec, rows: PETSc.IS, n: int) -> np.ndarray | None:

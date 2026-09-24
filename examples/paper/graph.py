@@ -4,6 +4,12 @@ Nodes are vessel branch points, edges are vessel segments; positions and lengths
 are in voxels of the 3um scan.
 """
 
+import csv
+import datetime
+import io
+import os
+import socket
+import subprocess
 from dataclasses import dataclass
 
 import numpy as np
@@ -21,6 +27,57 @@ EDGES_CSV = PREFIX + "_edges_processed.csv"
 ATLAS_CSV = PREFIX + "_atlas_processed.csv"  # one-hot brain region (Allen atlas) of each node
 
 Coords = npt.NDArray[np.float64]
+
+
+def log(msg: str) -> None:
+    """Print on rank 0 and flush immediately (progress output should appear even when redirected)."""
+    if PETSc.COMM_WORLD.getRank() == 0:
+        print(msg, flush=True)
+
+
+def git_commit() -> str:
+    """Short hash of the ParMGMC checkout this script lives in, with +dirty if tracked files are modified."""
+    repo = os.path.dirname(os.path.abspath(__file__))
+
+    def run(*args: str) -> subprocess.CompletedProcess:
+        return subprocess.run(["git", "-C", repo, *args], capture_output=True, text=True, check=True)
+
+    try:
+        dirty = run("status", "--porcelain", "--untracked-files=no").stdout.strip()
+        return run("rev-parse", "--short", "HEAD").stdout.strip() + ("+dirty" if dirty else "")
+    except (OSError, subprocess.CalledProcessError):
+        return "unknown"
+
+
+def run_info(script: str) -> dict:
+    """Context of this run for the CSV output."""
+    options = PETSc.Options().getAll()
+    return {
+        "script": script,
+        "date": datetime.datetime.now().isoformat(timespec="seconds"),
+        "host": socket.gethostname(),
+        "parmgmc_commit": git_commit(),
+        "petsc_version": ".".join(str(v) for v in PETSc.Sys.getVersion()),
+        "ranks": PETSc.COMM_WORLD.getSize(),
+        "petsc_options": " ".join(f"-{k}" if v in (None, "") else f"-{k} {v}" for k, v in sorted(options.items())),
+    }
+
+
+def count_nonzero(v: PETSc.Vec) -> int:
+    """Number of nonzero entries of a distributed vector."""
+    return v.getComm().tompi4py().allreduce(int(np.count_nonzero(v.getArray())))
+
+
+def print_csv(rows: list[dict]) -> None:
+    """Print the rows as CSV (header from the keys of the first row) on rank 0, after a marker line."""
+    if not rows or PETSc.COMM_WORLD.getRank() != 0:
+        return
+    out = io.StringIO()
+    writer = csv.DictWriter(out, fieldnames=list(rows[0].keys()))
+    writer.writeheader()
+    writer.writerows(rows)
+    print("\n# CSV", flush=True)
+    print(out.getvalue(), end="", flush=True)
 
 
 def load_graph(regions: bool = False) -> tuple:
@@ -181,6 +238,11 @@ class DistributedGraph:
     @property
     def n(self) -> int:
         return self.L.getSize()[0]
+
+    def info(self) -> dict:
+        """Size and partition of the graph for the CSV output."""
+        nnz = self.L.getInfo(PETSc.Mat.InfoType.GLOBAL_SUM)["nz_used"]
+        return {"n": self.n, "edges": int(nnz) // 2, "edges_cut": cut_fraction(self.L)}
 
 
 def write(filename: str, coords: Coords, L: sp.csr_array, regions: np.ndarray, names: list[str]) -> None:
