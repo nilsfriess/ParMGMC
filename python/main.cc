@@ -40,13 +40,8 @@ PYBIND11_MODULE(pymgmc, m)
   });
 
   m.def("seed", [](unsigned long s) {
-    PetscRandom pr;
-
     PetscFunctionBegin;
-    PetscCallVoid(ParMGMCGetPetscRandom(&pr));
-    PetscCallVoid(PetscRandomSetSeed(pr, s));
-    PetscCallVoid(PetscRandomSeed(pr));
-    PetscCallVoid(PetscRandomDestroy(&pr)); // release the ref given by ParMGMCGetPetscRandom
+    PetscCallVoid(ParMGMCSetSeed(s));
     PetscFunctionReturnVoid();
   });
 };

@@ -33,4 +33,5 @@ PETSC_EXTERN PetscErrorCode PCRegisterSetSampleCallback(PC, PetscErrorCode (*)(P
 PETSC_EXTERN PetscErrorCode PCSetSampleCallback(PC, PetscErrorCode (*)(PetscInt, Vec, void *), void *, PetscErrorCode (*)(void *));
 
 PETSC_EXTERN PetscErrorCode ParMGMCGetPetscRandom(PetscRandom *);
+PETSC_EXTERN PetscErrorCode ParMGMCSetSeed(unsigned long);
 PETSC_EXTERN PetscErrorCode VecSetRandomStandardNormal(Vec, PetscRandom);

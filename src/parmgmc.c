@@ -115,6 +115,28 @@ PetscErrorCode VecSetRandomStandardNormal(Vec v, PetscRandom r)
   PetscFunctionReturn(PETSC_SUCCESS);
 }
 
+PetscErrorCode ParMGMCSetSeed(unsigned long seed)
+{
+  PetscRandom pr;
+
+  PetscFunctionBeginUser;
+  PetscCall(ParMGMCGetPetscRandom(&pr));
+  PetscCall(PetscRandomSetSeed(pr, seed));
+  PetscCall(PetscRandomSeed(pr));
+  PetscCall(PetscRandomDestroy(&pr)); /* release the extra ref from ParMGMCGetPetscRandom */
+#ifdef PARMGMC_HAVE_MKL
+  /* The MKL VSL stream is created lazily and then cached, so it does not pick up the new
+     seed on its own. Drop it here; the next VecSetRandomStandardNormal recreates it from
+     the updated seed. Without this, reseeding after the first draw would silently have no
+     effect on the MKL path. */
+  if (parmgmc_vsl_stream) {
+    vslDeleteStream(&parmgmc_vsl_stream);
+    parmgmc_vsl_stream = NULL;
+  }
+#endif
+  PetscFunctionReturn(PETSC_SUCCESS);
+}
+
 PetscErrorCode ParMGMCInitialize(void)
 {
   PetscFunctionBeginUser;
