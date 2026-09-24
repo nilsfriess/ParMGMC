@@ -1,8 +1,10 @@
 """Sample the posterior of a linear Bayesian inverse problem on the vessel graph.
 
 Prior: the Whittle-Matérn field of graph_prior.py with precision Q. Observations: the length-weighted mean of the
-field over each brain region of the atlas, y = B^T u* + noise, for a "true" field u* drawn from the prior and
-Gaussian noise with standard deviation ``-noise`` times the RMS of B^T u*. The posterior N(A^{-1} f, A^{-1}) has
+field over each brain region of the atlas, B^T u. The observed values are arbitrary but fixed: y_k = obs_scale * xi_k
+with xi_k ~ N(0, 1) from a seeded generator (``-obs_scale``, ``-obs_seed``), the same on every rank; the noise has a
+fixed standard deviation ``-sigma``. So every run (any kappa, any number of ranks) solves the same problem; the data
+do not affect the cost of sampling anyway. The posterior N(A^{-1} f, A^{-1}) has
 precision A = Q + B Sigma^{-1} B^T (a low-rank update, MATLRC) and f = B Sigma^{-1} y.
 
 The QoI is the same ball average as for the prior; its exact posterior mean and variance are computed for comparison.
@@ -71,7 +73,9 @@ def main() -> None:
     kappas = opts.getRealArray("kappas", np.array([1e-1, 1e-2, 1e-3]))
     filename = opts.getString("graph", "vessel.dat")  # written by preprocess_graph.py
     radius = opts.getReal("radius", 200.0)  # QoI ball radius in voxels
-    noise = opts.getReal("noise", 0.1)  # noise std relative to the RMS of the noise-free observations
+    obs_scale = opts.getReal("obs_scale", 0.05)  # observed values y_k = obs_scale * N(0, 1), fixed by obs_seed
+    obs_seed = opts.getInt("obs_seed", 0)
+    sigma = opts.getReal("sigma", 0.01)  # observation noise standard deviation
     nburnin = opts.getInt("nburnin", 100)
     nsamples = opts.getInt("nsamples", 1000)
     seed = opts.getInt("seed", 1)
@@ -96,18 +100,10 @@ def main() -> None:
         graph.log(f"kappa {kappa:.0e}:")
         Q = graph.precision_petsc(G.L, kappa)
 
-        # Synthetic data from a prior sample
-        graph.log("  drawing the true field from the prior ...")
-        zero = Q.createVecLeft()
-        zero.zeroEntries()
-        _, truth_stats, truth = sample(Q, zero, w, nburnin, 0)
-        y, _ = B.createVecs()
-        B.multTranspose(truth, y)
-        sigma = noise * np.sqrt(y.dot(y) / y.getSize())
-        rng = np.random.default_rng(seed + comm.getRank())
-        y.array[:] += sigma * rng.standard_normal(y.getLocalSize())
-
         # Posterior precision A = Q + B Sigma^{-1} B^T and right-hand side f = B Sigma^{-1} y
+        y, _ = B.createVecs()
+        lo, hi = y.getOwnershipRange()
+        y.array[:] = obs_scale * np.random.default_rng(obs_seed).standard_normal(y.getSize())[lo:hi]
         S = y.duplicate()
         S.set(1 / sigma**2)
         A = PETSc.Mat().createLRC(Q, B, S, None)
@@ -127,11 +123,10 @@ def main() -> None:
         t_exact = time.perf_counter() - t
         t_indep = stats["t_per_sample"] * tau
         err = 2 * np.sqrt(var * tau / nsamples)
-        truth_qoi = w.dot(truth)
         graph.log(
             f"kappa {kappa:.0e}: {1e3 * stats['t_per_sample']:.1f} ms/sample, IACT {tau:.1f}, "
             f"{1e3 * t_indep:.1f} ms/independent sample\n"
-            f"    QoI: truth {truth_qoi:+.4f}, posterior mean {qoi.mean():+.4f} "
+            f"    QoI: posterior mean {qoi.mean():+.4f} "
             f"(+- {err:.4f}, exact {mean:+.4f}), "
             f"var {qoi.var():.2e} (exact {var:.2e}, prior {var_prior:.2e})"
         )
@@ -148,17 +143,15 @@ def main() -> None:
                 "qoi_radius": radius,
                 "qoi_nodes": graph.count_nonzero(w),
                 "observations": nobs,
-                "noise_rel": noise,
+                "obs_scale": obs_scale,
+                "obs_seed": obs_seed,
                 "sigma": sigma,
                 "t_load": t_load,
                 "t_observation_operator": t_obs,
-                "t_truth_ksp_setup": truth_stats["t_ksp_setup"],
-                "t_truth_burnin": truth_stats["t_burnin"],
                 **stats,
                 "iact_raw": tau_raw,
                 "iact": tau,
                 "t_per_indep_sample": t_indep,
-                "qoi_truth": truth_qoi,
                 "qoi_mean": qoi.mean(),
                 "qoi_mean_err_2sigma": err,
                 "qoi_mean_exact": mean,

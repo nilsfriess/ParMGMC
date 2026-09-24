@@ -26,13 +26,17 @@ if PETSc.COMM_WORLD.getRank() != 0:  # emcee's warnings about short chains once,
     logging.getLogger("emcee").setLevel(logging.ERROR)
 
 
-def make_sampler(A: PETSc.Mat) -> PETSc.KSP:
-    """Richardson iteration with a sampler as preconditioner; every iteration produces one sample."""
+def make_sampler(A: PETSc.Mat, prefix: str = "") -> PETSc.KSP:
+    """Richardson iteration with a sampler as preconditioner; every iteration produces one sample.
+
+    Configured with the options under ``prefix``; defaults to algebraic MGMC.
+    """
     opts = PETSc.Options()
     for key, value in {"ksp_type": "richardson", "pc_type": "gamgmc", "ksp_convergence_test": "skip"}.items():
-        if not opts.hasName(key):
-            opts[key] = value
+        if not opts.hasName(prefix + key):
+            opts[prefix + key] = value
     ksp = PETSc.KSP().create(A.getComm())
+    ksp.setOptionsPrefix(prefix)
     ksp.setOperators(A)
     ksp.setInitialGuessNonzero(True)  # continue the chain from the current sample
     ksp.setNormType(PETSc.KSP.NormType.NONE)
@@ -57,14 +61,14 @@ def run_chain(ksp: PETSc.KSP, b: PETSc.Vec, x: PETSc.Vec, n: int, label: str, w:
     return qoi
 
 
-def sample(A: PETSc.Mat, b: PETSc.Vec, w: PETSc.Vec | None, nburnin: int, nsamples: int) -> tuple:
+def sample(A: PETSc.Mat, b: PETSc.Vec, w: PETSc.Vec | None, nburnin: int, nsamples: int, prefix: str = "") -> tuple:
     """Sample N(A^{-1} b, A^{-1}) starting from zero.
 
     Returns the QoI w^T x of each sample after burn-in (if w is given), a dict with the sampler type and the
     timings (KSP setup, burn-in, sampling, per sample) and the last sample.
     """
     comm = A.getComm()
-    ksp = make_sampler(A)
+    ksp = make_sampler(A, prefix)
     x = b.duplicate()
     x.zeroEntries()
     stats = {"sampler": ksp.getPC().getType()}
