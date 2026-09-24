@@ -29,9 +29,9 @@
 typedef struct {
   Vec           r, v, v_cache, xl, yl;
   Mat           F;
-  PetscScalar  *dense_L;       /* Lower Cholesky factor (column-major, leading dimension dense_n)
+  PetscScalar  *dense_L;         /* Lower Cholesky factor (column-major, leading dimension dense_n)
                                   used for small sequential blocks, e.g. ASM patch smoothers. */
-  PetscBLASInt  dense_n;       /* Size of the dense factor; 0 if the dense fast path is not used. */
+  PetscBLASInt  dense_n;         /* Size of the dense factor; 0 if the dense fast path is not used. */
   PetscInt      dense_threshold; /* Blocks of size <= this are factored and solved densely. */
   PetscRandom   prand;
   MatSolverType st;
@@ -209,6 +209,10 @@ static PetscErrorCode PCSetUp_CholSampler(PC pc)
   }
   if (size != 1 && !chol->is_gamg_coarse) PetscCall(MatDestroy(&S));
   if (flag) PetscCall(MatDestroy(&P));
+
+  /* Converting pc->pmat above (to SBAIJ in parallel) can increase its object state. PCSetUp() records the state
+     before calling this routine, so without this every PCApply() would see a "changed" matrix and factor again. */
+  PetscCall(PetscObjectStateGet((PetscObject)pc->pmat, &pc->matstate));
 
   /* pc->setupcalled         = PETSC_TRUE; */
   /* pc->reusepreconditioner = PETSC_TRUE; */
@@ -402,6 +406,26 @@ PetscErrorCode PCCholSamplerSetIsCoarseGAMG(PC pc, PetscBool flag)
   PetscFunctionBeginUser;
   chol->is_gamg_coarse = flag;
   if (flag) chol->st = PARMGMC_DEFAULT_SEQ_CHOLESKY;
+  PetscFunctionReturn(PETSC_SUCCESS);
+}
+
+/*@
+  PCCholSamplerGetFactor - Returns the sparse Cholesky factor of a set-up PCCHOLSAMPLER (borrowed reference), e.g.
+  to reuse it for deterministic solves with MatForwardSolve()/MatBackwardSolve().
+
+  Not available for small blocks that are factored densely or for the GAMG coarse-grid mode.
+@*/
+PetscErrorCode PCCholSamplerGetFactor(PC pc, Mat *F)
+{
+  PC_CholSampler chol;
+  PetscBool      is_chol;
+
+  PetscFunctionBeginUser;
+  PetscCall(PetscObjectTypeCompare((PetscObject)pc, PCCHOLSAMPLER, &is_chol));
+  PetscCheck(is_chol, PetscObjectComm((PetscObject)pc), PETSC_ERR_ARG_WRONG, "PC is not of type %s", PCCHOLSAMPLER);
+  chol = pc->data;
+  PetscCheck(chol->F && !chol->is_gamg_coarse, PetscObjectComm((PetscObject)pc), PETSC_ERR_ARG_WRONGSTATE, "No sparse Cholesky factor available (not set up, dense block or GAMG coarse mode)");
+  *F = chol->F;
   PetscFunctionReturn(PETSC_SUCCESS);
 }
 

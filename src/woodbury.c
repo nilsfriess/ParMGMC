@@ -1,4 +1,5 @@
 #include "parmgmc/pc/woodbury.h"
+#include "parmgmc/pc/pc_chols.h"
 #include "parmgmc/parmgmc.h"
 
 #include <petsc/private/pcimpl.h>
@@ -13,45 +14,33 @@ typedef struct {
 
   Vec wk, sqrtS, zn, swork;
 
+  /* Fast path if the sampler is a PCCHOLSAMPLER with factor A = L L^T: its factor F is also used for the solves
+     (no second factorisation), W = L^{-1} B is precomputed so that per sample only one backward solve is needed. */
+  PetscBool use_chol;
+  Mat       F, W; /* F is borrowed from the sampler */
+  Vec       u, v, z;
+
   void *cbctx;
   PetscErrorCode (*scb)(PetscInt, Vec, void *);
   PetscErrorCode (*del_scb)(void *);
 } *PC_Woodbury;
 
-static PetscErrorCode PCWoodburyBuildLRCCorrection(PC pc)
+/* Given C = A^{-1} B, form G = C (S^{-1} + B^T C)^{-1}, used for the correction y -= G B^T y. */
+static PetscErrorCode PCWoodburyBuildG(PC pc, Mat B, Vec S, Mat C)
 {
   PC_Woodbury wb = (PC_Woodbury)pc->data;
-  Mat         A, B, C, tmp, Id, Sb;
+  Mat         tmp, Id, Sb;
   KSP         ksp;
-  Vec         S, x, Si;
+  Vec         Si;
   IS          sctis;
   VecScatter  sct;
-  PetscInt    cols, sctsize;
+  PetscInt    sctsize;
   MPI_Comm    comm;
 
   PetscFunctionBeginUser;
   PetscCall(PetscObjectGetComm((PetscObject)pc, &comm));
-  PetscCall(MatLRCGetMats(pc->pmat, &A, &B, &S, NULL));
 
-  // Step 1: C = wb->solver(B), column by column
-  PetscCall(MatDuplicate(B, MAT_DO_NOT_COPY_VALUES, &C));
-  PetscCall(MatGetSize(B, NULL, &cols));
-  PetscCall(MatCreateVecs(A, &x, NULL));
-  for (PetscInt i = 0; i < cols; ++i) {
-    Vec b, c;
-
-    PetscCall(VecZeroEntries(x));
-    PetscCall(MatDenseGetColumnVecRead(B, i, &b));
-    PetscCall(PCApply(wb->solver, b, x));
-    PetscCall(MatDenseRestoreColumnVecRead(B, i, &b));
-
-    PetscCall(MatDenseGetColumnVecWrite(C, i, &c));
-    PetscCall(VecCopy(x, c));
-    PetscCall(MatDenseRestoreColumnVecWrite(C, i, &c));
-  }
-  PetscCall(VecDestroy(&x));
-
-  // Step 2: form tmp = S^-1 + B^T C and invert (k x k).
+  // Form tmp = S^-1 + B^T C and invert (k x k).
   PetscCall(MatTransposeMatMult(B, C, MAT_INITIAL_MATRIX, 1, &tmp)); // tmp = B^T M_A^-1 B
 
   // Scatter S into a vec compatible with C's column layout.
@@ -81,7 +70,76 @@ static PetscErrorCode PCWoodburyBuildLRCCorrection(PC pc)
   PetscCall(MatDestroy(&Id));
   PetscCall(MatDestroy(&Sb));
   PetscCall(MatDestroy(&tmp));
+  PetscFunctionReturn(PETSC_SUCCESS);
+}
+
+/* Generic path: C = A^{-1} B with the (deterministic) solver PC, column by column. */
+static PetscErrorCode PCWoodburyBuildLRCCorrection(PC pc)
+{
+  PC_Woodbury wb = (PC_Woodbury)pc->data;
+  Mat         A, B, C;
+  Vec         S, x;
+  PetscInt    cols;
+
+  PetscFunctionBeginUser;
+  PetscCall(MatLRCGetMats(pc->pmat, &A, &B, &S, NULL));
+  PetscCall(MatDuplicate(B, MAT_DO_NOT_COPY_VALUES, &C));
+  PetscCall(MatGetSize(B, NULL, &cols));
+  PetscCall(MatCreateVecs(A, &x, NULL));
+  for (PetscInt i = 0; i < cols; ++i) {
+    Vec b, c;
+
+    PetscCall(VecZeroEntries(x));
+    PetscCall(MatDenseGetColumnVecRead(B, i, &b));
+    PetscCall(PCApply(wb->solver, b, x));
+    PetscCall(MatDenseRestoreColumnVecRead(B, i, &b));
+
+    PetscCall(MatDenseGetColumnVecWrite(C, i, &c));
+    PetscCall(VecCopy(x, c));
+    PetscCall(MatDenseRestoreColumnVecWrite(C, i, &c));
+  }
+  PetscCall(VecDestroy(&x));
+  PetscCall(PCWoodburyBuildG(pc, B, S, C));
   PetscCall(MatDestroy(&C));
+  PetscFunctionReturn(PETSC_SUCCESS);
+}
+
+/* Cholesky path: with the sampler's factor A = L L^T, W = L^{-1} B (kept for sampling) and C = L^{-T} W = A^{-1} B. */
+static PetscErrorCode PCWoodburyBuildLRCCorrectionChol(PC pc)
+{
+  PC_Woodbury wb = (PC_Woodbury)pc->data;
+  Mat         A, B, C;
+  Vec         S;
+  PetscInt    cols;
+
+  PetscFunctionBeginUser;
+  PetscCall(MatLRCGetMats(pc->pmat, &A, &B, &S, NULL));
+  PetscCall(PCCholSamplerGetFactor(wb->sampler, &wb->F));
+  PetscCall(MatDuplicate(B, MAT_DO_NOT_COPY_VALUES, &wb->W));
+  PetscCall(MatDuplicate(B, MAT_DO_NOT_COPY_VALUES, &C));
+  PetscCall(MatGetSize(B, NULL, &cols));
+  for (PetscInt i = 0; i < cols; ++i) {
+    Vec b, w;
+
+    PetscCall(MatDenseGetColumnVecRead(B, i, &b));
+    PetscCall(MatDenseGetColumnVecWrite(wb->W, i, &w));
+    PetscCall(MatForwardSolve(wb->F, b, w));
+    PetscCall(MatDenseRestoreColumnVecWrite(wb->W, i, &w));
+    PetscCall(MatDenseRestoreColumnVecRead(B, i, &b));
+  }
+  for (PetscInt i = 0; i < cols; ++i) {
+    Vec w, c;
+
+    PetscCall(MatDenseGetColumnVecRead(wb->W, i, &w));
+    PetscCall(MatDenseGetColumnVecWrite(C, i, &c));
+    PetscCall(MatBackwardSolve(wb->F, w, c));
+    PetscCall(MatDenseRestoreColumnVecWrite(C, i, &c));
+    PetscCall(MatDenseRestoreColumnVecRead(wb->W, i, &w));
+  }
+  PetscCall(PCWoodburyBuildG(pc, B, S, C));
+  PetscCall(MatDestroy(&C));
+  PetscCall(MatCreateVecs(A, &wb->u, &wb->v));
+  PetscCall(VecDuplicate(wb->v, &wb->z));
   PetscFunctionReturn(PETSC_SUCCESS);
 }
 
@@ -90,6 +148,11 @@ static PetscErrorCode PCReset_Woodbury(PC pc)
   PC_Woodbury wb = (PC_Woodbury)pc->data;
 
   PetscFunctionBeginUser;
+  PetscCall(MatDestroy(&wb->W));
+  PetscCall(VecDestroy(&wb->u));
+  PetscCall(VecDestroy(&wb->v));
+  PetscCall(VecDestroy(&wb->z));
+  wb->F = NULL;
   PetscCall(PetscRandomDestroy(&wb->prand));
   PetscCall(VecDestroy(&wb->wk));
   PetscCall(VecDestroy(&wb->sqrtS));
@@ -107,6 +170,11 @@ static PetscErrorCode PCDestroy_Woodbury(PC pc)
   PC_Woodbury wb = (PC_Woodbury)pc->data;
 
   PetscFunctionBeginUser;
+  PetscCall(MatDestroy(&wb->W));
+  PetscCall(VecDestroy(&wb->u));
+  PetscCall(VecDestroy(&wb->v));
+  PetscCall(VecDestroy(&wb->z));
+  wb->F = NULL;
   PetscCall(PetscRandomDestroy(&wb->prand));
   PetscCall(VecDestroy(&wb->wk));
   PetscCall(VecDestroy(&wb->sqrtS));
@@ -147,7 +215,15 @@ static PetscErrorCode PCSetUp_Woodbury(PC pc)
   Vec         S;
 
   PetscFunctionBegin;
-  PetscCheck(wb->solver && wb->sampler, PetscObjectComm((PetscObject)pc), PETSC_ERR_SUP, "Must provide sampler and solver");
+  PetscCheck(wb->sampler, PetscObjectComm((PetscObject)pc), PETSC_ERR_SUP, "Must provide a sampler");
+  PetscCall(PetscObjectTypeCompare((PetscObject)wb->sampler, PCCHOLSAMPLER, &wb->use_chol));
+  if (wb->use_chol) PetscCall(PCDestroy(&wb->solver)); /* not needed: the sampler's factor is used for the solves */
+  PetscCheck(wb->use_chol || wb->solver, PetscObjectComm((PetscObject)pc), PETSC_ERR_SUP, "Must provide a solver (unless the sampler is %s)", PCCHOLSAMPLER);
+  PetscCall(MatDestroy(&wb->W));
+  PetscCall(VecDestroy(&wb->u));
+  PetscCall(VecDestroy(&wb->v));
+  PetscCall(VecDestroy(&wb->z));
+  wb->F = NULL;
   PetscCall(VecDestroy(&wb->wk));
   PetscCall(VecDestroy(&wb->sqrtS));
   PetscCall(VecDestroy(&wb->zn));
@@ -175,12 +251,16 @@ static PetscErrorCode PCSetUp_Woodbury(PC pc)
     PetscCall(VecRestoreArray(wb->sqrtS, &sqrtSarr));
   }
   PetscCall(VecSqrtAbs(wb->sqrtS));
-  PetscCall(PCSetOperators(wb->solver, A, A));
   PetscCall(PCSetOperators(wb->sampler, A, A));
-  PetscCall(PCSetUp(wb->solver));
   PetscCall(PCSetUp(wb->sampler));
-  PetscCall(PCWoodburyBuildLRCCorrection(pc));
-  PetscCall(PCDestroy(&wb->solver));
+  if (wb->use_chol) {
+    PetscCall(PCWoodburyBuildLRCCorrectionChol(pc));
+  } else {
+    PetscCall(PCSetOperators(wb->solver, A, A));
+    PetscCall(PCSetUp(wb->solver));
+    PetscCall(PCWoodburyBuildLRCCorrection(pc));
+    PetscCall(PCDestroy(&wb->solver));
+  }
   PetscFunctionReturn(PETSC_SUCCESS);
 }
 
@@ -206,7 +286,7 @@ PetscErrorCode PCWoodburySetSampler(PC pc, PC sampler)
   PetscFunctionBegin;
   PetscCall(PCGetOptionsPrefix(pc, &prefix));
   PetscCall(PCSetOptionsPrefix(sampler, prefix));
-  PetscCall(PCAppendOptionsPrefix(sampler, "pc_woodbury_sampler"));
+  PetscCall(PCAppendOptionsPrefix(sampler, "pc_woodbury_sampler_"));
   PetscCall(PetscObjectReference((PetscObject)sampler));
   wb->sampler = sampler;
   PetscFunctionReturn(PETSC_SUCCESS);
@@ -268,6 +348,29 @@ static PetscErrorCode PCApplyRichardson_Woodbury(PC pc, Vec b, Vec y, Vec w, Pet
   PCRichardsonConvergedReason sreason;
 
   PetscFunctionBegin;
+  if (wb->use_chol) {
+    /* A = L L^T: y = L^{-T} (L^{-1} (b + B S^{1/2} xi) + z) = L^{-T} (u + W S^{1/2} xi + z) with u = L^{-1} b computed
+       once, then the low-rank correction y -= G B^T y. One backward solve per sample. */
+    PetscCall(MatForwardSolve(wb->F, b, wb->u));
+    for (PetscInt it = 0; it < its; ++it) {
+      PetscCall(VecSetRandomStandardNormal(wb->wk, wb->prand));
+      PetscCall(VecPointwiseMult(wb->wk, wb->wk, wb->sqrtS));
+      PetscCall(MatMultAdd(wb->W, wb->wk, wb->u, wb->v));
+      PetscCall(VecSetRandomStandardNormal(wb->z, wb->prand));
+      PetscCall(VecAXPY(wb->v, 1., wb->z));
+      PetscCall(MatBackwardSolve(wb->F, wb->v, y));
+
+      PetscCall(MatMultTranspose(wb->B, y, wb->wk));
+      PetscCall(MatMult(wb->G, wb->wk, wb->zn));
+      PetscCall(VecAXPY(y, -1., wb->zn));
+
+      if (wb->scb) PetscCall(wb->scb(it, y, wb->cbctx));
+    }
+    *outits = its;
+    *reason = PCRICHARDSON_CONVERGED_ITS;
+    PetscFunctionReturn(PETSC_SUCCESS);
+  }
+
   for (PetscInt it = 0; it < its; ++it) {
     PetscCall(VecSetRandomStandardNormal(wb->wk, wb->prand));
     PetscCall(VecPointwiseMult(wb->wk, wb->wk, wb->sqrtS));
