@@ -5,6 +5,8 @@ config.name = 'ParMGMC'
 config.test_format = lit.formats.ShTest(True)
 
 config.suffixes = ['.c']
+# old/ is an archive of retired examples, not part of the test suite.
+config.excludes = ['old', 'build']
 config.test_source_root = os.path.dirname(__file__)
 config.test_exec_root = os.path.join(config.my_obj_root)
 

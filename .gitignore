@@ -4,6 +4,16 @@ debugbuild/
 buildopt/
 optbuild/
 mfembuild/
+build-blas/
+build-merge/
+build-nomkl/
+**/*/cache/
+*.json
+*.dat*
+*.vtu
+*#
+*.pvd
+*.pvtu
 
 .cache/
 

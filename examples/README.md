@@ -12,8 +12,8 @@ This directory contains some examples (that also function as the test suite for 
 | ex6.c   | Checks convergence to the target distribution by computing the relative error of the sample covariance compared to the exact covariance matrix.                                                                                                                  |
 | ex7.c   | Measures convergence speed using the Gelman-Rubin diagnostic.                                                                                                                                                                                                    |
 | ex8.c   | Provides the full code for the first code listing in the Algebraic MGMC paper                                                                                                                                                                                    |
-| ex9.py  | Provides the full code for the firedrake example in the Algebraic MGMC paper                                                                                                                                                                                     |
-| ex13.py | Helper script to perform a weak-scaling experiment to sample from Gaussian random fields on the wrench mesh. Uses firedrake to assemble the squared shifted Laplace precision operator that is used for the prior. Supports sampling from the posterior as well. |
+
+Retired and exploratory examples (Firedrake scripts, MFEM drivers, the graph examples, the old benchmark harness) live in [`old/`](old/). They are kept for reference only, are not built or tested, and may no longer run as-is (e.g. relative paths to `../data`).
 
 # Test suite
 

@@ -20,6 +20,21 @@ message(STATUS "mpiexec executable located at ${MPIEXEC_EXECUTABLE}")
 
 find_package(MKL CONFIG)
 if(MKL_FOUND)
+  # MKLConfig caches its include path; after an MKL upgrade/uninstall that cached
+  # path can point to a directory that no longer exists. Verify the header we need.
+  get_target_property(_mkl_incs MKL::MKL INTERFACE_INCLUDE_DIRECTORIES)
+  set(_mkl_vsl_h FALSE)
+  foreach(_dir IN LISTS _mkl_incs)
+    if(EXISTS "${_dir}/mkl_vsl.h")
+      set(_mkl_vsl_h TRUE)
+    endif()
+  endforeach()
+  if(NOT _mkl_vsl_h)
+    message(WARNING "MKL was found but mkl_vsl.h is missing from '${_mkl_incs}' (stale MKL_INCLUDE in the CMake cache?); disabling MKL")
+    set(MKL_FOUND FALSE)
+  endif()
+endif()
+if(MKL_FOUND)
   message(STATUS "Found Intel MKL — VSL random number generation enabled")
 else()
   message(STATUS "Intel MKL not found — Box-Muller fallback used for random number generation")
@@ -110,36 +125,6 @@ target_include_directories(parmgmc SYSTEM PUBLIC ${PETSC_INCLUDE_DIRS} ${FFTW_IN
 target_compile_options(parmgmc PRIVATE -Wall -Wextra -Wpedantic -pedantic -Wshadow -Wpointer-arith -Wcast-qual -Wstrict-prototypes -Wmissing-prototypes)
 target_compile_options(parmgmc PUBLIC ${PETSC_CFLAGS})
 target_link_libraries(parmgmc PUBLIC PkgConfig::PETSC MPI::MPI_C FFTW::Double ${PARMGMC_BLAS_LINK})
-
-add_executable(benchmark examples/benchmark/main.cc)
-target_include_directories(benchmark PRIVATE include)
-target_compile_options(benchmark PRIVATE -Wall -Wextra -Wpedantic -pedantic)
-target_link_libraries(benchmark PRIVATE parmgmc m MPI::MPI_CXX MPI::MPI_C)
-
-# add_executable(test test.c)
-# target_include_directories(test PRIVATE include)
-# target_compile_options(test PRIVATE -Wall -Wextra -Wpedantic -pedantic -Wshadow -Wpointer-arith -Wcast-qual -Wstrict-prototypes -Wmissing-prototypes)
-# target_link_libraries(test parmgmc m)
-
-set(MFEM_DIR "" CACHE PATH "Path to the MFEM build or install prefix.")
-find_package(MFEM)
-if(MFEM_FOUND)
-  message(STATUS "Found MFEM (include dirs: ${MFEM_INCLUDE_DIRS})")
-
-  find_package(MPI REQUIRED)
-  message(STATUS "mpiexec executable located at ${MPIEXEC_EXECUTABLE}")
-
-  # add_executable(mfem_ex examples/mfem/main.cc)
-  # target_include_directories(mfem_ex PRIVATE include ${MFEM_INCLUDE_DIRS})
-  # target_compile_options(mfem_ex PRIVATE -Wall -Wextra -Wpedantic -pedantic -Wshadow -Wpointer-arith -Wcast-qual)
-  # target_link_libraries(mfem_ex PUBLIC parmgmc PRIVATE m ${MFEM_LIBRARIES} MPI::MPI_CXX MPI::MPI_C)
-
-  target_include_directories(benchmark SYSTEM PRIVATE ${MFEM_INCLUDE_DIRS})
-  target_link_libraries(benchmark PRIVATE ${MFEM_LIBRARIES})
-  target_compile_definitions(benchmark PUBLIC PARMGMC_HAVE_MFEM)
-else()
-  message(STATUS "Could not find MFEM")
-endif()
 
 include(GNUInstallDirs)
 list(APPEND CMAKE_INSTALL_RPATH ${CMAKE_INSTALL_LIBDIR})
