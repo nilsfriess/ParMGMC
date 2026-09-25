@@ -242,8 +242,14 @@ static PetscErrorCode PCSetUp_SORGibbs(PC pc)
   if (is_mpiaij && sorgibbs->type == SOR_FORWARD_SWEEP) {
     sorgibbs->use_parsor = PETSC_TRUE;
     if (!sorgibbs->parsor_pc) {
+      const char *prefix;
+
       PetscCall(PCCreate(PetscObjectComm((PetscObject)pc), &sorgibbs->parsor_pc));
       PetscCall(PCSetType(sorgibbs->parsor_pc, PCPARSOR));
+      /* Same prefix as this PC, so that e.g. -mg_levels_pc_parsor_stats reaches the internal PARSOR */
+      PetscCall(PCGetOptionsPrefix(pc, &prefix));
+      PetscCall(PCSetOptionsPrefix(sorgibbs->parsor_pc, prefix));
+      PetscCall(PCSetFromOptions(sorgibbs->parsor_pc));
     }
     PetscCall(PCSetOperators(sorgibbs->parsor_pc, sorgibbs->Asor, sorgibbs->Asor));
     PetscCall(PCSetUp(sorgibbs->parsor_pc));
