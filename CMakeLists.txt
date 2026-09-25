@@ -64,13 +64,25 @@ endif()
 # with the new signature and set a compile definition that can then be checked in the
 # code. This is ugly and we can of course not do this for every function that PETSc
 # decides to change; arguably this is a flaw in PETSc's PETSC_VERSION_GT macro.
+#
+# The check only compiles (no link): the question is the signature, and linking a test program against PETSc can
+# fail for unrelated reasons (e.g. Fortran/C++ runtime libraries missing from PETSc.pc on some clusters), which
+# would silently select the old signature. The result is not cached, so a changed PETSc is picked up.
 include(CheckCSourceCompiles)
-set(CMAKE_REQUIRED_LIBRARIES PkgConfig::PETSC MPI::MPI_C)
+set(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)
+set(CMAKE_REQUIRED_LIBRARIES PkgConfig::PETSC MPI::MPI_C) # for the include directories
+unset(PARMGMC_PETSC_KSP_DMACTIVE_3ARG CACHE)
 check_c_source_compiles("
 #include <petscksp.h>
-int main(void){ KSP ksp; return KSPSetDMActive(ksp, KSP_DMACTIVE_OPERATOR, PETSC_FALSE); }
+PetscErrorCode parmgmc_check(KSP ksp) { return KSPSetDMActive(ksp, KSP_DMACTIVE_OPERATOR, PETSC_FALSE); }
 " PARMGMC_PETSC_KSP_DMACTIVE_3ARG)
 unset(CMAKE_REQUIRED_LIBRARIES)
+unset(CMAKE_TRY_COMPILE_TARGET_TYPE)
+if(PARMGMC_PETSC_KSP_DMACTIVE_3ARG)
+  message(STATUS "KSPSetDMActive() takes 3 arguments (KSPDMActive enum)")
+else()
+  message(STATUS "KSPSetDMActive() takes 2 arguments (old PETSc)")
+endif()
 
 # Injected into parmgmc.pc so the standalone lit test builds (which compile the
 # examples via pkg-config rather than by linking the parmgmc target) see it too.
