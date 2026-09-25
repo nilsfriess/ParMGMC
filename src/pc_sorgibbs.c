@@ -246,9 +246,11 @@ static PetscErrorCode PCSetUp_SORGibbs(PC pc)
 
       PetscCall(PCCreate(PetscObjectComm((PetscObject)pc), &sorgibbs->parsor_pc));
       PetscCall(PCSetType(sorgibbs->parsor_pc, PCPARSOR));
-      /* Same prefix as this PC, so that e.g. -mg_levels_pc_parsor_stats reaches the internal PARSOR */
+      /* Options of the internal PARSOR under <prefix>sorgibbs_, e.g. -mg_levels_sorgibbs_pc_parsor_stats (a sub-prefix,
+         since this PC's own prefix also carries -pc_type sorgibbs) */
       PetscCall(PCGetOptionsPrefix(pc, &prefix));
       PetscCall(PCSetOptionsPrefix(sorgibbs->parsor_pc, prefix));
+      PetscCall(PCAppendOptionsPrefix(sorgibbs->parsor_pc, "sorgibbs_"));
       PetscCall(PCSetFromOptions(sorgibbs->parsor_pc));
     }
     PetscCall(PCSetOperators(sorgibbs->parsor_pc, sorgibbs->Asor, sorgibbs->Asor));
