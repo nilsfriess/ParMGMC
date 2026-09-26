@@ -49,6 +49,14 @@ def git_commit() -> str:
         return "unknown"
 
 
+def omp_threads() -> int:
+    """Threads per MPI rank as set by OMP_NUM_THREADS (its first level if nested, 1 if unset or invalid)."""
+    try:
+        return max(int(os.environ.get("OMP_NUM_THREADS", "1").split(",")[0]), 1)
+    except ValueError:
+        return 1
+
+
 def run_info(script: str) -> dict:
     """Context of this run for the CSV output."""
     options = PETSc.Options().getAll()
@@ -59,6 +67,7 @@ def run_info(script: str) -> dict:
         "parmgmc_commit": git_commit(),
         "petsc_version": ".".join(str(v) for v in PETSc.Sys.getVersion()),
         "ranks": PETSc.COMM_WORLD.getSize(),
+        "threads": omp_threads(),
         "petsc_options": " ".join(f"-{k}" if v in (None, "") else f"-{k} {v}" for k, v in sorted(options.items())),
     }
 
