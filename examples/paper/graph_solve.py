@@ -3,8 +3,10 @@
 Q is the Whittle-Matérn precision for one kappa, assembled as in graph_prior.py. The KSP is configured entirely from
 the command line (prefix none), e.g. for a direct solve with MKL Pardiso / MUMPS:
 
-    mpirun -n 8 python graph_solve.py -kappa 0.01 -ksp_type preonly -pc_type cholesky \\
+    mpirun -n 8 python graph_solve.py -kappa 0.01 -mat_type sbaij -ksp_type preonly -pc_type cholesky \\
         -pc_factor_mat_solver_type mkl_cpardiso -nsolves 10 -log_view
+
+-mat_type converts Q after assembly (it is built as AIJ); MKL Pardiso needs sbaij for a parallel Cholesky.
 
 Setup (e.g. the factorisation) and the solves are timed separately; with -nsolves > 1 the same KSP solves again
 with new random right-hand sides, which is what a direct sampler does once per sample.
@@ -32,6 +34,10 @@ def main() -> None:
     comm = G.L.getComm()
     graph.log(f"{filename}: n = {G.n}, {comm.getSize()} ranks, {G.info()['edges_cut']:.2%} of edges cut")
     A = graph.precision_petsc(G.L, kappa)
+    mat_type = opts.getString("mat_type", "")  # e.g. sbaij, which mkl_cpardiso needs for a parallel Cholesky
+    if mat_type:
+        A = A.convert(mat_type)
+        A.setOption(PETSc.Mat.Option.SPD, True)
 
     ksp = PETSc.KSP().create(comm)
     ksp.setOperators(A)
