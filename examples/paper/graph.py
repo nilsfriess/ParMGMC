@@ -80,18 +80,19 @@ def print_csv(rows: list[dict]) -> None:
     print(out.getvalue(), end="", flush=True)
 
 
-def load_graph(regions: bool = False) -> tuple:
+def load_graph(regions: bool = False, weight: str = "length") -> tuple:
     """Return node coordinates and the symmetric edge-length matrix L (L_ij = length of edge ij).
 
-    With ``regions``, also return the brain region index of each node and the list of region names.
+    With ``regions``, also return the brain region index of each node and the list of region names. ``weight`` is
+    the column of the edge CSV stored in L instead of the length (e.g. avgRadiusAvg), with the same sparsity pattern.
     """
     nodes = pd.read_csv(NODES_CSV, sep=";", usecols=["id", "pos_x", "pos_y", "pos_z"])
-    edges = pd.read_csv(EDGES_CSV, sep=";", usecols=["node1id", "node2id", "length"])
+    edges = pd.read_csv(EDGES_CSV, sep=";", usecols=["node1id", "node2id", weight])
     assert np.array_equal(nodes["id"], np.arange(len(nodes)))
 
     coords = nodes[["pos_x", "pos_y", "pos_z"]].to_numpy(dtype=np.float64)
     i, j = edges["node1id"].to_numpy(), edges["node2id"].to_numpy()
-    length = edges["length"].to_numpy(dtype=np.float64)
+    length = edges[weight].to_numpy(dtype=np.float64)
     assert np.all(i != j) and np.all(length > 0)
 
     n = len(coords)
@@ -234,6 +235,7 @@ class DistributedGraph:
     coords: list[PETSc.Vec]  # x, y, z of the nodes in the same layout
     regions: PETSc.Vec  # atlas region index of each node (index into names)
     names: list[str]
+    rows: PETSc.IS  # the owned nodes in the numbering of the file
 
     @property
     def n(self) -> int:
@@ -280,7 +282,7 @@ def load(filename: str, comm: PETSc.Comm = PETSc.COMM_WORLD) -> DistributedGraph
         v0.restoreSubVector(rows, sub)
     with open(filename + ".regions") as f:
         names = f.read().split("\n")[:-1]
-    return DistributedGraph(L, vecs[:3], vecs[3], names)
+    return DistributedGraph(L, vecs[:3], vecs[3], names, rows)
 
 
 def precision_petsc(L: PETSc.Mat, kappa: float) -> PETSc.Mat:

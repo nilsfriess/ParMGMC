@@ -2,7 +2,8 @@
 
 The field is sampled on the whole (cropped) graph with the same sampler as graph_prior.py; only the slab is drawn.
 
-    mpirun -n 4 python graph_plot.py [-kappa 0.01] [-fraction 0.0625] [-axis 2] [-thickness 100] [-output sample.png]
+    mpirun -n 4 python graph_plot.py [-kappa 0.01] [-fraction 0.0625] [-axis 2] [-thickness 100]
+        [-cmap viridis] [-line_width 3] [-output sample.png]
 """
 
 import os
@@ -13,10 +14,10 @@ import petsc4py
 
 petsc4py.init(sys.argv)
 import pymgmc  # noqa: E402
-import pyvista as pv  # noqa: E402
 from petsc4py import PETSc  # noqa: E402
 
 import graph  # noqa: E402
+import plotting  # noqa: E402
 from graph_prior import sample  # noqa: E402
 
 
@@ -39,36 +40,30 @@ def gather(x: PETSc.Vec, rows: PETSc.IS, n: int) -> np.ndarray | None:
     return out
 
 
-def render(coords: graph.Coords, L, u: np.ndarray, axis: int, thickness: float, output: str) -> None:
-    """Draw the edges with both endpoints within thickness/2 of the middle plane normal to ``axis``."""
+def render(coords: graph.Coords, L, u: np.ndarray, axis: int, thickness: float, output: str, opts) -> None:
+    """Draw the edges with both endpoints within thickness/2 of the middle plane normal to ``axis`` (see plotting.py).
+
+    The colours show the nodal values of u (blended linearly along each edge), symmetric about zero and clipped at
+    the -clip quantile (0.95) of |u| in the slab; the colour bar goes to <output>_colorbar.pdf.
+    """
     mid = (coords[:, axis].min() + coords[:, axis].max()) / 2
     inside = np.abs(coords[:, axis] - mid) <= thickness / 2
     E = L.tocoo()
     keep = (E.row < E.col) & inside[E.row] & inside[E.col]
-    nodes = np.flatnonzero(inside)
-    new = np.full(len(coords), -1)
-    new[nodes] = np.arange(len(nodes))
-    lines = np.column_stack([np.full(keep.sum(), 2), new[E.row[keep]], new[E.col[keep]]]).ravel()
-
-    mesh = pv.PolyData(coords[nodes], lines=lines)
-    mesh.point_data["u"] = u[nodes]
-    lim = np.quantile(np.abs(u[nodes]), 0.99)
-
-    pv.OFF_SCREEN = True
-    plotter = pv.Plotter(window_size=(2000, 2000))
-    plotter.add_mesh(
-        mesh,
-        scalars="u",
-        cmap="RdBu_r",
+    lim = np.quantile(np.abs(u[inside]), opts.getReal("clip", 0.95))
+    cmap = opts.getString("cmap", "viridis")
+    plotting.render_lines(
+        coords,
+        np.column_stack([E.row[keep], E.col[keep]]),
+        u,
+        output,
+        cmap=cmap,
         clim=(-lim, lim),
-        line_width=2,
-        render_lines_as_tubes=True,
-        show_scalar_bar=False,
+        view=["yz", "xz", "xy"][axis],
+        line_width=opts.getReal("line_width", 3.0),
+        scale=opts.getReal("scale", 2.0),
     )
-    view = ["yz", "xz", "xy"][axis]
-    getattr(plotter, f"view_{view}")()
-    plotter.screenshot(output, transparent_background=True)
-    print(f"{keep.sum()} edges in the slab, written to {output}")
+    plotting.colorbar(output.rsplit(".", 1)[0] + "_colorbar.pdf", cmap, (-lim, lim), "$u$", extend="both")
 
 
 def main() -> None:
@@ -96,7 +91,7 @@ def main() -> None:
         if u is not None:
             np.save(sample_file, u)
     if u is not None:
-        render(coords, L, u, axis, thickness, output)
+        render(coords, L, u, axis, thickness, output, opts)
 
 
 if __name__ == "__main__":
