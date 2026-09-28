@@ -65,7 +65,8 @@ def sample(A: PETSc.Mat, b: PETSc.Vec, w: PETSc.Vec | None, nburnin: int, nsampl
     """Sample N(A^{-1} b, A^{-1}) starting from zero.
 
     Returns the QoI w^T x of each sample after burn-in (if w is given), a dict with the sampler type and the
-    timings (KSP setup, burn-in, sampling, per sample) and the last sample.
+    timings (KSP setup, burn-in, sampling, per sample) and the last sample. Setup, burn-in and sampling are separate
+    log stages, so -log_view shows the cost per sample without the rest of the script (e.g. the exact solves).
     """
     comm = A.getComm()
     ksp = make_sampler(A, prefix)
@@ -75,21 +76,24 @@ def sample(A: PETSc.Mat, b: PETSc.Vec, w: PETSc.Vec | None, nburnin: int, nsampl
 
     comm.barrier()
     t = time.perf_counter()
-    ksp.setUp()
+    with PETSc.Log.Stage("Sampler setup"):
+        ksp.setUp()
     comm.barrier()
     stats["t_ksp_setup"] = time.perf_counter() - t
     graph.log(f"  sampler ({stats['sampler']}) set up in {stats['t_ksp_setup']:.1f} s")
 
     t = time.perf_counter()
     if nburnin > 0:
-        run_chain(ksp, b, x, nburnin, f"burn-in ({nburnin} steps)", None)
+        with PETSc.Log.Stage("Burn-in"):
+            run_chain(ksp, b, x, nburnin, f"burn-in ({nburnin} steps)", None)
     comm.barrier()
     stats["t_burnin"] = time.perf_counter() - t
 
     qoi = np.zeros(nsamples)
     t = time.perf_counter()
     if nsamples > 0:
-        qoi = run_chain(ksp, b, x, nsamples, f"sampling ({nsamples} samples)", w)
+        with PETSc.Log.Stage("Sampling"):
+            qoi = run_chain(ksp, b, x, nsamples, f"sampling ({nsamples} samples)", w)
     comm.barrier()
     stats["t_sampling"] = time.perf_counter() - t
     stats["t_per_sample"] = stats["t_sampling"] / max(nsamples, 1)
