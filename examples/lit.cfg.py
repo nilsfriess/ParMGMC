@@ -2,7 +2,7 @@ import lit.formats
 import os
 
 config.name = 'ParMGMC'
-config.test_format = lit.formats.ShTest(True)
+config.test_format = lit.formats.ShTest()
 
 config.suffixes = ['.c']
 # old/ is an archive of retired examples, not part of the test suite.
