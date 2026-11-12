@@ -121,6 +121,7 @@ target_sources(parmgmc
 	    src/pc_parsor.c
 	    src/mc_sor.c
             src/woodbury.c
+            src/pc_patchgibbs.c
 	    src/parmgmc.c
 	    src/problems.c
 	    src/ms.c

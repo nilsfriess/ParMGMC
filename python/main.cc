@@ -9,9 +9,11 @@
 #include <petscsys.h>
 #include <pybind11/pybind11.h>
 #include <pybind11/functional.h>
+#include <pybind11/numpy.h>
 
 #include "petsc_caster.hh"
 #include "parmgmc/parmgmc.h"
+#include "parmgmc/pc/pc_patchgibbs.h"
 
 namespace py = pybind11;
 
@@ -36,6 +38,17 @@ PYBIND11_MODULE(pymgmc, m)
         PetscFunctionReturn(PETSC_SUCCESS);
       },
       nullptr, nullptr));
+    PetscFunctionReturnVoid();
+  });
+
+  // Patches of a PCPATCHGIBBS sampler in CSR layout: the DOFs of patch p are
+  // indices[offsets[p]:offsets[p+1]].
+  m.def("PCPatchGibbsSetPatches", [](PC pc, py::array_t<PetscInt, py::array::c_style | py::array::forcecast> offsets, py::array_t<PetscInt, py::array::c_style | py::array::forcecast> indices) {
+    PetscFunctionBegin;
+    if (offsets.ndim() != 1 || indices.ndim() != 1 || offsets.size() < 1) throw std::invalid_argument("offsets and indices must be 1D arrays, offsets non-empty");
+    const PetscInt npatches = static_cast<PetscInt>(offsets.size() - 1);
+    if (offsets.at(npatches) != static_cast<PetscInt>(indices.size())) throw std::invalid_argument("offsets[-1] must equal len(indices)");
+    PetscCallVoid(PCPatchGibbsSetPatches(pc, npatches, offsets.data(), indices.data()));
     PetscFunctionReturnVoid();
   });
 
