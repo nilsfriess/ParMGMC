@@ -213,13 +213,24 @@ def setup_posterior(V, A):
     return A_post, f, B, S
 
 
-def exact_reference(operator, A, m, f, posterior):
-    """Exact QOI mean m^T operator^-1 f and variance m^T operator^-1 m (CG + GAMG on A)."""
+def exact_reference(operator, A, m, f, posterior, alpha):
+    """Exact QOI mean m^T operator^-1 f and variance m^T operator^-1 m.
+
+    CG preconditioned with GAMG on the prior matrix A for alpha=1.  For the
+    fourth-order problem (alpha=2) GAMG-CG does not reach the tolerance, so the
+    preconditioner is a Cholesky factorisation of A (MUMPS); CG then converges in
+    one iteration for the prior and in at most nobs+1 iterations for the posterior.
+    Both can be changed with -wr_ref_pc_type etc.
+    """
     ksp = PETSc.KSP().create(comm=A.getComm())
     ksp.setOptionsPrefix("wr_ref_")
     ksp.setOperators(operator, A)
     ksp.setType("cg")
-    ksp.getPC().setType("gamg")
+    if alpha == 1:
+        ksp.getPC().setType("gamg")
+    else:
+        ksp.getPC().setType("cholesky")
+        ksp.getPC().setFactorSolverType("mumps")
     ksp.setTolerances(rtol=1e-12, atol=0.0, max_it=5000)
     ksp.setNormType(PETSc.KSP.NormType.UNPRECONDITIONED)
     ksp.setErrorIfNotConverged(True)
@@ -500,7 +511,7 @@ def main():
     ref = None
     if reference:
         t0 = perf_counter()
-        mean_ex, var_ex, ref_its = exact_reference(operator, A, m, rhs, posterior)
+        mean_ex, var_ex, ref_its = exact_reference(operator, A, m, rhs, posterior, alpha)
         ref = {
             "qoi_mean": mean_ex, "qoi_var": var_ex, "cg_iterations": ref_its,
             "time": perf_counter() - t0,
