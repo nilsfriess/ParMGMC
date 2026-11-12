@@ -79,7 +79,15 @@ def progress(comm, msg):
         print(f"[{datetime.datetime.now().isoformat(timespec='seconds')}] {msg}", flush=True)
 
 
-def make_mesh(comm, n, ntheta, prerefine, refine):
+def make_mesh(comm, n, ntheta, prerefine, refine, method):
+    """Coarse mesh on rank 0, refined prerefine times there, distributed, refined in parallel.
+
+    method "plex": distribute the DMPlex (no overlap) and refine it with DMPlexRefine; the
+    Firedrake mesh is created without overlap (enough for the CG-1 cell integrals here).
+    method "hierarchy": distribute with Firedrake and refine with fd.MeshHierarchy (adds the
+    default facet overlap on every level; crashed in DMPlexDistributeOverlap on 512 ranks).
+    Both give the same mesh and the same partition (the coarse partition, refined).
+    """
     if comm.rank == 0:
         coords, tets = twisted_toroid.build(n, ntheta)
     else:
@@ -90,11 +98,23 @@ def make_mesh(comm, n, ntheta, prerefine, refine):
         plex.setRefinementUniform(True)
         plex = plex.refine()
     progress(comm, f"pre-refined {prerefine} times on rank 0, distributing")
-    coarse = fd.Mesh(plex)
-    progress(comm, "coarse mesh created, refining in parallel")
-    if refine > prerefine:
-        return fd.MeshHierarchy(coarse, refine - prerefine)[-1]
-    return coarse
+    if method == "hierarchy":
+        coarse = fd.Mesh(plex)
+        progress(comm, "coarse mesh created, refining in parallel")
+        if refine > prerefine:
+            return fd.MeshHierarchy(coarse, refine - prerefine)[-1]
+        return coarse
+    if method != "plex":
+        raise SystemExit("-tt_mesh_method must be plex or hierarchy")
+    if comm.size > 1:
+        plex.distribute(overlap=0)
+    progress(comm, "distributed, refining in parallel")
+    for _ in range(refine - prerefine):
+        plex.setRefinementUniform(True)
+        plex = plex.refine()
+    progress(comm, "refined, creating the Firedrake mesh")
+    return fd.Mesh(plex, distribution_parameters={
+        "partition": False, "overlap_type": (fd.DistributedMeshOverlapType.NONE, 0)})
 
 
 def qoi_vector(V):
@@ -195,6 +215,7 @@ def main():
     ntheta = opts.getInt("tt_ntheta", 11 * n)
     prerefine = opts.getInt("tt_prerefine", 0)
     refine = opts.getInt("tt_refine", 2)
+    mesh_method = opts.getString("tt_mesh_method", "plex")
     kappa = opts.getReal("tt_kappa", 10.0)
     gamg = opts.getString("tt_gamg", "default")
     smoother = opts.getString("tt_smoother", "gibbs")
@@ -234,7 +255,7 @@ def main():
         stage.pop()
         return result
 
-    mesh = timed("mesh", lambda: make_mesh(comm, n, ntheta, prerefine, refine))
+    mesh = timed("mesh", lambda: make_mesh(comm, n, ntheta, prerefine, refine, mesh_method))
     V = fd.FunctionSpace(mesh, "CG", 1)
 
     def assemble():
@@ -325,6 +346,7 @@ def main():
         "driver": "toroid_weak_scaling.py",
         "date": datetime.datetime.now().isoformat(timespec="seconds"),
         "problem": {"n": n, "ntheta": ntheta, "prerefine": prerefine, "refine": refine,
+                    "mesh_method": mesh_method,
                     "kappa": kappa, "ndofs": ndofs, "ncells": ncells, "nnz": nnz,
                     "qoi": {"center": QOI_CENTER, "radius": QOI_RADIUS}},
         "sampler": {"gamg": gamg, "smoother": smoother, "mg_levels": mg_levels, "options": defaults},
