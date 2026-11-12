@@ -62,6 +62,7 @@ def main():
     refine = opts.getInt("wr_refine", 2)
     kappa = opts.getReal("wr_kappa", 0.1)
     posterior = opts.getBool("wr_posterior", False)
+    obs_sigma2 = opts.getReal("wr_obs_sigma2", wr.OBS_SIGMA2)
     nburnin = opts.getInt("wr_nburnin", 2)
     nsamples = opts.getInt("wr_nsamples", 500)
     rtol = opts.getReal("wr_rtol", 1e-8)
@@ -89,9 +90,9 @@ def main():
     B = None
     keep = ()
     if posterior:
-        _, _, B, Sinv = wr.setup_posterior(V, L)  # B: n x nobs dense, Sinv = Sigma^{-1} (diagonal)
+        _, _, B, Sinv = wr.setup_posterior(V, L, obs_sigma2)  # B: n x nobs dense, Sinv = Sigma^{-1} (diagonal)
         keep = (Sinv,)
-        sigma2 = wr.OBS_SIGMA2
+        sigma2 = obs_sigma2
         y_obs = np.array(wr.OBS_VALUES)
 
     x0, b, t = L.createVecs()[0], L.createVecs()[0], L.createVecs()[0]
@@ -206,7 +207,7 @@ def main():
             "ndofs": V.dim(), "ncells": mesh.num_cells(), "nnz": int(L.getInfo()["nz_used"]),
             "qoi": {"center": wr.QOI_CENTER, "radius": wr.QOI_RADIUS},
             "observations": {"centers": wr.OBS_CENTERS.tolist(), "radii": wr.OBS_RADII.tolist(),
-                             "values": wr.OBS_VALUES.tolist(), "sigma2": wr.OBS_SIGMA2}
+                             "values": wr.OBS_VALUES.tolist(), "sigma2": obs_sigma2}
             if posterior else None,
         },
         "sampler": {"name": "spde", "label": label, "pc_type": "spde (CG + GAMG)",

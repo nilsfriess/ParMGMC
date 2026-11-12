@@ -1,7 +1,8 @@
 """Mesh-refinement study on the wrench: Gibbs vs. algebraic/geometric MGMC vs. Cholesky.
 
 Samples from the Whittle-Matern prior N(0, A^-1), or from the posterior of a linear
-Bayesian inverse problem, on a uniformly refined wrench mesh, records a scalar QOI
+Bayesian inverse problem (-wr_posterior; observation noise variance -wr_obs_sigma2,
+default OBS_SIGMA2), on a uniformly refined wrench mesh, records a scalar QOI
 along the chain and reports timings, the integrated autocorrelation time (IACT) and
 a correctness check against the exact QOI mean/variance.
 
@@ -255,7 +256,7 @@ def qoi_vector(V):
         return m.copy()
 
 
-def setup_posterior(V, A):
+def setup_posterior(V, A, sigma2=OBS_SIGMA2):
     """Build ``A_post = A + B Sigma^-1 B^T`` (MATLRC) and RHS ``f = B Sigma^-1 y``.
 
     Returns ``(A_post, f, B, S)``; the caller must keep ``B`` and ``S`` alive for as
@@ -293,7 +294,7 @@ def setup_posterior(V, A):
     B.assemble()
 
     S, f = B.createVecs()  # S: size nobs, f: size n_dofs
-    S.set(1.0 / OBS_SIGMA2)
+    S.set(1.0 / sigma2)
 
     y, _ = B.createVecs()
     lo, hi = y.getOwnershipRange()
@@ -443,6 +444,7 @@ def main():
         return wrench_spde.main()
     label = opts.getString("wr_label", sampler)  # name of a sampler variant, e.g. more sweeps
     posterior = opts.getBool("wr_posterior", False)
+    obs_sigma2 = opts.getReal("wr_obs_sigma2", OBS_SIGMA2)  # observation noise variance
     nburnin = opts.getInt("wr_nburnin", 500)
     nsamples = opts.getInt("wr_nsamples", 10000)
     chunk = opts.getInt("wr_chunk", nsamples)
@@ -487,7 +489,7 @@ def main():
 
     keep = ()  # keep posterior B/S alive for the lifetime of the LRC operator
     if posterior:
-        operator, rhs, B, S = setup_posterior(V, A)
+        operator, rhs, B, S = setup_posterior(V, A, obs_sigma2)
         keep = (B, S)
     else:
         operator = A
@@ -634,7 +636,7 @@ def main():
             "nnz": int(A.getInfo()["nz_used"]),
             "qoi": {"center": QOI_CENTER, "radius": QOI_RADIUS},
             "observations": {"centers": OBS_CENTERS.tolist(), "radii": OBS_RADII.tolist(),
-                             "values": OBS_VALUES.tolist(), "sigma2": OBS_SIGMA2}
+                             "values": OBS_VALUES.tolist(), "sigma2": obs_sigma2}
             if posterior else None,
         },
         "sampler": {"name": sampler, "label": label, "pc_type": pc_type, "mg_levels": mg_levels,
