@@ -13,10 +13,11 @@
 # <name>.log_view.txt.
 #
 # Usage (from anywhere):
-#   sbatch --time=02:00:00 --output=<results>/slurm_%j.out job_packed.sh <results> <runs-file>...
+#   sbatch --time=02:00:00 --output=<results>/slurm_%j.out job_packed.sh [--run-mem <mem>] <results> <runs-file>...
 #   sbatch --partition=devel --time=00:30:00 ...    # smoke tests
-# Environment: ROOT (default $HOME/algebraic_mgmc_paper), RUN_MEM (memory per run,
-#   default 28G)
+# --run-mem: memory per run (default 28G, i.e. one memory domain); with more, fewer runs
+#   execute at the same time (e.g. 110G: two at a time).
+# The job runs with --export=NONE; ROOT is $HOME/algebraic_mgmc_paper.
 #
 #SBATCH --partition=cpu-single
 #SBATCH --nodes=1
@@ -28,13 +29,17 @@
 
 set -uo pipefail
 
-[ $# -ge 2 ] || { echo "usage: $0 <results-dir> <runs-file>..." >&2; exit 1; }
+RUN_MEM=28G
+if [ "${1:-}" = "--run-mem" ]; then
+  RUN_MEM=$2
+  shift 2
+fi
+[ $# -ge 2 ] || { echo "usage: $0 [--run-mem <mem>] <results-dir> <runs-file>..." >&2; exit 1; }
 results=$1
 shift
 
 ROOT=${ROOT:-$HOME/algebraic_mgmc_paper}
 DRIVER=$ROOT/ParMGMC/examples/paper/wrench/wrench_refinement.py
-RUN_MEM=${RUN_MEM:-28G}
 
 module load compiler/gnu/11.3 devel/python/3.13.1 mpi/openmpi/4.1.8 numlib/mkl/2022.2
 source "$ROOT/venv-firedrake/bin/activate"
@@ -56,7 +61,7 @@ export PMIX_MCA_gds=hash    # data store without shmem/shmem2
 mkdir -p "$results"
 {
   echo "job $SLURM_JOB_ID on $(hostname), $(date -Iseconds)"
-  echo "driver $DRIVER (md5 $(md5sum "$DRIVER" | cut -d' ' -f1))"
+  echo "driver $DRIVER (md5 $(md5sum "$DRIVER" | cut -d' ' -f1)), memory per run $RUN_MEM"
   echo
   lscpu
   echo

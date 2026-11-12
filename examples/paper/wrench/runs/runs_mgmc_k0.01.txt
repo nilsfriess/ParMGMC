@@ -1,0 +1,25 @@
+# alpha=1, kappa=0.01: algebraic (default/tuned GAMG) and geometric MGMC, refinements 5..2
+k0.01_prior_amgmc_tuned_r5     -wr_alpha 1 -wr_kappa 0.01 -wr_refine 5 -wr_sampler amgmc_tuned -wr_nsamples 10000 -wr_nburnin 500 -wr_seed 1025
+k0.01_posterior_amgmc_tuned_r5   -wr_alpha 1 -wr_kappa 0.01 -wr_refine 5 -wr_sampler amgmc_tuned -wr_posterior -wr_nsamples 10000 -wr_nburnin 500 -wr_seed 1026
+k0.01_prior_gmgmc_r5        -wr_alpha 1 -wr_kappa 0.01 -wr_refine 5 -wr_sampler gmgmc -wr_nsamples 10000 -wr_nburnin 500 -wr_seed 1027
+k0.01_posterior_gmgmc_r5      -wr_alpha 1 -wr_kappa 0.01 -wr_refine 5 -wr_sampler gmgmc -wr_posterior -wr_nsamples 10000 -wr_nburnin 500 -wr_seed 1028
+k0.01_prior_amgmc_r5        -wr_alpha 1 -wr_kappa 0.01 -wr_refine 5 -wr_sampler amgmc -wr_nsamples 10000 -wr_nburnin 500 -wr_seed 1029
+k0.01_posterior_amgmc_r5      -wr_alpha 1 -wr_kappa 0.01 -wr_refine 5 -wr_sampler amgmc -wr_posterior -wr_nsamples 10000 -wr_nburnin 500 -wr_seed 1030
+k0.01_prior_amgmc_tuned_r4     -wr_alpha 1 -wr_kappa 0.01 -wr_refine 4 -wr_sampler amgmc_tuned -wr_nsamples 10000 -wr_nburnin 500 -wr_seed 1031
+k0.01_posterior_amgmc_tuned_r4   -wr_alpha 1 -wr_kappa 0.01 -wr_refine 4 -wr_sampler amgmc_tuned -wr_posterior -wr_nsamples 10000 -wr_nburnin 500 -wr_seed 1032
+k0.01_prior_gmgmc_r4        -wr_alpha 1 -wr_kappa 0.01 -wr_refine 4 -wr_sampler gmgmc -wr_nsamples 10000 -wr_nburnin 500 -wr_seed 1033
+k0.01_posterior_gmgmc_r4      -wr_alpha 1 -wr_kappa 0.01 -wr_refine 4 -wr_sampler gmgmc -wr_posterior -wr_nsamples 10000 -wr_nburnin 500 -wr_seed 1034
+k0.01_prior_amgmc_r4        -wr_alpha 1 -wr_kappa 0.01 -wr_refine 4 -wr_sampler amgmc -wr_nsamples 10000 -wr_nburnin 500 -wr_seed 1035
+k0.01_posterior_amgmc_r4      -wr_alpha 1 -wr_kappa 0.01 -wr_refine 4 -wr_sampler amgmc -wr_posterior -wr_nsamples 10000 -wr_nburnin 500 -wr_seed 1036
+k0.01_prior_amgmc_tuned_r3     -wr_alpha 1 -wr_kappa 0.01 -wr_refine 3 -wr_sampler amgmc_tuned -wr_nsamples 10000 -wr_nburnin 500 -wr_seed 1037
+k0.01_posterior_amgmc_tuned_r3   -wr_alpha 1 -wr_kappa 0.01 -wr_refine 3 -wr_sampler amgmc_tuned -wr_posterior -wr_nsamples 10000 -wr_nburnin 500 -wr_seed 1038
+k0.01_prior_gmgmc_r3        -wr_alpha 1 -wr_kappa 0.01 -wr_refine 3 -wr_sampler gmgmc -wr_nsamples 10000 -wr_nburnin 500 -wr_seed 1039
+k0.01_posterior_gmgmc_r3      -wr_alpha 1 -wr_kappa 0.01 -wr_refine 3 -wr_sampler gmgmc -wr_posterior -wr_nsamples 10000 -wr_nburnin 500 -wr_seed 1040
+k0.01_prior_amgmc_r3        -wr_alpha 1 -wr_kappa 0.01 -wr_refine 3 -wr_sampler amgmc -wr_nsamples 10000 -wr_nburnin 500 -wr_seed 1041
+k0.01_posterior_amgmc_r3      -wr_alpha 1 -wr_kappa 0.01 -wr_refine 3 -wr_sampler amgmc -wr_posterior -wr_nsamples 10000 -wr_nburnin 500 -wr_seed 1042
+k0.01_prior_amgmc_tuned_r2     -wr_alpha 1 -wr_kappa 0.01 -wr_refine 2 -wr_sampler amgmc_tuned -wr_nsamples 10000 -wr_nburnin 500 -wr_seed 1043
+k0.01_posterior_amgmc_tuned_r2   -wr_alpha 1 -wr_kappa 0.01 -wr_refine 2 -wr_sampler amgmc_tuned -wr_posterior -wr_nsamples 10000 -wr_nburnin 500 -wr_seed 1044
+k0.01_prior_gmgmc_r2        -wr_alpha 1 -wr_kappa 0.01 -wr_refine 2 -wr_sampler gmgmc -wr_nsamples 10000 -wr_nburnin 500 -wr_seed 1045
+k0.01_posterior_gmgmc_r2      -wr_alpha 1 -wr_kappa 0.01 -wr_refine 2 -wr_sampler gmgmc -wr_posterior -wr_nsamples 10000 -wr_nburnin 500 -wr_seed 1046
+k0.01_prior_amgmc_r2        -wr_alpha 1 -wr_kappa 0.01 -wr_refine 2 -wr_sampler amgmc -wr_nsamples 10000 -wr_nburnin 500 -wr_seed 1047
+k0.01_posterior_amgmc_r2      -wr_alpha 1 -wr_kappa 0.01 -wr_refine 2 -wr_sampler amgmc -wr_posterior -wr_nsamples 10000 -wr_nburnin 500 -wr_seed 1048

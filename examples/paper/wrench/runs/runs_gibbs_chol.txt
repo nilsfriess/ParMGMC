@@ -1,0 +1,23 @@
+# alpha=1: Gibbs (N = 60 IACT, burn-in 10 IACT, at most 30 min of sampling) and Cholesky, refinements 4..2
+k0.1_prior_gibbs_r4        -wr_alpha 1 -wr_kappa 0.1 -wr_refine 4 -wr_sampler gibbs -wr_nsamples 270000 -wr_nburnin 45000 -wr_chunk 4500 -wr_max_time 1800 -wr_seed 1049
+k0.1_prior_gibbs_r3        -wr_alpha 1 -wr_kappa 0.1 -wr_refine 3 -wr_sampler gibbs -wr_nsamples 45600 -wr_nburnin 7600 -wr_chunk 1000 -wr_max_time 1800 -wr_seed 1050
+k0.1_prior_gibbs_r2        -wr_alpha 1 -wr_kappa 0.1 -wr_refine 2 -wr_sampler gibbs -wr_nsamples 20000 -wr_nburnin 1100 -wr_chunk 1000 -wr_max_time 1800 -wr_seed 1051
+k0.1_posterior_gibbs_r4      -wr_alpha 1 -wr_kappa 0.1 -wr_refine 4 -wr_sampler gibbs -wr_posterior -wr_nsamples 420000 -wr_nburnin 70000 -wr_chunk 7000 -wr_max_time 1800 -wr_seed 1052
+k0.1_posterior_gibbs_r3      -wr_alpha 1 -wr_kappa 0.1 -wr_refine 3 -wr_sampler gibbs -wr_posterior -wr_nsamples 72000 -wr_nburnin 12000 -wr_chunk 1200 -wr_max_time 1800 -wr_seed 1053
+k0.1_posterior_gibbs_r2      -wr_alpha 1 -wr_kappa 0.1 -wr_refine 2 -wr_sampler gibbs -wr_posterior -wr_nsamples 20000 -wr_nburnin 1750 -wr_chunk 1000 -wr_max_time 1800 -wr_seed 1054
+k0.01_prior_gibbs_r3        -wr_alpha 1 -wr_kappa 0.01 -wr_refine 3 -wr_sampler gibbs -wr_nsamples 2700000 -wr_nburnin 450000 -wr_chunk 45000 -wr_max_time 1800 -wr_seed 1055
+k0.01_prior_gibbs_r2        -wr_alpha 1 -wr_kappa 0.01 -wr_refine 2 -wr_sampler gibbs -wr_nsamples 420000 -wr_nburnin 70000 -wr_chunk 7000 -wr_max_time 1800 -wr_seed 1056
+k0.01_posterior_gibbs_r3      -wr_alpha 1 -wr_kappa 0.01 -wr_refine 3 -wr_sampler gibbs -wr_posterior -wr_nsamples 2700000 -wr_nburnin 450000 -wr_chunk 45000 -wr_max_time 1800 -wr_seed 1057
+k0.01_posterior_gibbs_r2      -wr_alpha 1 -wr_kappa 0.01 -wr_refine 2 -wr_sampler gibbs -wr_posterior -wr_nsamples 420000 -wr_nburnin 70000 -wr_chunk 7000 -wr_max_time 1800 -wr_seed 1058
+k0.1_prior_cholesky_r4       -wr_alpha 1 -wr_kappa 0.1 -wr_refine 4 -wr_sampler cholesky -wr_nsamples 2000 -wr_nburnin 10 -wr_seed 1059
+k0.1_posterior_cholesky_r4     -wr_alpha 1 -wr_kappa 0.1 -wr_refine 4 -wr_sampler cholesky -wr_posterior -wr_nsamples 2000 -wr_nburnin 10 -wr_seed 1060
+k0.1_prior_cholesky_r3       -wr_alpha 1 -wr_kappa 0.1 -wr_refine 3 -wr_sampler cholesky -wr_nsamples 2000 -wr_nburnin 10 -wr_seed 1061
+k0.1_posterior_cholesky_r3     -wr_alpha 1 -wr_kappa 0.1 -wr_refine 3 -wr_sampler cholesky -wr_posterior -wr_nsamples 2000 -wr_nburnin 10 -wr_seed 1062
+k0.1_prior_cholesky_r2       -wr_alpha 1 -wr_kappa 0.1 -wr_refine 2 -wr_sampler cholesky -wr_nsamples 2000 -wr_nburnin 10 -wr_seed 1063
+k0.1_posterior_cholesky_r2     -wr_alpha 1 -wr_kappa 0.1 -wr_refine 2 -wr_sampler cholesky -wr_posterior -wr_nsamples 2000 -wr_nburnin 10 -wr_seed 1064
+k0.01_prior_cholesky_r4      -wr_alpha 1 -wr_kappa 0.01 -wr_refine 4 -wr_sampler cholesky -wr_nsamples 2000 -wr_nburnin 10 -wr_seed 1065
+k0.01_posterior_cholesky_r4    -wr_alpha 1 -wr_kappa 0.01 -wr_refine 4 -wr_sampler cholesky -wr_posterior -wr_nsamples 2000 -wr_nburnin 10 -wr_seed 1066
+k0.01_prior_cholesky_r3      -wr_alpha 1 -wr_kappa 0.01 -wr_refine 3 -wr_sampler cholesky -wr_nsamples 2000 -wr_nburnin 10 -wr_seed 1067
+k0.01_posterior_cholesky_r3    -wr_alpha 1 -wr_kappa 0.01 -wr_refine 3 -wr_sampler cholesky -wr_posterior -wr_nsamples 2000 -wr_nburnin 10 -wr_seed 1068
+k0.01_prior_cholesky_r2      -wr_alpha 1 -wr_kappa 0.01 -wr_refine 2 -wr_sampler cholesky -wr_nsamples 2000 -wr_nburnin 10 -wr_seed 1069
+k0.01_posterior_cholesky_r2    -wr_alpha 1 -wr_kappa 0.01 -wr_refine 2 -wr_sampler cholesky -wr_posterior -wr_nsamples 2000 -wr_nburnin 10 -wr_seed 1070

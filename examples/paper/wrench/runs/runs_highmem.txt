@@ -1,0 +1,9 @@
+# runs that need more than one memory domain: run with RUN_MEM=110G (two at a time)
+a2_prior_cholesky_r4               -wr_alpha 2 -wr_kappa 0.1 -wr_refine 4 -wr_sampler cholesky -wr_nsamples 1000 -wr_nburnin 10 -wr_seed 3001
+a2_posterior_cholesky_r4           -wr_alpha 2 -wr_kappa 0.1 -wr_refine 4 -wr_sampler cholesky -wr_posterior -wr_nsamples 1000 -wr_nburnin 10 -wr_seed 3002
+a2_prior_gmgmc_r4                  -wr_alpha 2 -wr_kappa 0.1 -wr_refine 4 -wr_sampler gmgmc -wr_nsamples 1000 -wr_nburnin 20 -wr_seed 3003
+a2_posterior_gmgmc_woodbury_r4     -wr_alpha 2 -wr_kappa 0.1 -wr_refine 4 -wr_sampler gmgmc_woodbury -wr_posterior -wr_nsamples 1000 -wr_nburnin 20 -wr_seed 3004
+k0.1_prior_cholesky_r5       -wr_alpha 1 -wr_kappa 0.1 -wr_refine 5 -wr_sampler cholesky -wr_nsamples 2000 -wr_nburnin 10 -wr_seed 1071
+k0.1_posterior_cholesky_r5     -wr_alpha 1 -wr_kappa 0.1 -wr_refine 5 -wr_sampler cholesky -wr_posterior -wr_nsamples 2000 -wr_nburnin 10 -wr_seed 1072
+k0.01_prior_cholesky_r5      -wr_alpha 1 -wr_kappa 0.01 -wr_refine 5 -wr_sampler cholesky -wr_nsamples 2000 -wr_nburnin 10 -wr_seed 1073
+k0.01_posterior_cholesky_r5    -wr_alpha 1 -wr_kappa 0.01 -wr_refine 5 -wr_sampler cholesky -wr_posterior -wr_nsamples 2000 -wr_nburnin 10 -wr_seed 1074

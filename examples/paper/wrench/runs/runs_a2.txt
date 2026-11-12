@@ -1,0 +1,21 @@
+# alpha=2 (squared shifted Laplacian, CG-2 C0IP), kappa=0.1, refinements 1..3 (refinement 4 is in runs_highmem.txt)
+# prior: geometric MGMC with patch samplers, Cholesky, and the non-robust pointwise-Gibbs AMGMC variants (capped)
+a2_prior_gmgmc_r3                  -wr_alpha 2 -wr_kappa 0.1 -wr_refine 3 -wr_sampler gmgmc -wr_nsamples 2000 -wr_nburnin 100 -wr_seed 2001
+a2_posterior_gmgmc_woodbury_r3     -wr_alpha 2 -wr_kappa 0.1 -wr_refine 3 -wr_sampler gmgmc_woodbury -wr_posterior -wr_nsamples 2000 -wr_nburnin 100 -wr_seed 2002
+a2_prior_gmgmc_r2                  -wr_alpha 2 -wr_kappa 0.1 -wr_refine 2 -wr_sampler gmgmc -wr_nsamples 5000 -wr_nburnin 100 -wr_seed 2003
+a2_posterior_gmgmc_woodbury_r2     -wr_alpha 2 -wr_kappa 0.1 -wr_refine 2 -wr_sampler gmgmc_woodbury -wr_posterior -wr_nsamples 5000 -wr_nburnin 100 -wr_seed 2004
+a2_prior_gmgmc_r1                  -wr_alpha 2 -wr_kappa 0.1 -wr_refine 1 -wr_sampler gmgmc -wr_nsamples 10000 -wr_nburnin 100 -wr_seed 2005
+a2_posterior_gmgmc_woodbury_r1     -wr_alpha 2 -wr_kappa 0.1 -wr_refine 1 -wr_sampler gmgmc_woodbury -wr_posterior -wr_nsamples 10000 -wr_nburnin 100 -wr_seed 2006
+a2_prior_cholesky_r3               -wr_alpha 2 -wr_kappa 0.1 -wr_refine 3 -wr_sampler cholesky -wr_nsamples 2000 -wr_nburnin 10 -wr_seed 2007
+a2_posterior_cholesky_r3           -wr_alpha 2 -wr_kappa 0.1 -wr_refine 3 -wr_sampler cholesky -wr_posterior -wr_nsamples 2000 -wr_nburnin 10 -wr_seed 2008
+a2_prior_cholesky_r2               -wr_alpha 2 -wr_kappa 0.1 -wr_refine 2 -wr_sampler cholesky -wr_nsamples 2000 -wr_nburnin 10 -wr_seed 2009
+a2_posterior_cholesky_r2           -wr_alpha 2 -wr_kappa 0.1 -wr_refine 2 -wr_sampler cholesky -wr_posterior -wr_nsamples 2000 -wr_nburnin 10 -wr_seed 2010
+a2_prior_cholesky_r1               -wr_alpha 2 -wr_kappa 0.1 -wr_refine 1 -wr_sampler cholesky -wr_nsamples 2000 -wr_nburnin 10 -wr_seed 2011
+a2_posterior_cholesky_r1           -wr_alpha 2 -wr_kappa 0.1 -wr_refine 1 -wr_sampler cholesky -wr_posterior -wr_nsamples 2000 -wr_nburnin 10 -wr_seed 2012
+a2_prior_amgmc_r3                  -wr_alpha 2 -wr_kappa 0.1 -wr_refine 3 -wr_sampler amgmc -wr_nsamples 100000 -wr_nburnin 5000 -wr_chunk 1000 -wr_max_time 1800 -wr_seed 2013
+a2_prior_amgmc_r2                  -wr_alpha 2 -wr_kappa 0.1 -wr_refine 2 -wr_sampler amgmc -wr_nsamples 100000 -wr_nburnin 5000 -wr_chunk 1000 -wr_max_time 1800 -wr_seed 2014
+a2_prior_amgmc_r1                  -wr_alpha 2 -wr_kappa 0.1 -wr_refine 1 -wr_sampler amgmc -wr_nsamples 100000 -wr_nburnin 5000 -wr_chunk 1000 -wr_max_time 1800 -wr_seed 2015
+a2_prior_amgmc_sweeps10_r2         -wr_alpha 2 -wr_kappa 0.1 -wr_refine 2 -wr_sampler amgmc -wr_label amgmc_sweeps10 -gamgmc_mg_levels_ksp_max_it 10 -wr_nsamples 100000 -wr_nburnin 2000 -wr_chunk 500 -wr_max_time 1800 -wr_seed 2016
+a2_prior_amgmc_sweeps10_r1         -wr_alpha 2 -wr_kappa 0.1 -wr_refine 1 -wr_sampler amgmc -wr_label amgmc_sweeps10 -gamgmc_mg_levels_ksp_max_it 10 -wr_nsamples 100000 -wr_nburnin 2000 -wr_chunk 500 -wr_max_time 1800 -wr_seed 2017
+a2_prior_amgmc_sweeps100_r1        -wr_alpha 2 -wr_kappa 0.1 -wr_refine 1 -wr_sampler amgmc -wr_label amgmc_sweeps100 -gamgmc_mg_levels_ksp_max_it 100 -wr_nsamples 100000 -wr_nburnin 1000 -wr_chunk 250 -wr_max_time 1800 -wr_seed 2018
+a2_prior_gibbs_r1                  -wr_alpha 2 -wr_kappa 0.1 -wr_refine 1 -wr_sampler gibbs -wr_nsamples 500000 -wr_nburnin 80000 -wr_chunk 10000 -wr_max_time 1800 -wr_seed 2019
