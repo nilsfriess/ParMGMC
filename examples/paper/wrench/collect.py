@@ -44,7 +44,7 @@ def row_from_record(rec, path):
         flags.append("dirty")
     return {
         "alpha": p["alpha"], "kappa": p["kappa"], "mode": p["mode"],
-        "sampler": s["name"], "refine": p["refine"], "ndofs": p["ndofs"],
+        "sampler": s.get("label", s["name"]), "refine": p["refine"], "ndofs": p["ndofs"],
         "mg_levels": s["mg_levels"],
         "t_setup": t["setup"], "t_iter": t["per_iteration"], "iact": c["iact"],
         "t_indep": t["per_indep_sample"], "nsamples": r["nsamples"],
@@ -96,7 +96,7 @@ def main():
             rows.append(row_from_record(rec, path))
 
     rows.sort(key=lambda r: (r["alpha"], -r["kappa"], r["mode"] != "prior",
-                             SAMPLER_ORDER.get(r["sampler"], 99), r["refine"]))
+                             SAMPLER_ORDER.get(r["sampler"], 99), r["sampler"], r["refine"]))
 
     if args.csv:
         with open(args.csv, "w", newline="") as fh:

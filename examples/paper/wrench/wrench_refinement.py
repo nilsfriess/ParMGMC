@@ -16,7 +16,9 @@ Samplers (-wr_sampler), each a fixed set of PETSc options (see SAMPLERS below):
     gmgmc        geometric MGMC on the MeshHierarchy (Gibbs smoothers for alpha=1,
                  ASMStarPC patch samplers for alpha=2)
     cholesky     Cholesky sampler (prior) / Woodbury + Cholesky (posterior)
-Any PETSc option given on the command line overrides the sampler defaults.
+Any PETSc option given on the command line overrides the sampler defaults; -wr_label
+gives such a variant its own name in the results (e.g. -wr_label amgmc_sweeps10 with
+-gamgmc_mg_levels_ksp_max_it 10).
 
 Timed stages (also pushed as PETSc log stages, so -log_view breaks them down):
     setup     KSPSetUp plus one sampler iteration (triggers lazy initialisation,
@@ -26,8 +28,9 @@ Timed stages (also pushed as PETSc log stages, so -log_view breaks them down):
               -wr_max_time seconds of sampling have elapsed (the chain is truncated
               to the iterations actually performed)
 
-The exact QOI mean m^T A^-1 f and variance m^T A^-1 m are computed with CG + GAMG
-(untimed) unless -wr_reference 0 is given.
+The exact QOI mean m^T A^-1 f and variance m^T A^-1 m are computed with CG, preconditioned
+by GAMG (alpha=1) or a Cholesky factorisation of the prior matrix (alpha=2), untimed,
+unless -wr_reference 0 is given.
 
 Results: a human-readable summary on stdout, a JSON record (-wr_out) and the QOI chain
 as a .npy file (-wr_chain).
@@ -345,6 +348,7 @@ def main():
     refine = opts.getInt("wr_refine", 2)
     kappa = opts.getReal("wr_kappa", 0.1)
     sampler = opts.getString("wr_sampler", "amgmc")
+    label = opts.getString("wr_label", sampler)  # name of a sampler variant, e.g. more sweeps
     posterior = opts.getBool("wr_posterior", False)
     nburnin = opts.getInt("wr_nburnin", 500)
     nsamples = opts.getInt("wr_nsamples", 10000)
@@ -540,7 +544,7 @@ def main():
                              "values": OBS_VALUES.tolist(), "sigma2": OBS_SIGMA2}
             if posterior else None,
         },
-        "sampler": {"name": sampler, "pc_type": pc_type, "mg_levels": mg_levels,
+        "sampler": {"name": sampler, "label": label, "pc_type": pc_type, "mg_levels": mg_levels,
                     "options": defaults},
         "run": {
             "seed": seed, "nburnin": nburnin, "nsamples_requested": nsamples,
@@ -579,7 +583,7 @@ def main():
     }
 
     print("=" * 72)
-    print(f"wrench refinement: {record['problem']['mode']}, sampler = {sampler} "
+    print(f"wrench refinement: {record['problem']['mode']}, sampler = {label} "
           f"(pc_type {pc_type}, mg levels {mg_levels})")
     print(f"  alpha / kappa / refine : {alpha} / {kappa} / {refine}")
     print(f"  DOFs / nnz             : {V.dim()} / {record['problem']['nnz']}")
