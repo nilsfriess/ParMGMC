@@ -23,7 +23,7 @@ COLUMNS = [
     "var_ratio", "var_ratio_se", "mean_z", "flags", "job", "file",
 ]
 
-SAMPLER_ORDER = {"gibbs": 0, "amgmc": 1, "amgmc_tuned": 2, "gmgmc": 3, "cholesky": 4}
+SAMPLER_ORDER = {"gibbs": 0, "amgmc": 1, "amgmc_tuned": 2, "gmgmc": 3, "cholesky": 4, "spde": 5}
 
 
 def row_from_record(rec, path):
@@ -91,7 +91,7 @@ def main():
         for path in sorted(glob.glob(os.path.join(d, "**", "*.json"), recursive=True)):
             with open(path) as fh:
                 rec = json.load(fh)
-            if rec.get("driver") != "wrench_refinement.py":
+            if rec.get("driver") not in ("wrench_refinement.py", "wrench_spde.py"):
                 continue
             rows.append(row_from_record(rec, path))
 
