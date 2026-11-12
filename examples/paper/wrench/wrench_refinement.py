@@ -18,6 +18,10 @@ Samplers (-wr_sampler), each a fixed set of PETSc options (see sampler_options()
     gmgmc_woodbury  alpha=2 posterior only: Woodbury low-rank correction around the prior
                  geometric MGMC sampler (the per-level correction of gmgmc does not work
                  with the patch smoothers), see gmgmc_woodbury_options()
+    gmgmc_patch, gmgmc_patch_sym  prior: geometric MGMC with the PCPATCHGIBBS star-patch
+                 sampler (patch_gibbs.py) instead of ASMStarPC; _sym: forward pre- and backward
+                 post-smoothing (symmetric V-cycle)
+    gmgmc_patch_woodbury, gmgmc_patch_woodbury_sym  posterior: Woodbury around gmgmc_patch(_sym)
     cholesky     Cholesky sampler (prior) / Woodbury + Cholesky (posterior)
 Any PETSc option given on the command line overrides the sampler defaults; -wr_label
 gives such a variant its own name in the results (e.g. -wr_label amgmc_sweeps10 with
@@ -138,8 +142,58 @@ def gmgmc_woodbury_options(nlevels):
     return opts
 
 
+def patch_smoother_options(levels_prefix, sweep, deterministic):
+    """Star-patch Gibbs smoother (patch_gibbs.StarPatchGibbsPC, i.e. PCPATCHGIBBS) on the levels."""
+    opts = {levels_prefix + "ksp_type": "richardson", levels_prefix + "ksp_max_it": "1",
+            levels_prefix + "pc_type": "python",
+            levels_prefix + "pc_python_type": "patch_gibbs.StarPatchGibbsPC",
+            levels_prefix + "pc_star_construct_dim": "0",
+            levels_prefix + "pc_star_pgibbs_pc_patchgibbs_sweep": sweep}
+    if deterministic:
+        opts[levels_prefix + "pc_star_pgibbs_pc_patchgibbs_deterministic"] = "true"
+    return opts
+
+
+def patch_mg_options(mg_prefix, symmetric, deterministic):
+    """Level smoothers of the PCMG with options prefix ``mg_prefix``: forward patch sweeps, or, if
+    ``symmetric``, forward pre-smoothing and backward post-smoothing (symmetric V-cycle)."""
+    opts = patch_smoother_options(mg_prefix + "mg_levels_", "forward", deterministic)
+    if symmetric:
+        opts[mg_prefix + "pc_mg_distinct_smoothup"] = "true"
+        opts.update(patch_smoother_options(mg_prefix + "mg_levels_up_", "backward", deterministic))
+    return opts
+
+
+def gmgmc_patch_options(symmetric):
+    """Prior: geometric MGMC with the PCPATCHGIBBS star-patch sampler (same splitting as gmgmc for
+    alpha=2 if not symmetric)."""
+    return {"pc_type": "gamgmc", "pc_gamgmc_mg_type": "mg", "gamgmc_pc_mg_galerkin": "both",
+            **patch_mg_options("gamgmc_", symmetric, False)}
+
+
+def gmgmc_patch_woodbury_options(nlevels, symmetric):
+    """Posterior: Woodbury around gmgmc_patch, with the same V-cycle in deterministic mode (same
+    hierarchy, same patches and sweep directions) as the solver, so both use the same M."""
+    sampler = "pc_woodbury_sampler_"
+    solver = "pc_woodbury_solver_"
+    return {"pc_type": "woodbury", "pc_woodbury_sampler": "gamgmc", "pc_woodbury_solver": "mg",
+            sampler + "pc_gamgmc_mg_type": "mg", sampler + "gamgmc_pc_mg_galerkin": "both",
+            **patch_mg_options(sampler + "gamgmc_", symmetric, False),
+            solver + "pc_mg_levels": str(nlevels), solver + "pc_mg_galerkin": "both",
+            solver + "mg_coarse_ksp_type": "preonly", solver + "mg_coarse_pc_type": "cholesky",
+            **patch_mg_options(solver, symmetric, True)}
+
+
 def sampler_options(name, alpha, posterior, refine):
     """PETSc options (without leading '-') that define the sampler ``name``."""
+    if name in ("gmgmc_patch", "gmgmc_patch_sym"):
+        if posterior:
+            raise SystemExit(f"{name} is for the prior; use {name.replace('patch', 'patch_woodbury')}")
+        return gmgmc_patch_options(name.endswith("_sym"))
+    if name in ("gmgmc_patch_woodbury", "gmgmc_patch_woodbury_sym"):
+        if not posterior:
+            raise SystemExit(f"{name} is for the posterior")
+        return gmgmc_patch_woodbury_options(refine + 1, name.endswith("_sym"))
     if name == "gibbs":
         return {"pc_type": "sorgibbs"}
     if name == "amgmc":
