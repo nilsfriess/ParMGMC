@@ -28,6 +28,7 @@ Example:
 """
 
 import datetime
+import faulthandler
 import hashlib
 import importlib.metadata
 import json
@@ -72,16 +73,25 @@ def sampler_options(gamg, smoother):
     return opts
 
 
+def progress(comm, msg):
+    """Progress message from rank 0 (with -tt_verbose), to locate failures at scale."""
+    if comm.rank == 0 and PETSc.Options().getBool("tt_verbose", False):
+        print(f"[{datetime.datetime.now().isoformat(timespec='seconds')}] {msg}", flush=True)
+
+
 def make_mesh(comm, n, ntheta, prerefine, refine):
     if comm.rank == 0:
         coords, tets = twisted_toroid.build(n, ntheta)
     else:
         coords, tets = None, None
+    progress(comm, "coarse mesh built on rank 0")
     plex = fd.mesh.plex_from_cell_list(3, tets, coords, comm)
     for _ in range(prerefine):
         plex.setRefinementUniform(True)
         plex = plex.refine()
+    progress(comm, f"pre-refined {prerefine} times on rank 0, distributing")
     coarse = fd.Mesh(plex)
+    progress(comm, "coarse mesh created, refining in parallel")
     if refine > prerefine:
         return fd.MeshHierarchy(coarse, refine - prerefine)[-1]
     return coarse
@@ -175,6 +185,7 @@ def version(pkg):
 
 
 def main():
+    faulthandler.enable()  # Python traceback on SIGSEGV (run with -no_signal_handler)
     comm = MPI.COMM_WORLD
     rank = comm.rank
     opts = PETSc.Options()
@@ -214,6 +225,7 @@ def main():
     def timed(name, fn):
         stage = PETSc.Log.Stage("tt_" + name)
         stage.push()
+        progress(comm, f"stage {name}")
         comm.Barrier()
         t0 = perf_counter()
         result = fn()
