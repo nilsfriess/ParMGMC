@@ -251,6 +251,11 @@ static PetscErrorCode PCSetUp_Woodbury(PC pc)
     PetscCall(VecRestoreArray(wb->sqrtS, &sqrtSarr));
   }
   PetscCall(VecSqrtAbs(wb->sqrtS));
+  /* Inner PCs that need the DM (e.g. a geometric MGMC sampler and the matching multigrid solver) get the outer one */
+  if (pc->dm) {
+    PetscCall(PCSetDM(wb->sampler, pc->dm));
+    if (wb->solver) PetscCall(PCSetDM(wb->solver, pc->dm));
+  }
   PetscCall(PCSetOperators(wb->sampler, A, A));
   PetscCall(PCSetUp(wb->sampler));
   if (wb->use_chol) {
