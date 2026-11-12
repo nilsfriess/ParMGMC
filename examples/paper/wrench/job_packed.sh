@@ -13,10 +13,12 @@
 # <name>.log_view.txt.
 #
 # Usage (from anywhere):
-#   sbatch --time=02:00:00 --output=<results>/slurm_%j.out job_packed.sh [--run-mem <mem>] <results> <runs-file>...
+#   sbatch --time=02:00:00 --output=<results>/slurm_%j.out job_packed.sh [--run-mem <mem>] [--build-dir <dir>] <results> <runs-file>...
 #   sbatch --partition=devel --time=00:30:00 ...    # smoke tests
 # --run-mem: memory per run (default 28G, i.e. one memory domain); with more, fewer runs
 #   execute at the same time (e.g. 110G: two at a time).
+# --build-dir: ParMGMC build directory relative to the checkout (default build); its python/
+#   subdirectory provides pymgmc.
 # The job runs with --export=NONE; ROOT is $HOME/algebraic_mgmc_paper.
 #
 #SBATCH --partition=cpu-single
@@ -30,11 +32,15 @@
 set -uo pipefail
 
 RUN_MEM=28G
-if [ "${1:-}" = "--run-mem" ]; then
-  RUN_MEM=$2
-  shift 2
-fi
-[ $# -ge 2 ] || { echo "usage: $0 [--run-mem <mem>] <results-dir> <runs-file>..." >&2; exit 1; }
+BUILD_DIR=build
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --run-mem) RUN_MEM=$2; shift 2 ;;
+    --build-dir) BUILD_DIR=$2; shift 2 ;;
+    *) break ;;
+  esac
+done
+[ $# -ge 2 ] || { echo "usage: $0 [--run-mem <mem>] [--build-dir <dir>] <results-dir> <runs-file>..." >&2; exit 1; }
 results=$1
 shift
 
@@ -48,7 +54,7 @@ export OMP_NUM_THREADS=1
 export MKL_NUM_THREADS=1
 export MKL_DYNAMIC=FALSE
 export OPENBLAS_NUM_THREADS=1
-export PYTHONPATH=$ROOT/ParMGMC/build/python
+export PYTHONPATH=$ROOT/ParMGMC/$BUILD_DIR/python
 
 MKLLIB=/opt/bwhpc/common/compiler/intel/2022.2/mkl/2022.1.0/lib/intel64
 OMPILIB=$(dirname "$(which mpicc)")/../lib64
@@ -61,7 +67,7 @@ export PMIX_MCA_gds=hash    # data store without shmem/shmem2
 mkdir -p "$results"
 {
   echo "job $SLURM_JOB_ID on $(hostname), $(date -Iseconds)"
-  echo "driver $DRIVER (md5 $(md5sum "$DRIVER" | cut -d' ' -f1)), memory per run $RUN_MEM"
+  echo "driver $DRIVER (md5 $(md5sum "$DRIVER" | cut -d' ' -f1)), memory per run $RUN_MEM, pymgmc from $PYTHONPATH"
   echo
   lscpu
   echo

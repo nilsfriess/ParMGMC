@@ -33,7 +33,7 @@ Afterwards: `python $J/collect.py $R --csv wrench.csv --md wrench.md`.
 (`-wr_sampler spde`).  Runs:
 
 ```bash
-sbatch --time=03:00:00 --job-name=wr_a2_patch_spde --output=$R/slurm_%j.out $J/job_packed.sh $R $J/runs/runs_a2_patch_spde.txt
+sbatch --time=03:00:00 --job-name=wr_a2_patch_spde --output=$R/slurm_%j.out $J/job_packed.sh --build-dir build-patch $R $J/runs/runs_a2_patch_spde.txt
 sbatch --time=06:00:00 --job-name=wr_a2_patch_highmem --output=$R/slurm_%j.out \
-  $J/job_packed.sh --run-mem 110G $R $J/runs/runs_a2_patch_highmem.txt
+  $J/job_packed.sh --run-mem 110G --build-dir build-patch $R $J/runs/runs_a2_patch_highmem.txt
 ```
