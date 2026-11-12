@@ -9,12 +9,15 @@ Prior precision (-wr_alpha):
     1: kappa^2 u v + grad u . grad v, CG-1, natural (Neumann) boundary conditions
     2: C0 interior-penalty discretisation of (kappa^2 - Delta)^2, CG-2 (as in ex13)
 
-Samplers (-wr_sampler), each a fixed set of PETSc options (see SAMPLERS below):
+Samplers (-wr_sampler), each a fixed set of PETSc options (see sampler_options()):
     gibbs        single-site Gibbs (PCSORGIBBS)
     amgmc        algebraic MGMC, PETSc's default GAMG parameters
     amgmc_tuned  algebraic MGMC, GAMG parameters tuned in earlier experiments
     gmgmc        geometric MGMC on the MeshHierarchy (Gibbs smoothers for alpha=1,
                  ASMStarPC patch samplers for alpha=2)
+    gmgmc_woodbury  alpha=2 posterior only: Woodbury low-rank correction around the prior
+                 geometric MGMC sampler (the per-level correction of gmgmc does not work
+                 with the patch smoothers), see gmgmc_woodbury_options()
     cholesky     Cholesky sampler (prior) / Woodbury + Cholesky (posterior)
 Any PETSc option given on the command line overrides the sampler defaults; -wr_label
 gives such a variant its own name in the results (e.g. -wr_label amgmc_sweeps10 with
@@ -107,7 +110,35 @@ ASMSTAR_SMOOTHER = {
 }
 
 
-def sampler_options(name, alpha, posterior):
+def gmgmc_woodbury_options(nlevels):
+    """Posterior sampler with the low-rank correction applied outside the multigrid cycle.
+
+    PCWoodbury with the prior geometric MGMC sampler (patch samplers) and, to build the
+    correction G, the matching deterministic V-cycle (same hierarchy, patch Cholesky solves
+    instead of patch samples, coarse Cholesky solve instead of coarse sample), so that both
+    use the same splitting matrix M.  Unlike the per-level low-rank correction of PCGAMGMC
+    this never hands a MATLRC operator to the patch smoothers.
+    """
+    sampler = "pc_woodbury_sampler_"
+    solver = "pc_woodbury_solver_"
+    opts = {"pc_type": "woodbury", "pc_woodbury_sampler": "gamgmc", "pc_woodbury_solver": "mg",
+            sampler + "pc_gamgmc_mg_type": "mg", sampler + "gamgmc_pc_mg_galerkin": "both",
+            solver + "pc_mg_levels": str(nlevels), solver + "pc_mg_galerkin": "both",
+            solver + "mg_coarse_ksp_type": "preonly", solver + "mg_coarse_pc_type": "cholesky"}
+    for key, val in ASMSTAR_SMOOTHER.items():
+        opts[sampler + key] = val
+        key = key.removeprefix("gamgmc_")
+        if key == "mg_levels_pc_star_sub_sub_ksp_max_it":
+            continue  # the patch solves are direct (preonly)
+        if key == "mg_levels_pc_star_sub_sub_ksp_type":
+            val = "preonly"
+        elif key == "mg_levels_pc_star_sub_sub_pc_type":
+            val = "cholesky"
+        opts[solver + key] = val
+    return opts
+
+
+def sampler_options(name, alpha, posterior, refine):
     """PETSc options (without leading '-') that define the sampler ``name``."""
     if name == "gibbs":
         return {"pc_type": "sorgibbs"}
@@ -121,6 +152,10 @@ def sampler_options(name, alpha, posterior):
         if alpha == 2:
             opts.update(ASMSTAR_SMOOTHER)
         return opts
+    if name == "gmgmc_woodbury":
+        if alpha != 2 or not posterior:
+            raise SystemExit("gmgmc_woodbury is only set up for the alpha=2 posterior")
+        return gmgmc_woodbury_options(refine + 1)
     if name == "cholesky":
         if posterior:
             return {"pc_type": "woodbury", "pc_woodbury_sampler": "cholsampler",
@@ -365,7 +400,7 @@ def main():
         raise SystemExit("-wr_nsamples and -wr_chunk must be positive")
 
     # Sampler options; anything given explicitly on the command line wins.
-    defaults = sampler_options(sampler, alpha, posterior)
+    defaults = sampler_options(sampler, alpha, posterior, refine)
     for key, val in defaults.items():
         if not opts.hasName(key):
             opts[key] = val
