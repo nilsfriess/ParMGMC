@@ -44,10 +44,11 @@ mkdir -p "$results"
   echo "options: $*"
 } > "$results/$name.node.txt"
 
-# srun does not inherit --cpus-per-task from sbatch; block:cyclic alternates the tasks of a
-# node between the two sockets, and each task is bound to its block of cores.
+# srun does not inherit --cpus-per-task from sbatch.  block:block fills the cores of a node
+# in order, so with 4 cores per task every memory domain (8 cores) holds two tasks, also when
+# a node is only half used (8 tasks fill the first socket).
 srun --mpi=pmix --cpus-per-task="${SLURM_CPUS_PER_TASK:-1}" --cpu-bind=verbose,cores \
-  --distribution=block:cyclic \
+  --distribution=block:block \
   env LD_PRELOAD="$PRELOAD" python "$DRIVER" "$@" \
   -tt_out "$results/$name.json" -tt_chain "$results/$name.npy" \
   -log_view ":$results/$name.log_view.txt" -options_left \
