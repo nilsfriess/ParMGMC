@@ -57,8 +57,6 @@ mkdir -p "$results"
 {
   echo "job $SLURM_JOB_ID on $(hostname), $(date -Iseconds)"
   echo "driver $DRIVER (md5 $(md5sum "$DRIVER" | cut -d' ' -f1))"
-  echo "ParMGMC $(git -C "$ROOT/ParMGMC" rev-parse HEAD)"
-  git -C "$ROOT/ParMGMC" status --short --untracked-files=no
   echo
   lscpu
   echo
@@ -68,16 +66,18 @@ mkdir -p "$results"
 for runs_file in "$@"; do
   cp "$runs_file" "$results/$(basename "$runs_file").$SLURM_JOB_ID"
   echo "$(date -Iseconds) starting runs from $runs_file"
-  while read -r name args; do
+  # The runs file is read through fd 3 and srun's stdin is /dev/null: srun forwards
+  # its stdin to the task and would otherwise swallow the rest of the runs file.
+  while read -r name args <&3; do
     [[ -z "$name" || "$name" == \#* ]] && continue
     # shellcheck disable=SC2086 # $args holds the driver options, split on purpose
     srun --mpi=pmix --exact --ntasks=1 --cpus-per-task=8 --mem="$RUN_MEM" \
       --cpu-bind=verbose,cores --job-name="$name" --output="$results/$name.out" \
       env LD_PRELOAD="$PRELOAD" python "$DRIVER" $args \
       -wr_out "$results/$name.json" -wr_chain "$results/$name.npy" \
-      -log_view ":$results/$name.log_view.txt" -options_left &
+      -log_view ":$results/$name.log_view.txt" -options_left < /dev/null &
     sleep 1 # keep the step launch order (and hence the core blocks) deterministic
-  done < "$runs_file"
+  done 3< "$runs_file"
   wait
   echo "$(date -Iseconds) finished runs from $runs_file"
 done

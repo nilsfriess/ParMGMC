@@ -272,14 +272,48 @@ def proc_status(key):
 def git_info():
     def run(*args):
         try:
-            return subprocess.run(["git", "-C", HERE, *args], capture_output=True,
-                                  text=True, timeout=10).stdout.strip()
+            res = subprocess.run(["git", "-C", HERE, *args], capture_output=True,
+                                 text=True, timeout=10)
         except (OSError, subprocess.SubprocessError):
             return None
+        return res.stdout.strip() if res.returncode == 0 else None
     status = run("status", "--porcelain", "--untracked-files=no")
-    return {"commit": run("rev-parse", "HEAD"),
+    info = {"commit": run("rev-parse", "HEAD"),
             "branch": run("rev-parse", "--abbrev-ref", "HEAD"),
             "dirty": None if status is None else bool(status)}
+    if not info["commit"]:
+        # No git executable (e.g. on the compute nodes): read the checkout's HEAD directly.
+        # The dirty state is unknown in this case.
+        info.update(git_head_from_files())
+    return info
+
+
+def git_head_from_files():
+    path = HERE
+    while not os.path.isdir(os.path.join(path, ".git")):
+        parent = os.path.dirname(path)
+        if parent == path:
+            return {"commit": None, "branch": None}
+        path = parent
+    gitdir = os.path.join(path, ".git")
+    try:
+        with open(os.path.join(gitdir, "HEAD")) as fh:
+            head = fh.read().strip()
+        if not head.startswith("ref: "):
+            return {"commit": head, "branch": None}
+        ref = head[len("ref: "):]
+        branch = ref.removeprefix("refs/heads/")
+        ref_file = os.path.join(gitdir, ref)
+        if os.path.isfile(ref_file):
+            with open(ref_file) as fh:
+                return {"commit": fh.read().strip(), "branch": branch}
+        with open(os.path.join(gitdir, "packed-refs")) as fh:
+            for line in fh:
+                if line.rstrip().endswith(" " + ref):
+                    return {"commit": line.split()[0], "branch": branch}
+    except OSError:
+        pass
+    return {"commit": None, "branch": None}
 
 
 def version(pkg):
