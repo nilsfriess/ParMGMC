@@ -23,6 +23,7 @@ Samplers (-wr_sampler), each a fixed set of PETSc options (see sampler_options()
                  post-smoothing (symmetric V-cycle)
     gmgmc_patch_woodbury, gmgmc_patch_woodbury_sym  posterior: Woodbury around gmgmc_patch(_sym)
     cholesky     Cholesky sampler (prior) / Woodbury + Cholesky (posterior)
+    spde         alpha=2 only: SPDE sampler, P1 with lumped mass (runs wrench_spde.py)
 Any PETSc option given on the command line overrides the sampler defaults; -wr_label
 gives such a variant its own name in the results (e.g. -wr_label amgmc_sweeps10 with
 -gamgmc_mg_levels_ksp_max_it 10).
@@ -437,6 +438,9 @@ def main():
     refine = opts.getInt("wr_refine", 2)
     kappa = opts.getReal("wr_kappa", 0.1)
     sampler = opts.getString("wr_sampler", "amgmc")
+    if sampler == "spde":  # separate driver, same options and output format
+        import wrench_spde
+        return wrench_spde.main()
     label = opts.getString("wr_label", sampler)  # name of a sampler variant, e.g. more sweeps
     posterior = opts.getBool("wr_posterior", False)
     nburnin = opts.getInt("wr_nburnin", 500)

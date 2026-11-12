@@ -25,3 +25,15 @@ sbatch --time=08:00:00 --job-name=wr_highmem --output=$R/slurm_%j.out \
 ```
 
 Afterwards: `python $J/collect.py $R --csv wrench.csv --md wrench.md`.
+
+## Patch sampler and SPDE comparison (alpha = 2)
+
+`patch_gibbs.py` wraps ParMGMC's PCPATCHGIBBS (samplers `gmgmc_patch*` in the driver),
+`check_patch_gibbs.py` checks it against ASMStarPC and MatSOR, `wrench_spde.py` is the SPDE sampler
+(`-wr_sampler spde`).  Runs:
+
+```bash
+sbatch --time=03:00:00 --job-name=wr_a2_patch_spde --output=$R/slurm_%j.out $J/job_packed.sh $R $J/runs/runs_a2_patch_spde.txt
+sbatch --time=06:00:00 --job-name=wr_a2_patch_highmem --output=$R/slurm_%j.out \
+  $J/job_packed.sh --run-mem 110G $R $J/runs/runs_a2_patch_highmem.txt
+```

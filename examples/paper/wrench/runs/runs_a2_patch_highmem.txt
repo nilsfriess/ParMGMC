@@ -1,0 +1,5 @@
+# alpha=2 refinement 4 with the patch sampler; needs more memory (RUN_MEM=110G, two at a time)
+a2_prior_gmgmc_patch_r4            -wr_alpha 2 -wr_kappa 0.1 -wr_refine 4 -wr_sampler gmgmc_patch -wr_nsamples 50 -wr_nburnin 2 -wr_reference 0 -wr_seed 4023
+a2_prior_gmgmc_patch_sym_r4        -wr_alpha 2 -wr_kappa 0.1 -wr_refine 4 -wr_sampler gmgmc_patch_sym -wr_nsamples 50 -wr_nburnin 2 -wr_reference 0 -wr_seed 4024
+a2_posterior_gmgmc_patch_woodbury_r4 -wr_alpha 2 -wr_kappa 0.1 -wr_refine 4 -wr_sampler gmgmc_patch_woodbury -wr_posterior -wr_nsamples 2000 -wr_nburnin 50 -wr_seed 4025
+a2_posterior_gmgmc_patch_woodbury_sym_r4 -wr_alpha 2 -wr_kappa 0.1 -wr_refine 4 -wr_sampler gmgmc_patch_woodbury_sym -wr_posterior -wr_nsamples 2000 -wr_nburnin 50 -wr_seed 4026

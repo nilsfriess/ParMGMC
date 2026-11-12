@@ -1,0 +1,27 @@
+# alpha=2, kappa=0.1: PCPATCHGIBBS star-patch sampler (gmgmc_patch*: same splitting as gmgmc with
+# ASMStarPC; _sym: forward pre-/backward post-smoothing) and the SPDE sampler (P1, lumped mass)
+# prior, patch sampler: timing only (short chains, no reference), the IACTs are those of gmgmc
+a2_prior_gmgmc_patch_r3            -wr_alpha 2 -wr_kappa 0.1 -wr_refine 3 -wr_sampler gmgmc_patch -wr_nsamples 100 -wr_nburnin 5 -wr_reference 0 -wr_seed 4001
+a2_prior_gmgmc_patch_sym_r3        -wr_alpha 2 -wr_kappa 0.1 -wr_refine 3 -wr_sampler gmgmc_patch_sym -wr_nsamples 100 -wr_nburnin 5 -wr_reference 0 -wr_seed 4002
+a2_prior_gmgmc_patch_r2            -wr_alpha 2 -wr_kappa 0.1 -wr_refine 2 -wr_sampler gmgmc_patch -wr_nsamples 300 -wr_nburnin 5 -wr_reference 0 -wr_seed 4003
+a2_prior_gmgmc_patch_sym_r2        -wr_alpha 2 -wr_kappa 0.1 -wr_refine 2 -wr_sampler gmgmc_patch_sym -wr_nsamples 300 -wr_nburnin 5 -wr_reference 0 -wr_seed 4004
+a2_prior_gmgmc_patch_r1            -wr_alpha 2 -wr_kappa 0.1 -wr_refine 1 -wr_sampler gmgmc_patch -wr_nsamples 1000 -wr_nburnin 5 -wr_reference 0 -wr_seed 4005
+a2_prior_gmgmc_patch_sym_r1        -wr_alpha 2 -wr_kappa 0.1 -wr_refine 1 -wr_sampler gmgmc_patch_sym -wr_nsamples 1000 -wr_nburnin 5 -wr_reference 0 -wr_seed 4006
+# posterior, patch sampler: chains (IACT trend of the Woodbury posterior, forward vs symmetric V-cycle)
+a2_posterior_gmgmc_patch_woodbury_r3 -wr_alpha 2 -wr_kappa 0.1 -wr_refine 3 -wr_sampler gmgmc_patch_woodbury -wr_posterior -wr_nsamples 2000 -wr_nburnin 50 -wr_seed 4007
+a2_posterior_gmgmc_patch_woodbury_sym_r3 -wr_alpha 2 -wr_kappa 0.1 -wr_refine 3 -wr_sampler gmgmc_patch_woodbury_sym -wr_posterior -wr_nsamples 2000 -wr_nburnin 50 -wr_seed 4008
+a2_posterior_gmgmc_patch_woodbury_r2 -wr_alpha 2 -wr_kappa 0.1 -wr_refine 2 -wr_sampler gmgmc_patch_woodbury -wr_posterior -wr_nsamples 4000 -wr_nburnin 50 -wr_seed 4009
+a2_posterior_gmgmc_patch_woodbury_sym_r2 -wr_alpha 2 -wr_kappa 0.1 -wr_refine 2 -wr_sampler gmgmc_patch_woodbury_sym -wr_posterior -wr_nsamples 4000 -wr_nburnin 50 -wr_seed 4010
+a2_posterior_gmgmc_patch_woodbury_r1 -wr_alpha 2 -wr_kappa 0.1 -wr_refine 1 -wr_sampler gmgmc_patch_woodbury -wr_posterior -wr_nsamples 10000 -wr_nburnin 50 -wr_seed 4011
+a2_posterior_gmgmc_patch_woodbury_sym_r1 -wr_alpha 2 -wr_kappa 0.1 -wr_refine 1 -wr_sampler gmgmc_patch_woodbury_sym -wr_posterior -wr_nsamples 10000 -wr_nburnin 50 -wr_seed 4012
+# SPDE (P1 on the same mesh, refinement 5 = same DOFs as CG-2 on refinement 4): independent samples
+a2_prior_spde_r5                   -wr_alpha 2 -wr_kappa 0.1 -wr_refine 5 -wr_sampler spde -wr_nsamples 500 -wr_nburnin 2 -wr_seed 4013
+a2_posterior_spde_r5               -wr_alpha 2 -wr_kappa 0.1 -wr_refine 5 -wr_sampler spde -wr_posterior -wr_nsamples 500 -wr_nburnin 2 -wr_seed 4014
+a2_prior_spde_r4                   -wr_alpha 2 -wr_kappa 0.1 -wr_refine 4 -wr_sampler spde -wr_nsamples 500 -wr_nburnin 2 -wr_seed 4015
+a2_posterior_spde_r4               -wr_alpha 2 -wr_kappa 0.1 -wr_refine 4 -wr_sampler spde -wr_posterior -wr_nsamples 500 -wr_nburnin 2 -wr_seed 4016
+a2_prior_spde_r3                   -wr_alpha 2 -wr_kappa 0.1 -wr_refine 3 -wr_sampler spde -wr_nsamples 500 -wr_nburnin 2 -wr_seed 4017
+a2_posterior_spde_r3               -wr_alpha 2 -wr_kappa 0.1 -wr_refine 3 -wr_sampler spde -wr_posterior -wr_nsamples 500 -wr_nburnin 2 -wr_seed 4018
+a2_prior_spde_r2                   -wr_alpha 2 -wr_kappa 0.1 -wr_refine 2 -wr_sampler spde -wr_nsamples 500 -wr_nburnin 2 -wr_seed 4019
+a2_posterior_spde_r2               -wr_alpha 2 -wr_kappa 0.1 -wr_refine 2 -wr_sampler spde -wr_posterior -wr_nsamples 500 -wr_nburnin 2 -wr_seed 4020
+a2_prior_spde_r1                   -wr_alpha 2 -wr_kappa 0.1 -wr_refine 1 -wr_sampler spde -wr_nsamples 500 -wr_nburnin 2 -wr_seed 4021
+a2_posterior_spde_r1               -wr_alpha 2 -wr_kappa 0.1 -wr_refine 1 -wr_sampler spde -wr_posterior -wr_nsamples 500 -wr_nburnin 2 -wr_seed 4022
