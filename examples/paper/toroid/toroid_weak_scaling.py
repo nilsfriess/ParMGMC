@@ -338,6 +338,11 @@ def main():
     except OSError:
         pass
     hosts = comm.gather((socket.gethostname(), cpus), root=0)
+    # -tt_view_end: view the sampler once more after sampling (collective, so before the
+    # rank-0-only part below), e.g. to print the accumulated per-phase timings of
+    # -gamgmc_mg_levels_<l>_sorgibbs_pc_parsor_stats.
+    if opts.getBool("tt_view_end", False):
+        ksp.view()
     if rank != 0:
         return
 

@@ -308,6 +308,11 @@ static PetscErrorCode PCView_SORGibbs(PC pc, PetscViewer viewer)
   PetscAssert(sorgibbs->type == SOR_FORWARD_SWEEP || sorgibbs->type == SOR_LOCAL_FORWARD_SWEEP, PETSC_COMM_WORLD, PETSC_ERR_PLIB, "Forgot to add sweep in PCView_SORGibbs");
   if (sorgibbs->type == SOR_FORWARD_SWEEP) PetscCall(PetscViewerASCIIPrintf(viewer, "Sweep type: Forward\n"));
   if (sorgibbs->type == SOR_LOCAL_FORWARD_SWEEP) PetscCall(PetscViewerASCIIPrintf(viewer, "Sweep type: Local forward (a.k.a Hogwild sampler)\n"));
+  if (sorgibbs->use_parsor && sorgibbs->parsor_pc) {
+    PetscCall(PetscViewerASCIIPushTab(viewer));
+    PetscCall(PCView(sorgibbs->parsor_pc, viewer));
+    PetscCall(PetscViewerASCIIPopTab(viewer));
+  }
   PetscFunctionReturn(PETSC_SUCCESS);
 }
 

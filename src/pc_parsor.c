@@ -1077,8 +1077,7 @@ static PetscErrorCode PCReset_PARSOR(PC pc)
   PC_PARSOR parsor = (PC_PARSOR)pc->data;
 
   PetscFunctionBegin;
-  if (parsor->parsor_data) {
-    if (parsor->stats) PetscCall(ParallelSORPrintStats(pc, PETSC_TRUE));
+  if (parsor->parsor_data) { /* no statistics output here, see PCView_PARSOR */
     PetscCall(ParallelSORDestroy(parsor->parsor_data));
     parsor->parsor_data = NULL;
   }
@@ -1092,10 +1091,7 @@ static PetscErrorCode PCDestroy_PARSOR(PC pc)
   PC_PARSOR parsor = (PC_PARSOR)pc->data;
 
   PetscFunctionBegin;
-  if (parsor->parsor_data) {
-    if (parsor->stats) PetscCall(ParallelSORPrintStats(pc, PETSC_TRUE));
-    PetscCall(ParallelSORDestroy(parsor->parsor_data));
-  }
+  if (parsor->parsor_data) PetscCall(ParallelSORDestroy(parsor->parsor_data)); /* no statistics output here, see PCView_PARSOR */
   PetscCall(VecDestroy(&parsor->idiag_vec));
   PetscCall(PetscFree(parsor->diag));
   PetscCall(PetscFree(parsor));
@@ -1187,6 +1183,11 @@ static PetscErrorCode PCView_PARSOR(PC pc, PetscViewer viewer)
     PetscCall(PetscViewerASCIIPrintf(viewer, "  Omega: %g\n", (double)parsor->omega));
     PetscCall(PetscViewerASCIIPrintf(viewer, "  Iterations: %" PetscInt_FMT "\n", parsor->its));
     PetscCall(PetscViewerASCIIPrintf(viewer, "  Sweep type: Forward\n"));
+    /* The accumulated per-phase timings are printed here (collective, called at a well-defined
+       point, e.g. by a final KSPView) rather than at PCReset/PCDestroy: under petsc4py the
+       destruction may happen in the deferred garbage cleanup, whose order differs between ranks,
+       and the Allreduce in the statistics then deadlocks. */
+    if (parsor->stats && parsor->parsor_data) PetscCall(ParallelSORPrintStats(pc, PETSC_TRUE));
   }
   PetscFunctionReturn(PETSC_SUCCESS);
 }
