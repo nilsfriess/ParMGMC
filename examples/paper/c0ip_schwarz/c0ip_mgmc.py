@@ -31,6 +31,7 @@ Options
   -coarse_noise 0 negative control: deterministic coarse step (the chain is then biased)
 """
 
+import time
 import numpy as np
 import scipy.sparse as sp
 import scipy.linalg as sl
@@ -186,7 +187,11 @@ def make_ksp(deterministic, coarse_sample=True):
     if fine == "patchgibbs":
         pymgmc.PCPatchGibbsSetPatches(sm.getPC(), offsets, indices)
     ksp.setFromOptions()
+    comm.Barrier()
+    t0 = time.perf_counter()
     ksp.setUp()
+    comm.Barrier()
+    make_ksp.t_setup = time.perf_counter() - t0
     assert mg.getType() == "mg" and mg.getMGLevels() == 2 and mg.getMGSmoother(1).getPC().getType() == fine
     return ksp, mg
 
@@ -298,7 +303,7 @@ else:
     ip, ix, dv = A.getValuesCSR()
     rows = comm.gather((rstart, ip, ix, dv), root=0)
     Gall = gather_owned(G)
-    if rank == 0:
+    if rank == 0 and not opts.getBool("timing_only", False):
         indptr, idx, val = [0], [], []
         for r0, ipr, ixr, dvr in sorted(rows, key=lambda t: t[0]):
             indptr += list(indptr[-1] + ipr[1:])
@@ -318,26 +323,31 @@ else:
         b.zeroEntries()
         x.zeroEntries()
         for it in range(nburnin + nsamples):
+            if it == nburnin:
+                comm.Barrier()
+                t0 = time.perf_counter()
             ksp_.solve(b, x)
             if it >= nburnin:
                 xa = x.array_r
                 qs[it - nburnin] = comm.allreduce(xa @ G, op=MPI.SUM)
                 s1 += xa
                 s2 += xa * xa
+        comm.Barrier()
+        run_chain.t_sample = (time.perf_counter() - t0) / nsamples
         mean = s1 / nsamples
         return qs, gather_owned(s2 / nsamples - mean ** 2)
 
     def report(name, qs, var):
         if rank:
             return
-        out = [f"RESULT {name:14s} {tag}"]
-        for k in range(G.shape[1]):
+        out = [f"RESULT {name:14s} {tag} | setup {report.t_setup:.2f} s, {1e3 * run_chain.t_sample:.2f} ms/sample (incl. QoI bookkeeping)"]
+        for k in range(G.shape[1] if var_q is not None else 0):
             tau = iact(qs[:, k])
             r = qs[:, k].var() / var_q[k]
             err = np.sqrt(2 * tau / nsamples)
             zm = qs[:, k].mean() / np.sqrt(var_q[k] * tau / nsamples)
             out.append(f"  {qnames[k]:12s}: var ratio {r:.3f} +- {err:.3f}  mean z {zm:+.2f}  IACT {tau:.2f}")
-        if dvar is not None:
+        if var_q is not None and dvar is not None:
             rat = var / dvar
             out.append(f"  pointwise var ratio: mean {rat.mean():.4f}  rms(ratio - 1) {np.sqrt(((rat - 1) ** 2).mean()):.4f}"
                        f"  min {rat.min():.3f}  max {rat.max():.3f}")
@@ -351,11 +361,14 @@ else:
         kc.setNormType(PETSc.KSP.NormType.NONE)
         kc.setInitialGuessNonzero(True)
         kc.getPC().setType("cholsampler")
+        t0 = time.perf_counter()
         kc.setUp()
+        report.t_setup = time.perf_counter() - t0
         report("cholesky", *run_chain(kc))
 
     ksp, mg = make_ksp(deterministic=False, coarse_sample=coarse_noise)
     info = subdomain_info(mg) if fine == "schwarzgibbs" else ""
     if rank == 0:
         print(f"setup{info}", flush=True)
+    report.t_setup = make_ksp.t_setup
     report("mgmc" if coarse_noise else "mgmc NO-NOISE", *run_chain(ksp))
