@@ -123,7 +123,20 @@ PetscErrorCode ParMGMCSetSeed(unsigned long seed)
 
   PetscFunctionBeginUser;
   PetscCall(ParMGMCGetPetscRandom(&pr));
+#ifdef PARMGMC_HAVE_MKL
+  /* The VSL stream mixes in the rank itself (see VecSetRandomStandardNormal). */
   PetscCall(PetscRandomSetSeed(pr, seed));
+#else
+  {
+    /* PetscRandomSetSeed sets the same seed on every rank, so without an offset all ranks
+       would draw the same noise. Offset by the rank as PETSc does for its default seeds
+       (0x12345678 + 76543 * rank). */
+    PetscMPIInt rank;
+
+    PetscCallMPI(MPI_Comm_rank(PETSC_COMM_WORLD, &rank));
+    PetscCall(PetscRandomSetSeed(pr, (PetscInt64)seed + 76543 * (PetscInt64)rank));
+  }
+#endif
   PetscCall(PetscRandomSeed(pr));
   PetscCall(PetscRandomDestroy(&pr)); /* release the extra ref from ParMGMCGetPetscRandom */
 #ifdef PARMGMC_HAVE_MKL
