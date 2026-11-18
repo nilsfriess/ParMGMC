@@ -15,3 +15,4 @@
 
 PETSC_EXTERN PetscErrorCode PCCreate_SchwarzGibbs(PC);
 PETSC_EXTERN PetscErrorCode PCSchwarzGibbsGetSubdomains(PC, PetscInt *, const IS *[], const PetscInt *[]);
+PETSC_EXTERN PetscErrorCode PCSchwarzGibbsSetSubdomains(PC, PetscInt, const IS[]);

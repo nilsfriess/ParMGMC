@@ -50,6 +50,10 @@ typedef struct {
   PetscInt  nblocks, overlap;
   PetscBool deterministic;
 
+  /* Optional user subdomains (PCSchwarzGibbsSetSubdomains); replace the algebraic ones if set */
+  PetscInt nuser;
+  IS      *user_is;
+
   /* Set up in PCSetUp */
   PetscInt   n;       /* number of local subdomains */
   IS        *is;      /* overlapping subdomains (global indices, sorted) */
@@ -96,11 +100,22 @@ static PetscErrorCode PCReset_SchwarzGibbs(PC pc)
   PetscFunctionReturn(PETSC_SUCCESS);
 }
 
+static PetscErrorCode PCSchwarzGibbsDestroyUserSubdomains(PC_SchwarzGibbs sg)
+{
+  PetscFunctionBegin;
+  for (PetscInt i = 0; i < sg->nuser; ++i) PetscCall(ISDestroy(&sg->user_is[i]));
+  PetscCall(PetscFree(sg->user_is));
+  sg->nuser = 0;
+  PetscFunctionReturn(PETSC_SUCCESS);
+}
+
 static PetscErrorCode PCDestroy_SchwarzGibbs(PC pc)
 {
   PetscFunctionBegin;
   PetscCall(PCSchwarzGibbsResetSetup(pc->data));
+  PetscCall(PCSchwarzGibbsDestroyUserSubdomains(pc->data));
   PetscCall(PetscObjectComposeFunction((PetscObject)pc, "PCSchwarzGibbsGetSubdomains_C", NULL));
+  PetscCall(PetscObjectComposeFunction((PetscObject)pc, "PCSchwarzGibbsSetSubdomains_C", NULL));
   PetscCall(PetscFree(pc->data));
   PetscFunctionReturn(PETSC_SUCCESS);
 }
@@ -237,14 +252,24 @@ static PetscErrorCode PCSetUp_SchwarzGibbs(PC pc)
   PetscCall(PetscLogEventBegin(SCHWARZGIBBS_SETUP, pc, 0, 0, 0));
   PetscCall(PCSchwarzGibbsResetSetup(sg));
 
-  /* Algebraic subdomains: graph partitioning of the local rows, then overlap */
   PetscCall(MatGetLocalSize(A, &m, NULL));
-  sg->n = PetscMin(sg->nblocks, m);
-  if (sg->n > 0) PetscCall(PCASMCreateSubdomains(A, sg->n, &sg->is));
   {
-    IS dummy = NULL; /* ranks without rows still take part in the collective calls */
+    IS          dummy = NULL; /* ranks without subdomains still take part in the collective calls */
+    PetscMPIInt user  = sg->user_is ? 1 : 0, anyuser;
 
-    PetscCall(MatIncreaseOverlap(A, sg->n, sg->n ? sg->is : &dummy, sg->overlap));
+    PetscCallMPI(MPIU_Allreduce(&user, &anyuser, 1, MPI_INT, MPI_MAX, comm));
+    if (anyuser) { /* user subdomains (final, no overlap added) */
+      sg->n = sg->nuser;
+      if (sg->n > 0) PetscCall(PetscMalloc1(sg->n, &sg->is));
+      for (PetscInt i = 0; i < sg->n; ++i) {
+        PetscCall(ISDuplicate(sg->user_is[i], &sg->is[i]));
+        PetscCall(ISCopy(sg->user_is[i], sg->is[i]));
+      }
+    } else { /* algebraic subdomains: graph partitioning of the local rows, then overlap */
+      sg->n = PetscMin(sg->nblocks, m);
+      if (sg->n > 0) PetscCall(PCASMCreateSubdomains(A, sg->n, &sg->is));
+      PetscCall(MatIncreaseOverlap(A, sg->n, sg->n ? sg->is : &dummy, sg->overlap));
+    }
     for (PetscInt i = 0; i < sg->n; ++i) PetscCall(ISSort(sg->is[i]));
     PetscCall(MatCreateSubMatrices(A, sg->n, sg->n ? sg->is : &dummy, sg->n ? sg->is : &dummy, MAT_INITIAL_MATRIX, &sg->submats));
   }
@@ -431,6 +456,45 @@ PetscErrorCode PCSchwarzGibbsGetSubdomains(PC pc, PetscInt *n, const IS *is[], c
   PetscFunctionReturn(PETSC_SUCCESS);
 }
 
+static PetscErrorCode PCSchwarzGibbsSetSubdomains_SchwarzGibbs(PC pc, PetscInt n, const IS is[])
+{
+  PC_SchwarzGibbs sg = pc->data;
+
+  PetscFunctionBegin;
+  PetscCheck(n >= 0, PETSC_COMM_SELF, PETSC_ERR_ARG_OUTOFRANGE, "Number of subdomains must be non-negative");
+  PetscCall(PCSchwarzGibbsDestroyUserSubdomains(sg));
+  PetscCall(PetscMalloc1(PetscMax(n, 1), &sg->user_is)); /* non-NULL also for n = 0: marks "user subdomains" */
+  for (PetscInt i = 0; i < n; ++i) {
+    PetscCall(ISDuplicate(is[i], &sg->user_is[i]));
+    PetscCall(ISCopy(is[i], sg->user_is[i]));
+  }
+  sg->nuser       = n;
+  pc->setupcalled = PETSC_FALSE;
+  PetscFunctionReturn(PETSC_SUCCESS);
+}
+
+/*@
+  PCSchwarzGibbsSetSubdomains - Sets the local overlapping subdomains of a PCSCHWARZGIBBS sampler,
+  replacing the algebraic ones (graph partitioning + overlap).
+
+  Logically Collective (all ranks must call it, possibly with n = 0)
+
+  Input Parameters:
++ pc - the PC
+. n  - number of local subdomains
+- is - the subdomains as global row indices (may contain rows owned by other ranks); copied
+
+  Notes:
+  The subdomains are used as given (no overlap is added). Every row must lie in at least one subdomain.
+@*/
+PetscErrorCode PCSchwarzGibbsSetSubdomains(PC pc, PetscInt n, const IS is[])
+{
+  PetscFunctionBegin;
+  PetscValidHeaderSpecific(pc, PC_CLASSID, 1);
+  PetscTryMethod(pc, "PCSchwarzGibbsSetSubdomains_C", (PC, PetscInt, const IS[]), (pc, n, is));
+  PetscFunctionReturn(PETSC_SUCCESS);
+}
+
 PetscErrorCode PCCreate_SchwarzGibbs(PC pc)
 {
   PC_SchwarzGibbs sg;
@@ -454,5 +518,6 @@ PetscErrorCode PCCreate_SchwarzGibbs(PC pc)
   pc->ops->setfromoptions  = PCSetFromOptions_SchwarzGibbs;
   pc->ops->view            = PCView_SchwarzGibbs;
   PetscCall(PetscObjectComposeFunction((PetscObject)pc, "PCSchwarzGibbsGetSubdomains_C", PCSchwarzGibbsGetSubdomains_SchwarzGibbs));
+  PetscCall(PetscObjectComposeFunction((PetscObject)pc, "PCSchwarzGibbsSetSubdomains_C", PCSchwarzGibbsSetSubdomains_SchwarzGibbs));
   PetscFunctionReturn(PETSC_SUCCESS);
 }

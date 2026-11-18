@@ -7,6 +7,7 @@
 */
 
 #include <petscsys.h>
+#include <vector>
 #include <pybind11/pybind11.h>
 #include <pybind11/functional.h>
 #include <pybind11/numpy.h>
@@ -89,6 +90,20 @@ PYBIND11_MODULE(pymgmc, m)
       cols.append(colors[i]);
     }
     return py::make_tuple(subs, cols);
+  });
+
+  // Local overlapping subdomains (global row indices) for a PCSCHWARZGIBBS sampler; every rank must
+  // call it (possibly with an empty list).
+  m.def("PCSchwarzGibbsSetSubdomains", [](PC pc, py::list subs) {
+    std::vector<IS> is;
+    for (auto item : subs) {
+      auto a = py::cast<py::array_t<PetscInt, py::array::c_style | py::array::forcecast>>(item);
+      IS   s;
+      PetscCallAbort(PETSC_COMM_WORLD, ISCreateGeneral(PETSC_COMM_SELF, static_cast<PetscInt>(a.size()), a.data(), PETSC_COPY_VALUES, &s));
+      is.push_back(s);
+    }
+    PetscCallAbort(PETSC_COMM_WORLD, PCSchwarzGibbsSetSubdomains(pc, static_cast<PetscInt>(is.size()), is.data()));
+    for (auto &s : is) PetscCallAbort(PETSC_COMM_WORLD, ISDestroy(&s));
   });
 
   m.def("seed", [](unsigned long s) {
