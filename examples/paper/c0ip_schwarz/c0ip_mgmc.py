@@ -384,10 +384,48 @@ def box_dofs(i, j):
     return np.where(np.all((X >= lo) & (X <= hi), 1))[0]
 
 
+def _petsc_Z(Zl):
+    n_ = Zl.shape[1]
+    return PETSc.Mat().createAIJ(size=((nown, ndof), (n_ if rank == 0 else 0, n_)),
+                                 csr=(Zl.indptr.astype(PETSc.IntType), Zl.indices.astype(PETSc.IntType), Zl.data),
+                                 comm=PETSc.COMM_WORLD)
+
+
+def _gather_dense(Mp):
+    """Assemble a (small) distributed PETSc matrix as a dense array on rank 0 (None elsewhere)."""
+    ip_, ix_, dv_ = Mp.getValuesCSR()
+    parts_ = comm.gather((Mp.getOwnershipRange()[0], ip_, ix_, dv_), root=0)
+    if rank != 0:
+        return None
+    D_ = np.zeros(Mp.getSize())
+    for r0_, ip_, ix_, dv_ in parts_:
+        for i_ in range(len(ip_) - 1):
+            D_[r0_ + i_, ix_[ip_[i_]:ip_[i_ + 1]]] = dv_[ip_[i_]:ip_[i_ + 1]]
+    return D_
+
+
+Z = None if Zloc is None else _petsc_Z(Zloc)
+# -coarse_pivot_tol t > 0: drop the coarse columns that are (numerically) A-dependent on the others,
+# chosen by a pivoted Cholesky factorisation (LAPACK dpstrf, relative tolerance t) of the
+# diagonally scaled Z^T A Z. Keeps the span and the sparsity of Z; boxes clipped by a curved
+# boundary otherwise make Z^T A Z singular (zero pivot in the coarse Cholesky sampler).
+coarse_pivot_tol = opts.getReal("coarse_pivot_tol", 0.0)
+coarse_pivot_dropped = 0
+if Z is not None and coarse_pivot_tol > 0:
+    from scipy.linalg.lapack import dpstrf
+    Ac_ = _gather_dense(A.ptap(Z))
+    keep_cols = None
+    if rank == 0:
+        assert Ac_.shape[0] <= 20000, "coarse space too large for the dense pivoted Cholesky"
+        dsc = 1.0 / np.sqrt(np.diag(Ac_))
+        _, piv_, rk_, _ = dpstrf(dsc[:, None] * Ac_ * dsc[None, :], lower=1, tol=coarse_pivot_tol)
+        keep_cols = np.sort(piv_[:rk_] - 1)
+    keep_cols = comm.bcast(keep_cols, root=0)
+    coarse_pivot_dropped = Zloc.shape[1] - len(keep_cols)
+    Zloc = Zloc[:, keep_cols].tocsr()
+    Z.destroy()
+    Z = _petsc_Z(Zloc)
 nc = Zloc.shape[1] if Zloc is not None else 0
-Z = None if Zloc is None else PETSc.Mat().createAIJ(size=((nown, ndof), (nc if rank == 0 else 0, nc)),
-                          csr=(Zloc.indptr.astype(PETSc.IntType), Zloc.indices.astype(PETSc.IntType), Zloc.data),
-                          comm=PETSc.COMM_WORLD)
 
 # --- box subdomains for PCSCHWARZGIBBS (-fine_subdomains boxes): box + delta, owned by the rank with
 # --- most of the box core; consistent with the box coarse space (same boxes, same delta) -----------
@@ -540,6 +578,13 @@ if mode == "rho":
     ksp, mg = make_ksp(deterministic=True)
     info = subdomain_info(mg) if fine == "schwarzgibbs" else ""
     info += f" | coarse dim {mg.getMGInterpolation(1).getSize()[1]}"
+    if coarse_pivot_tol > 0:
+        info += f", pivoting dropped {coarse_pivot_dropped} columns (tol {coarse_pivot_tol:g})"
+    if opts.getBool("coarse_cond", False):
+        D_ = _gather_dense(mg.getMGCoarseSolve().getOperators()[0])
+        if rank == 0:
+            ev_ = np.linalg.eigvalsh(0.5 * (D_ + D_.T))
+            info += f", coarse eig [{ev_.min():.2e}, {ev_.max():.2e}] cond {ev_.max() / ev_.min():.1e}"
     b, x = A.createVecs()
     b.zeroEntries()
     x.array[:] = coord_noise(keys)
