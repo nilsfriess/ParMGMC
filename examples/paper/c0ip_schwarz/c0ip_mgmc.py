@@ -28,6 +28,7 @@ Options
                   patches in colour order, compared with the stored result.
   -mode sample    -nsamples samples after -nburnin; QoI and pointwise variances vs. exact (computed on
                   rank 0); in serial also an exact Cholesky sampler of the same length as reference.
+  -up_sweeps 0|1  sweeps after the coarse step (default 0: V(1,0) cycle; 1: V(1,1))
   -coarse_noise 0 negative control: deterministic coarse step (the chain is then biased)
 """
 
@@ -532,7 +533,7 @@ def make_ksp(deterministic, coarse_sample=True):
     elif fine_subdomains == "boxes":
         pymgmc.PCSchwarzGibbsSetSubdomains(sm.getPC(), fine_subs)
     ksp.setFromOptions()
-    if opts.getInt("up_sweeps", 1) == 0:  # V(1,0): no post-smoothing (an up smoother doing nothing)
+    if opts.getInt("up_sweeps", 0) == 0:  # default V(1,0): no post-smoothing (an up smoother doing nothing); -up_sweeps 1 for V(1,1)
         su = mg.getMGSmootherUp(1)
         su.setOptionsPrefix("noup_")  # own prefix: the gamgmc_mg_levels_ options must not reconfigure it
         su.setType("richardson")
