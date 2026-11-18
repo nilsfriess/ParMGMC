@@ -69,7 +69,7 @@ assert fine == "schwarzgibbs" or size == 1, "PCPATCHGIBBS is sequential"
 # --- discretisation ---------------------------------------------------------------------------
 disc = opts.getString("disc", "c0ip")  # c0ip (P2, interior penalty) | spde (P1, Q = L M_L^-1 L)
 mesh = fd.UnitSquareMesh(N, N)
-V = fd.FunctionSpace(mesh, "CG", 2 if disc == "c0ip" else 1)
+V = fd.FunctionSpace(mesh, "Argyris", 5) if disc == "argyris" else fd.FunctionSpace(mesh, "CG", 2 if disc == "c0ip" else 1)
 u, v = fd.TrialFunction(V), fd.TestFunction(V)
 n = fd.FacetNormal(mesh)
 h = fd.avg(fd.CellDiameter(mesh))
@@ -86,6 +86,9 @@ a = ((fd.inner(fd.grad(fd.grad(u)), fd.grad(fd.grad(v))) + 2 * ks * fd.inner(fd.
      + fd.Constant(sigma) / h * fd.jump(fd.grad(u), n) * fd.jump(fd.grad(v), n) * fd.dS)
 if disc == "c0ip":
     A = fd.assemble(a, mat_type="aij").M.handle
+elif disc == "argyris":  # conforming C1: (D2u, D2v) + 2k^2 (grad u, grad v) + k^4 (u, v), no penalty
+    A = fd.assemble((fd.inner(fd.grad(fd.grad(u)), fd.grad(fd.grad(v))) + 2 * ks * fd.inner(fd.grad(u), fd.grad(v))
+                     + ks ** 2 * u * v) * fd.dx, mat_type="aij").M.handle
 else:  # SPDE precision for alpha = 2: Q = L M_L^{-1} L (the SPDE sampler's x = L^{-1} M_L^{1/2} xi has covariance Q^{-1})
     Lmat = fd.assemble((ks * u * v + fd.inner(fd.grad(u), fd.grad(v))) * fd.dx, mat_type="aij").M.handle
     with fd.assemble(v * fd.dx).dat.vec_ro as mv:  # row sums of the P1 mass matrix
@@ -98,7 +101,11 @@ else:  # SPDE precision for alpha = 2: Q = L M_L^{-1} L (the SPDE sampler's x = 
     A = Lmat.matMult(LD)
 rstart, rend = A.getOwnershipRange()
 nown = rend - rstart
-X = fd.Function(fd.VectorFunctionSpace(mesh, "CG", 2 if disc == "c0ip" else 1)).interpolate(fd.SpatialCoordinate(mesh)).dat.data_ro[:nown].copy()
+if disc == "argyris":
+    assert mode == "rho" and opts.getString("coarse", "boxes") == "gdsw", "Argyris: only -mode rho -coarse gdsw"
+    X = np.random.default_rng(1 + rank).random((nown, 2))  # dummy (no per-DOF coordinates); only seeds the start vector
+else:
+    X = fd.Function(fd.VectorFunctionSpace(mesh, "CG", 2 if disc == "c0ip" else 1)).interpolate(fd.SpatialCoordinate(mesh)).dat.data_ro[:nown].copy()
 keys = np.round(X * 2 * N).astype(np.int64)  # P2 nodes lie on the 1/(2N) grid: exact, partition-independent keys
 ndof = A.getSize()[0]
 
@@ -291,11 +298,13 @@ if coarse == "subdomains":
     Zloc, nsub_coarse = coarse_space_subdomains()
 elif coarse == "gdsw":  # PCMG builds a GDSW interpolation from the near-nullspace of A
     Zloc = None
-    xc, yc = X[:, 0] - 0.5, X[:, 1] - 0.5
+    xs_, ys_ = fd.SpatialCoordinate(mesh)
+    xc, yc = xs_ - 0.5, ys_ - 0.5
     nsv = []
-    for f_ in [np.ones(nown), xc, yc] + ([xc * xc, xc * yc, yc * yc] if ns == "quad" else []):
+    lu_ = {"ksp_type": "preonly", "pc_type": "lu", "pc_factor_mat_solver_type": "mumps"}
+    for f_ in [fd.Constant(1.0), xc, yc] + ([xc * xc, xc * yc, yc * yc] if ns == "quad" else []):
         v_ = A.createVecRight()
-        v_.array[:] = f_
+        v_.array[:] = fd.Function(V).project(f_, solver_parameters=lu_).dat.data_ro[:nown]
         for w_ in nsv:
             v_.axpy(-v_.dot(w_), w_)
         v_.normalize()
