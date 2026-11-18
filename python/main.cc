@@ -14,6 +14,7 @@
 #include "petsc_caster.hh"
 #include "parmgmc/parmgmc.h"
 #include "parmgmc/pc/pc_patchgibbs.h"
+#include "parmgmc/pc/pc_gamgmc.h"
 
 namespace py = pybind11;
 
@@ -51,6 +52,18 @@ PYBIND11_MODULE(pymgmc, m)
     PetscCallVoid(PCPatchGibbsSetPatches(pc, npatches, offsets.data(), indices.data()));
     PetscFunctionReturnVoid();
   });
+
+  // The internal multigrid PC of a PCGAMGMC. Configuring it (type, levels, interpolations,
+  // smoothers) before KSPSetUp allows user-defined hierarchies; pass the matching options
+  // (-pc_gamgmc_mg_type, -<prefix>gamgmc_mg_levels_pc_type) so that PCSetUp_GAMGMC keeps them.
+  m.def(
+    "PCGAMGMCGetInternalPC",
+    [](PC pc) {
+      PC mg;
+      PetscCallAbort(PETSC_COMM_WORLD, PCGAMGMCGetInternalPC(pc, &mg));
+      return mg;
+    },
+    py::return_value_policy::reference);
 
   m.def("seed", [](unsigned long s) {
     PetscFunctionBegin;
