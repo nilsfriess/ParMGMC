@@ -59,14 +59,17 @@ seed = opts.getInt("seed", 1)
 outfile = opts.getString("out", "exact.npz")
 patchfile = opts.getString("patches", "")
 pymgmc.seed(seed)
+# gamgmc options from the command line (make_ksp clears the defaults that PCGAMGMC injects, but must keep these)
+user_gamgmc = {k: v for k, v in opts.getAll().items() if k.startswith("gamgmc_") or k.startswith("pc_gamgmc")}
 comm = MPI.COMM_WORLD
 rank, size = comm.rank, comm.size
 assert fine in ("schwarzgibbs", "patchgibbs")
 assert fine == "schwarzgibbs" or size == 1, "PCPATCHGIBBS is sequential"
 
 # --- discretisation ---------------------------------------------------------------------------
+disc = opts.getString("disc", "c0ip")  # c0ip (P2, interior penalty) | spde (P1, Q = L M_L^-1 L)
 mesh = fd.UnitSquareMesh(N, N)
-V = fd.FunctionSpace(mesh, "CG", 2)
+V = fd.FunctionSpace(mesh, "CG", 2 if disc == "c0ip" else 1)
 u, v = fd.TrialFunction(V), fd.TestFunction(V)
 n = fd.FacetNormal(mesh)
 h = fd.avg(fd.CellDiameter(mesh))
@@ -81,10 +84,21 @@ def d2n(w):
 a = ((fd.inner(fd.grad(fd.grad(u)), fd.grad(fd.grad(v))) + 2 * ks * fd.inner(fd.grad(u), fd.grad(v)) + ks ** 2 * u * v) * fd.dx
      - (d2n(u) * fd.jump(fd.grad(v), n) + d2n(v) * fd.jump(fd.grad(u), n)) * fd.dS
      + fd.Constant(sigma) / h * fd.jump(fd.grad(u), n) * fd.jump(fd.grad(v), n) * fd.dS)
-A = fd.assemble(a, mat_type="aij").M.handle
+if disc == "c0ip":
+    A = fd.assemble(a, mat_type="aij").M.handle
+else:  # SPDE precision for alpha = 2: Q = L M_L^{-1} L (the SPDE sampler's x = L^{-1} M_L^{1/2} xi has covariance Q^{-1})
+    Lmat = fd.assemble((ks * u * v + fd.inner(fd.grad(u), fd.grad(v))) * fd.dx, mat_type="aij").M.handle
+    with fd.assemble(v * fd.dx).dat.vec_ro as mv:  # row sums of the P1 mass matrix
+        mlump = mv.copy()
+    minv = mlump.duplicate()
+    minv.set(1.0)
+    minv.pointwiseDivide(minv, mlump)
+    LD = Lmat.copy()
+    LD.diagonalScale(L=minv)  # M_L^{-1} L
+    A = Lmat.matMult(LD)
 rstart, rend = A.getOwnershipRange()
 nown = rend - rstart
-X = fd.Function(fd.VectorFunctionSpace(mesh, "CG", 2)).interpolate(fd.SpatialCoordinate(mesh)).dat.data_ro[:nown].copy()
+X = fd.Function(fd.VectorFunctionSpace(mesh, "CG", 2 if disc == "c0ip" else 1)).interpolate(fd.SpatialCoordinate(mesh)).dat.data_ro[:nown].copy()
 keys = np.round(X * 2 * N).astype(np.int64)  # P2 nodes lie on the 1/(2N) grid: exact, partition-independent keys
 ndof = A.getSize()[0]
 
@@ -164,7 +178,131 @@ def coarse_space():
     return Zc
 
 
-Zloc = coarse_space()
+coarse = opts.getString("coarse", "boxes")
+pou_layers = opts.getInt("pou_layers", 2)
+pou_profile = opts.getString("pou_profile", "linear")
+
+
+def _pou_coarse_space(subs, Xg, Asg):
+    """Z (global, scipy) from subdomains (global indices), coordinates and A: PoU (graph distance /
+    Euclidean distance / A-harmonic extension) times {1, x, y, x^2, xy, y^2} centred per subdomain."""
+    ng = Xg.shape[0]
+    Gr = sp.csr_matrix((np.ones(Asg.nnz), Asg.indices, Asg.indptr), shape=(ng, ng))
+
+    def profile(t):
+        t = np.clip(t, 0.0, 1.0)
+        return t if pou_profile == "linear" else t ** 3 * (10 - 15 * t + 6 * t * t)
+
+    pdist = opts.getString("pou_dist", "graph")
+    W = []
+    for S in subs:
+        inS = np.zeros(ng, bool)
+        inS[S] = True
+        d = np.zeros(ng)
+        d[S] = pou_layers + 1  # "far from the boundary"
+        front = inS & ((Gr @ (~inS).astype(float)) > 0)  # layer 1: coupled to a DOF outside S
+        done = front.copy()
+        for layer in range(1, pou_layers + 1):
+            d[front] = layer
+            front = inS & ~done & ((Gr @ front.astype(float)) > 0)
+            done |= front
+        w = np.zeros(ng)
+        w[S] = profile(d[S] / (pou_layers + 1)) if pou_layers > 0 else 1.0
+        if pdist == "euclid":  # Euclidean distance to the complement of S, ramp over pou_width cells
+            from scipy.spatial import cKDTree
+            outer = np.where(~inS & ((Gr @ inS.astype(float)) > 0))[0]
+            if len(outer):
+                dist, _ = cKDTree(Xg[outer]).query(Xg[S])
+                w[S] = profile(dist / (opts.getReal("pou_width", 2.0) / N))
+        elif pdist == "harmonic":  # 1 on the core, 0 outside S, A(O,O) w_O = -A(O,I) 1 on the ring
+            core = S[d[S] > pou_layers]
+            ring = S[d[S] <= pou_layers]
+            w[S] = 0.0
+            w[core] = 1.0
+            if len(ring) and len(core):
+                rhs = -(Asg[ring][:, core] @ np.ones(len(core)))
+                w[ring] = sp.linalg.spsolve(Asg[ring][:, ring].tocsc(), rhs)
+        W.append(w)
+    total = np.sum(W, axis=0)
+    assert total.min() > 0, "PoU weights must cover every DOF"
+    cols = []
+    for S, w in zip(subs, W):
+        chi = w / total
+        xs = Xg[S]
+        c, hsc = xs.mean(0), np.maximum(xs.max(0) - xs.min(0), 1e-12) / 2
+        xr, yr = (Xg[:, 0] - c[0]) / hsc[0], (Xg[:, 1] - c[1]) / hsc[1]
+        polys = [np.ones(ng), xr, yr] + ([xr * xr, xr * yr, yr * yr] if ns == "quad" else [])
+        cols += [sp.csr_matrix(np.where(chi > 0, chi * pq, 0.0)).T for pq in polys]
+    Zg = sp.hstack(cols).tocsr()
+    Zg.eliminate_zeros()
+    return Zg
+
+
+def coarse_space_subdomains():
+    """Algebraic coarse space from the PCSCHWARZGIBBS subdomains (works in parallel: subdomains, A and
+    the coordinates are gathered on rank 0, Z is computed there and distributed by rows)."""
+    for k in ("pc_schwarzgibbs_local_blocks", "pc_schwarzgibbs_overlap"):
+        opts.delValue("pou_" + k) if opts.hasName("pou_" + k) else None
+    opts["pou_pc_schwarzgibbs_local_blocks"] = nblocks
+    opts["pou_pc_schwarzgibbs_overlap"] = overlap
+    pc0 = PETSc.PC().create()
+    pc0.setOptionsPrefix("pou_")
+    pc0.setOperators(A, A)
+    pc0.setType("schwarzgibbs")
+    pc0.setFromOptions()
+    pc0.setUp()
+    subs_loc, _ = pymgmc.PCSchwarzGibbsGetSubdomains(pc0)
+    subs_loc = [np.array(x_, dtype=np.int64) for x_ in subs_loc]
+    pc0.destroy()
+    ip_, ix_, dv_ = A.getValuesCSR()
+    parts = comm.gather((rstart, subs_loc, X, ip_, ix_, dv_), root=0)
+    ranges = comm.allgather((rstart, rend))
+    if rank == 0:
+        parts.sort(key=lambda t: t[0])
+        subs = [s_ for part in parts for s_ in part[1]]
+        Xg = np.concatenate([part[2] for part in parts])
+        indptr, idx, val = [0], [], []
+        for _, _, _, ipr, ixr, dvr in parts:
+            indptr += list(indptr[-1] + ipr[1:])
+            idx.append(ixr)
+            val.append(dvr)
+        Asg = sp.csr_matrix((np.concatenate(val), np.concatenate(idx), np.array(indptr)), shape=(ndof, ndof))
+        if opts.getString("subdomain_source", "parmetis") == "boxes":  # serial diagnostic: square cores + graph overlap
+            Gr = sp.csr_matrix((np.ones(Asg.nnz), Asg.indices, Asg.indptr), shape=(ndof, ndof))
+            mb = int(round(np.sqrt(nblocks)))
+            ci = np.minimum((Xg * mb).astype(int), mb - 1)
+            owner = ci[:, 0] * mb + ci[:, 1]
+            subs = []
+            for b_ in range(mb * mb):
+                inS = owner == b_
+                for _ in range(overlap):
+                    inS = inS | ((Gr @ inS.astype(float)) > 0)
+                subs.append(np.where(inS)[0])
+        Zg = _pou_coarse_space(subs, Xg, Asg)
+        blocks = [Zg[r0:r1] for r0, r1 in ranges]
+        nsub = len(subs)
+    else:
+        blocks, nsub, subs = None, None, None
+    coarse_space_subdomains.subs = subs
+    return comm.scatter(blocks, root=0), comm.bcast(nsub, root=0)
+
+
+if coarse == "subdomains":
+    Zloc, nsub_coarse = coarse_space_subdomains()
+elif coarse == "gdsw":  # PCMG builds a GDSW interpolation from the near-nullspace of A
+    Zloc = None
+    xc, yc = X[:, 0] - 0.5, X[:, 1] - 0.5
+    nsv = []
+    for f_ in [np.ones(nown), xc, yc] + ([xc * xc, xc * yc, yc * yc] if ns == "quad" else []):
+        v_ = A.createVecRight()
+        v_.array[:] = f_
+        for w_ in nsv:
+            v_.axpy(-v_.dot(w_), w_)
+        v_.normalize()
+        nsv.append(v_)
+    A.setNearNullSpace(PETSc.NullSpace().create(vectors=nsv))
+else:
+    Zloc = coarse_space()
 if opts.getBool("check_coarse_space", False):
     dz = abs(Zloc - coarse_space_naive()).max()
     print(f"rank {rank}: max |Z - Z_naive| = {dz:.2e}", flush=True)
@@ -176,8 +314,8 @@ def box_dofs(i, j):
     return np.where(np.all((X >= lo) & (X <= hi), 1))[0]
 
 
-nc = Zloc.shape[1]
-Z = PETSc.Mat().createAIJ(size=((nown, ndof), (nc if rank == 0 else 0, nc)),
+nc = Zloc.shape[1] if Zloc is not None else 0
+Z = None if Zloc is None else PETSc.Mat().createAIJ(size=((nown, ndof), (nc if rank == 0 else 0, nc)),
                           csr=(Zloc.indptr.astype(PETSc.IntType), Zloc.indices.astype(PETSc.IntType), Zloc.data),
                           comm=PETSc.COMM_WORLD)
 
@@ -189,6 +327,8 @@ if fine == "patchgibbs":
         # colour order (exact equivalent of the parallel sweep); -ignore_colors keeps the exported order
         order = np.arange(len(f["colors"])) if opts.getBool("ignore_colors", False) else np.argsort(f["colors"], kind="stable")
         patches = [np.sort(np.array([pos[kid] for kid in f["subdomains"][p]])) for p in order]
+    elif coarse == "subdomains":
+        patches = coarse_space_subdomains.subs
     else:
         patches = [box_dofs(i, j) for i in range(M) for j in range(M)]
     offsets = np.concatenate([[0], np.cumsum([len(p) for p in patches])]).astype(PETSc.IntType)
@@ -203,6 +343,8 @@ if fine == "patchgibbs":
 def make_ksp(deterministic, coarse_sample=True):
     for k in [k for k in opts.getAll() if k.startswith("gamgmc_") or k.startswith("pc_gamgmc")]:
         opts.delValue(k)
+    for k, v in user_gamgmc.items():
+        opts[k] = v
     opts["pc_gamgmc_mg_type"] = "mg"
     opts["gamgmc_mg_levels_pc_type"] = fine  # otherwise PCSetUp_GAMGMC injects sorgibbs
     if fine == "schwarzgibbs":
@@ -226,7 +368,10 @@ def make_ksp(deterministic, coarse_sample=True):
     mg.setOptionsPrefix("gamgmc_")  # same prefix PCSetUp_GAMGMC gives it, set before the levels exist
     mg.setType("mg")
     mg.setMGLevels(2)
-    mg.setMGInterpolation(1, Z)
+    if coarse == "gdsw":
+        opts["gamgmc_pc_mg_adapt_interp_coarse_space"] = "gdsw"
+    else:
+        mg.setMGInterpolation(1, Z)
     sm = mg.getMGSmoother(1)
     sm.setType("richardson")
     sm.getPC().setType(fine)
@@ -259,7 +404,7 @@ def gather_owned(values):
     return out
 
 
-tag = (f"N={N} M={M} k={kappa:g} ns={ns} ndof={ndof} ncoarse={nc} fine={fine}"
+tag = (f"{disc} N={N} " + (f"coarse=subdomains[{opts.getString('subdomain_source', 'parmetis')}]({opts.getString('pou_dist', 'graph')},L={pou_layers},{pou_profile},sm={opts.getInt('zsmooth', 0)}{'' if opts.getBool('zsmooth_mask', True) else 'nomask'}) " if coarse == "subdomains" else ("coarse=gdsw " if coarse == "gdsw" else f"M={M} ")) + f"k={kappa:g} ns={ns} ndof={ndof} ncoarse={nc} fine={fine}"
        + (f" nblocks={nblocks} overlap={overlap}" if fine == "schwarzgibbs" else "") + f" np={size}")
 
 
@@ -278,6 +423,7 @@ def subdomain_info(mg):
 if mode == "rho":
     ksp, mg = make_ksp(deterministic=True)
     info = subdomain_info(mg) if fine == "schwarzgibbs" else ""
+    info += f" | coarse dim {mg.getMGInterpolation(1).getSize()[1]}"
     b, x = A.createVecs()
     b.zeroEntries()
     x.array[:] = coord_noise(keys)
