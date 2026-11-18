@@ -655,11 +655,13 @@ else:
     G = np.stack(gs, 1)
     qnames = ["box mean", "domain mean", "centre value"]
 
-    # exact references on rank 0 (gathered matrix)
-    ip, ix, dv = A.getValuesCSR()
-    rows = comm.gather((rstart, ip, ix, dv), root=0)
-    Gall = gather_owned(G)
-    if rank == 0 and not opts.getBool("timing_only", False):
+    # exact references on rank 0 (gathered matrix); skipped with -timing_only (no rank-0 gathers)
+    timing_only = opts.getBool("timing_only", False)
+    if not timing_only:
+        ip, ix, dv = A.getValuesCSR()
+        rows = comm.gather((rstart, ip, ix, dv), root=0)
+        Gall = gather_owned(G)
+    if rank == 0 and not timing_only:
         indptr, idx, val = [0], [], []
         for r0, ipr, ixr, dvr in sorted(rows, key=lambda t: t[0]):
             indptr += list(indptr[-1] + ipr[1:])
@@ -691,12 +693,14 @@ else:
         comm.Barrier()
         run_chain.t_sample = (time.perf_counter() - t0) / nsamples
         mean = s1 / nsamples
-        return qs, gather_owned(s2 / nsamples - mean ** 2)
+        return qs, None if timing_only else gather_owned(s2 / nsamples - mean ** 2)
 
     def report(name, qs, var):
         if rank:
             return
         out = [f"RESULT {name:14s} {tag} | setup {report.t_setup:.2f} s, {1e3 * run_chain.t_sample:.2f} ms/sample (incl. QoI bookkeeping)"]
+        if var_q is None:  # no exact reference: only the integrated autocorrelation times of the QoIs
+            out.append("  IACT " + ", ".join(f"{qnames[k]} {iact(qs[:, k]):.2f}" for k in range(G.shape[1])))
         for k in range(G.shape[1] if var_q is not None else 0):
             tau = iact(qs[:, k])
             r = qs[:, k].var() / var_q[k]
