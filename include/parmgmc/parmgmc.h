@@ -22,6 +22,7 @@
 #define PCPARSOR      "parsor"
 #define PCWOODBURY    "woodbury"
 #define PCPATCHGIBBS  "patchgibbs"
+#define PCSCHWARZGIBBS "schwarzgibbs"
 
 PETSC_EXTERN PetscClassId  PARMGMC_CLASSID;
 PETSC_EXTERN PetscLogEvent MULTICOL_SOR;

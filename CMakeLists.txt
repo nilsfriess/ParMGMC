@@ -122,6 +122,7 @@ target_sources(parmgmc
 	    src/mc_sor.c
             src/woodbury.c
             src/pc_patchgibbs.c
+            src/pc_schwarzgibbs.c
 	    src/parmgmc.c
 	    src/problems.c
 	    src/ms.c

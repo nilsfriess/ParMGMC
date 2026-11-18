@@ -15,6 +15,7 @@
 #include "parmgmc/parmgmc.h"
 #include "parmgmc/pc/pc_patchgibbs.h"
 #include "parmgmc/pc/pc_gamgmc.h"
+#include "parmgmc/pc/pc_schwarzgibbs.h"
 
 namespace py = pybind11;
 
@@ -64,6 +65,31 @@ PYBIND11_MODULE(pymgmc, m)
       return mg;
     },
     py::return_value_policy::reference);
+
+  // Local subdomains (global indices) and their colours of a set-up PCSCHWARZGIBBS, as Python
+  // lists (for tests). Plain lists because numpy arrays created here with the system pybind11
+  // get zero strides under NumPy 2.
+  m.def("PCSchwarzGibbsGetSubdomains", [](PC pc) {
+    PetscInt        n;
+    const IS       *is;
+    const PetscInt *colors;
+    py::list        subs, cols;
+
+    PetscCallAbort(PETSC_COMM_WORLD, PCSchwarzGibbsGetSubdomains(pc, &n, &is, &colors));
+    for (PetscInt i = 0; i < n; ++i) {
+      PetscInt        ni;
+      const PetscInt *idx;
+      py::list        s;
+
+      PetscCallAbort(PETSC_COMM_WORLD, ISGetLocalSize(is[i], &ni));
+      PetscCallAbort(PETSC_COMM_WORLD, ISGetIndices(is[i], &idx));
+      for (PetscInt k = 0; k < ni; ++k) s.append(idx[k]);
+      PetscCallAbort(PETSC_COMM_WORLD, ISRestoreIndices(is[i], &idx));
+      subs.append(s);
+      cols.append(colors[i]);
+    }
+    return py::make_tuple(subs, cols);
+  });
 
   m.def("seed", [](unsigned long s) {
     PetscFunctionBegin;
