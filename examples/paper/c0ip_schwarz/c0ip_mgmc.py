@@ -532,6 +532,12 @@ def make_ksp(deterministic, coarse_sample=True):
     elif fine_subdomains == "boxes":
         pymgmc.PCSchwarzGibbsSetSubdomains(sm.getPC(), fine_subs)
     ksp.setFromOptions()
+    if opts.getInt("up_sweeps", 1) == 0:  # V(1,0): no post-smoothing (an up smoother doing nothing)
+        su = mg.getMGSmootherUp(1)
+        su.setOptionsPrefix("noup_")  # own prefix: the gamgmc_mg_levels_ options must not reconfigure it
+        su.setType("richardson")
+        su.getPC().setType("none")
+        su.setTolerances(max_it=0)
     comm.Barrier()
     t0 = time.perf_counter()
     ksp.setUp()
