@@ -212,7 +212,15 @@ static PetscErrorCode PCGAMGMC_SetUpHierarchy(PC pc)
     // degenerate distribution, so we must use the sequential path which extracts
     // the rank-0 local matrix and factorizes it with MKL_PARDISO (or PETSc).
     if (ischol) {
+      PetscInt    mloc;
+      PetscMPIInt rank;
+
       PetscCall(KSPGetOperators(ksps, &A, NULL));
+      /* The sequential coarse path factorises rank 0's local block only, so rank 0 must own all
+         coarse rows (true for GAMG; with PCMG and a user interpolation, give all of its columns to rank 0). */
+      PetscCallMPI(MPI_Comm_rank(PetscObjectComm((PetscObject)A), &rank));
+      PetscCall(MatGetLocalSize(A, &mloc, NULL));
+      PetscCheck(rank == 0 || mloc == 0, PETSC_COMM_SELF, PETSC_ERR_SUP, "Coarse Cholesky sampler: rank %d owns %" PetscInt_FMT " coarse rows, but all must be on rank 0", rank, mloc);
       PetscCall(PetscObjectReference((PetscObject)A));
       PetscCall(PCReset(pcs));
       PetscCall(PCCholSamplerSetIsCoarseGAMG(pcs, PETSC_TRUE));
