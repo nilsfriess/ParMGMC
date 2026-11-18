@@ -118,18 +118,64 @@ def bump1d(x, i):
 
 
 eps = 1e-12
-boxes, cols = [], []
-for i in range(M):
-    for j in range(M):
-        lo = np.array([i / M - delta, j / M - delta]) - eps
-        hi = np.array([(i + 1) / M + delta, (j + 1) / M + delta]) + eps
-        boxes.append(np.where(np.all((X >= lo) & (X <= hi), 1))[0])
-        chi = bump1d(X[:, 0], i) * bump1d(X[:, 1], j)
-        xr, yr = (X[:, 0] - (i + 0.5) / M) * M, (X[:, 1] - (j + 0.5) / M) * M
-        polys = [np.ones(nown), xr, yr] + ([xr * xr, xr * yr, yr * yr] if ns == "quad" else [])
-        cols += [sp.csr_matrix(chi * p).T for p in polys]
-Zloc = sp.hstack(cols).tocsr()
-Zloc.eliminate_zeros()
+npoly = 6 if ns == "quad" else 3
+
+
+def coarse_space_naive():
+    """Reference construction (one full-length vector per box and polynomial); for checks only."""
+    cols = []
+    for i in range(M):
+        for j in range(M):
+            chi = bump1d(X[:, 0], i) * bump1d(X[:, 1], j)
+            xr, yr = (X[:, 0] - (i + 0.5) / M) * M, (X[:, 1] - (j + 0.5) / M) * M
+            polys = [np.ones(nown), xr, yr] + ([xr * xr, xr * yr, yr * yr] if ns == "quad" else [])
+            cols += [sp.csr_matrix(chi * p).T for p in polys]
+    Zn = sp.hstack(cols).tocsr()
+    Zn.eliminate_zeros()
+    return Zn
+
+
+def coarse_space():
+    """Z (owned rows x M^2 * npoly): chi_j p for the at most 3 x 3 boxes around each DOF."""
+    ci = np.minimum((X * M).astype(int), M - 1)
+    rows, colsj, vals = [], [], []
+    for di in (-1, 0, 1):
+        for dj in (-1, 0, 1):
+            i, j = ci[:, 0] + di, ci[:, 1] + dj
+            ok = (i >= 0) & (i < M) & (j >= 0) & (j < M)
+            r = np.where(ok)[0]
+            i, j = i[ok], j[ok]
+            chi = np.ones(len(r))
+            for ax, k in ((0, i), (1, j)):
+                xk = X[r, ax]
+                lo, hi = k / M, (k + 1) / M
+                chi *= np.where(k > 0, smoothstep((xk - (lo - delta)) / (2 * delta)), 1.0)
+                chi *= np.where(k < M - 1, smoothstep((hi + delta - xk) / (2 * delta)), 1.0)
+            nz = chi != 0
+            r, i, j, chi = r[nz], i[nz], j[nz], chi[nz]
+            xr, yr = (X[r, 0] - (i + 0.5) / M) * M, (X[r, 1] - (j + 0.5) / M) * M
+            polys = [np.ones(len(r)), xr, yr] + ([xr * xr, xr * yr, yr * yr] if ns == "quad" else [])
+            for q, pq in enumerate(polys):
+                rows.append(r)
+                colsj.append((i * M + j) * npoly + q)
+                vals.append(chi * pq)
+    Zc = sp.csr_matrix((np.concatenate(vals), (np.concatenate(rows), np.concatenate(colsj))), shape=(nown, M * M * npoly))
+    Zc.eliminate_zeros()
+    return Zc
+
+
+Zloc = coarse_space()
+if opts.getBool("check_coarse_space", False):
+    dz = abs(Zloc - coarse_space_naive()).max()
+    print(f"rank {rank}: max |Z - Z_naive| = {dz:.2e}", flush=True)
+
+
+def box_dofs(i, j):
+    lo = np.array([i / M - delta, j / M - delta]) - eps
+    hi = np.array([(i + 1) / M + delta, (j + 1) / M + delta]) + eps
+    return np.where(np.all((X >= lo) & (X <= hi), 1))[0]
+
+
 nc = Zloc.shape[1]
 Z = PETSc.Mat().createAIJ(size=((nown, ndof), (nc if rank == 0 else 0, nc)),
                           csr=(Zloc.indptr.astype(PETSc.IntType), Zloc.indices.astype(PETSc.IntType), Zloc.data),
@@ -144,7 +190,7 @@ if fine == "patchgibbs":
         order = np.arange(len(f["colors"])) if opts.getBool("ignore_colors", False) else np.argsort(f["colors"], kind="stable")
         patches = [np.sort(np.array([pos[kid] for kid in f["subdomains"][p]])) for p in order]
     else:
-        patches = boxes
+        patches = [box_dofs(i, j) for i in range(M) for j in range(M)]
     offsets = np.concatenate([[0], np.cumsum([len(p) for p in patches])]).astype(PETSc.IntType)
     indices = np.concatenate(patches).astype(PETSc.IntType)
     cover = np.zeros(nown)
@@ -353,7 +399,7 @@ else:
                        f"  min {rat.min():.3f}  max {rat.max():.3f}")
         print("\n".join(out), flush=True)
 
-    if size == 1:  # exact reference sampler (independent samples) of the same length
+    if opts.getBool("cholesky", size == 1):  # exact reference sampler (independent samples) of the same length
         kc = PETSc.KSP().create()
         kc.setOperators(A, A)
         kc.setType("richardson")
@@ -366,6 +412,8 @@ else:
         report.t_setup = time.perf_counter() - t0
         report("cholesky", *run_chain(kc))
 
+    if not opts.getBool("mgmc", True):
+        raise SystemExit(0)
     ksp, mg = make_ksp(deterministic=False, coarse_sample=coarse_noise)
     info = subdomain_info(mg) if fine == "schwarzgibbs" else ""
     if rank == 0:
