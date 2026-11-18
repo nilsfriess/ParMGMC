@@ -68,7 +68,8 @@ assert fine == "schwarzgibbs" or size == 1, "PCPATCHGIBBS is sequential"
 
 # --- discretisation ---------------------------------------------------------------------------
 disc = opts.getString("disc", "c0ip")  # c0ip (P2, interior penalty) | spde (P1, Q = L M_L^-1 L)
-mesh = fd.UnitSquareMesh(N, N)
+dim = opts.getInt("dim", 2)
+mesh = fd.UnitSquareMesh(N, N) if dim == 2 else fd.UnitCubeMesh(N, N, N)
 V = fd.FunctionSpace(mesh, "Argyris", 5) if disc == "argyris" else fd.FunctionSpace(mesh, "CG", 2 if disc == "c0ip" else 1)
 u, v = fd.TrialFunction(V), fd.TestFunction(V)
 n = fd.FacetNormal(mesh)
@@ -106,12 +107,15 @@ if disc == "argyris":
     X = np.random.default_rng(1 + rank).random((nown, 2))  # dummy (no per-DOF coordinates); only seeds the start vector
 else:
     X = fd.Function(fd.VectorFunctionSpace(mesh, "CG", 2 if disc == "c0ip" else 1)).interpolate(fd.SpatialCoordinate(mesh)).dat.data_ro[:nown].copy()
+_xmin = np.min(comm.allgather(X.min(0) if len(X) else np.full(X.shape[1], np.inf)), axis=0)
+_xmax = np.max(comm.allgather(X.max(0) if len(X) else np.full(X.shape[1], -np.inf)), axis=0)
+Xb = (X - _xmin) / max((_xmax - _xmin).max(), 1e-300)  # box coordinates in [0, 1]^d
 keys = np.round(X * 2 * N).astype(np.int64)  # P2 nodes lie on the 1/(2N) grid: exact, partition-independent keys
 ndof = A.getSize()[0]
 
 
 def key_id(k):
-    return k[:, 0] * (2 * N + 1) + k[:, 1]
+    return k @ ((2 * N + 1) ** np.arange(k.shape[1] - 1, -1, -1))
 
 
 def coord_noise(k):
@@ -139,7 +143,7 @@ def bump1d(x, i):
 
 
 eps = 1e-12
-npoly = 6 if ns == "quad" else 3
+npoly = (dim + 1) + (dim * (dim + 1) // 2 if ns == "quad" else 0)
 
 
 def coarse_space_naive():
@@ -156,33 +160,60 @@ def coarse_space_naive():
     return Zn
 
 
+def _polys(xr):
+    """{1, x, ...} (+ all quadratic monomials) in local box coordinates xr (n x d)."""
+    d_ = xr.shape[1]
+    ps = [np.ones(len(xr))] + [xr[:, a_] for a_ in range(d_)]
+    if ns == "quad":
+        ps += [xr[:, a_] * xr[:, b_] for a_ in range(d_) for b_ in range(a_, d_)]
+    return ps
+
+
 def coarse_space():
-    """Z (owned rows x M^2 * npoly): chi_j p for the at most 3 x 3 boxes around each DOF."""
-    ci = np.minimum((X * M).astype(int), M - 1)
+    """Z (owned rows x coarse dim): chi_b p for the at most 3^d boxes around each DOF, then per box an
+    orthonormal basis of span{chi_b p} (Gram matrices summed over all ranks, eigenvalues below
+    -coarse_orth_tol * max dropped: removes the near-dependent columns of boxes cut by the boundary)."""
+    d_ = Xb.shape[1]
+    strides = M ** np.arange(d_ - 1, -1, -1)
+    ci = np.minimum((Xb * M).astype(int), M - 1)
     rows, colsj, vals = [], [], []
-    for di in (-1, 0, 1):
-        for dj in (-1, 0, 1):
-            i, j = ci[:, 0] + di, ci[:, 1] + dj
-            ok = (i >= 0) & (i < M) & (j >= 0) & (j < M)
-            r = np.where(ok)[0]
-            i, j = i[ok], j[ok]
-            chi = np.ones(len(r))
-            for ax, k in ((0, i), (1, j)):
-                xk = X[r, ax]
-                lo, hi = k / M, (k + 1) / M
-                chi *= np.where(k > 0, smoothstep((xk - (lo - delta)) / (2 * delta)), 1.0)
-                chi *= np.where(k < M - 1, smoothstep((hi + delta - xk) / (2 * delta)), 1.0)
-            nz = chi != 0
-            r, i, j, chi = r[nz], i[nz], j[nz], chi[nz]
-            xr, yr = (X[r, 0] - (i + 0.5) / M) * M, (X[r, 1] - (j + 0.5) / M) * M
-            polys = [np.ones(len(r)), xr, yr] + ([xr * xr, xr * yr, yr * yr] if ns == "quad" else [])
-            for q, pq in enumerate(polys):
-                rows.append(r)
-                colsj.append((i * M + j) * npoly + q)
-                vals.append(chi * pq)
-    Zc = sp.csr_matrix((np.concatenate(vals), (np.concatenate(rows), np.concatenate(colsj))), shape=(nown, M * M * npoly))
-    Zc.eliminate_zeros()
-    return Zc
+    for off in np.ndindex(*(3,) * d_):
+        idx = ci + np.array(off) - 1
+        ok = np.all((idx >= 0) & (idx < M), 1)
+        r = np.where(ok)[0]
+        idx = idx[ok]
+        chi = np.ones(len(r))
+        for ax in range(d_):
+            k, xk = idx[:, ax], Xb[r, ax]
+            chi *= np.where(k > 0, smoothstep((xk - (k / M - delta)) / (2 * delta)), 1.0)
+            chi *= np.where(k < M - 1, smoothstep(((k + 1) / M + delta - xk) / (2 * delta)), 1.0)
+        nz = chi != 0
+        r, idx, chi = r[nz], idx[nz], chi[nz]
+        bid = idx @ strides
+        for q, pq in enumerate(_polys((Xb[r] - (idx + 0.5) / M) * M)):
+            rows.append(r)
+            colsj.append(bid * npoly + q)
+            vals.append(chi * pq)
+    nbox = M ** d_
+    Zc = sp.csr_matrix((np.concatenate(vals), (np.concatenate(rows), np.concatenate(colsj))), shape=(nown, nbox * npoly))
+    if not opts.getBool("coarse_orth", True):
+        return Zc
+    G = (Zc.T @ Zc).tocsr()  # only the diagonal npoly x npoly blocks are used
+    Gb = np.zeros((nbox, npoly, npoly))
+    Gc = G.tocoo()
+    same = (Gc.row // npoly) == (Gc.col // npoly)
+    np.add.at(Gb, (Gc.row[same] // npoly, Gc.row[same] % npoly, Gc.col[same] % npoly), Gc.data[same])
+    Gb = comm.allreduce(Gb, op=MPI.SUM)
+    tol = opts.getReal("coarse_orth_tol", 1e-10)
+    blocks = []
+    for bb in range(nbox):
+        lam, V_ = np.linalg.eigh(Gb[bb])
+        keep = lam > tol * max(lam.max(), 1e-300) if lam.max() > 0 else np.zeros(npoly, bool)
+        blocks.append(sp.csr_matrix(V_[:, keep] / np.sqrt(lam[keep])) if keep.any() else sp.csr_matrix((npoly, 0)))
+    T = sp.block_diag(blocks, format="csr")
+    Zo = (Zc @ T).tocsr()
+    Zo.eliminate_zeros()
+    return Zo
 
 
 coarse = opts.getString("coarse", "boxes")
@@ -328,6 +359,50 @@ Z = None if Zloc is None else PETSc.Mat().createAIJ(size=((nown, ndof), (nc if r
                           csr=(Zloc.indptr.astype(PETSc.IntType), Zloc.indices.astype(PETSc.IntType), Zloc.data),
                           comm=PETSc.COMM_WORLD)
 
+# --- box subdomains for PCSCHWARZGIBBS (-fine_subdomains boxes): box + delta, owned by the rank with
+# --- most of the box core; consistent with the box coarse space (same boxes, same delta) -----------
+fine_subdomains = opts.getString("fine_subdomains", "algebraic")
+
+
+def box_subdomains():
+    dim = Xb.shape[1]
+    nbox = M ** dim
+    strides = M ** np.arange(dim - 1, -1, -1)
+    core = np.minimum((Xb * M).astype(int), M - 1) @ strides  # non-overlapping box of each owned DOF
+    counts = np.bincount(core, minlength=nbox)
+    allc = np.array(comm.allgather(counts))  # (size, nbox)
+    owner = np.argmax(allc, axis=0)
+    # all (box, DOF) pairs: a DOF lies in the extended box b if |x - box| <= delta in every coordinate
+    lo = np.clip(np.floor((Xb - delta - eps) * M).astype(int), 0, M - 1)
+    hi = np.clip(np.floor((Xb + delta + eps) * M).astype(int), 0, M - 1)
+    pairs_b, pairs_d = [], []
+    for off in np.ndindex(*(2,) * dim):
+        idx = lo + np.array(off)
+        ok = np.all(idx <= hi, 1)
+        for ax in range(dim):  # check the extended box really contains the point
+            bl = idx[:, ax] / M - delta - eps
+            bh = (idx[:, ax] + 1) / M + delta + eps
+            ok &= (Xb[:, ax] >= bl) & (Xb[:, ax] <= bh)
+        r = np.where(ok)[0]
+        pairs_b.append(idx[r] @ strides)
+        pairs_d.append(r + rstart)
+    pb, pd = np.concatenate(pairs_b), np.concatenate(pairs_d)
+    dest = owner[pb]
+    send = [(pb[dest == q], pd[dest == q]) for q in range(size)]
+    recv = comm.alltoall(send)
+    b_all = np.concatenate([x_[0] for x_ in recv]) if recv else np.zeros(0, int)
+    d_all = np.concatenate([x_[1] for x_ in recv]) if recv else np.zeros(0, int)
+    mine = np.where(owner == rank)[0]
+    order = np.argsort(b_all, kind="stable")
+    b_all, d_all = b_all[order], d_all[order]
+    starts = np.searchsorted(b_all, mine)
+    ends = np.searchsorted(b_all, mine, side="right")
+    return [np.sort(d_all[a_:e_]).astype(PETSc.IntType) for a_, e_ in zip(starts, ends) if e_ > a_]
+
+
+if fine == "schwarzgibbs" and fine_subdomains == "boxes":
+    fine_subs = box_subdomains()
+
 # --- patches for the serial PCPATCHGIBBS path ----------------------------------------------------
 if fine == "patchgibbs":
     if patchfile:
@@ -386,6 +461,8 @@ def make_ksp(deterministic, coarse_sample=True):
     sm.getPC().setType(fine)
     if fine == "patchgibbs":
         pymgmc.PCPatchGibbsSetPatches(sm.getPC(), offsets, indices)
+    elif fine_subdomains == "boxes":
+        pymgmc.PCSchwarzGibbsSetSubdomains(sm.getPC(), fine_subs)
     ksp.setFromOptions()
     comm.Barrier()
     t0 = time.perf_counter()
@@ -414,7 +491,7 @@ def gather_owned(values):
 
 
 tag = (f"{disc} N={N} " + (f"coarse=subdomains[{opts.getString('subdomain_source', 'parmetis')}]({opts.getString('pou_dist', 'graph')},L={pou_layers},{pou_profile},sm={opts.getInt('zsmooth', 0)}{'' if opts.getBool('zsmooth_mask', True) else 'nomask'}) " if coarse == "subdomains" else ("coarse=gdsw " if coarse == "gdsw" else f"M={M} ")) + f"k={kappa:g} ns={ns} ndof={ndof} ncoarse={nc} fine={fine}"
-       + (f" nblocks={nblocks} overlap={overlap}" if fine == "schwarzgibbs" else "") + f" np={size}")
+       + ((" subdomains=boxes" if fine_subdomains == "boxes" else f" nblocks={nblocks} overlap={overlap}") if fine == "schwarzgibbs" else "") + f" np={size}")
 
 
 def subdomain_info(mg):
@@ -493,8 +570,11 @@ else:
         return tau
 
     # QoIs: mean over [0.25, 0.5]^2, mean over the whole square, point value at the centre
-    x_, y_ = fd.SpatialCoordinate(mesh)
-    ind = fd.conditional(fd.And(fd.And(x_ > 0.25, x_ < 0.5), fd.And(y_ > 0.25, y_ < 0.5)), 16.0, 0.0)
+    xyz_ = fd.SpatialCoordinate(mesh)
+    cond_ = fd.And(xyz_[0] > 0.25, xyz_[0] < 0.5)
+    for a_ in range(1, dim):
+        cond_ = fd.And(cond_, fd.And(xyz_[a_] > 0.25, xyz_[a_] < 0.5))
+    ind = fd.conditional(cond_, 4.0 ** dim, 0.0)
     gs = [fd.assemble(ind * v * fd.dx).dat.data_ro[:nown].copy(), fd.assemble(v * fd.dx).dat.data_ro[:nown].copy(),
           (np.all(keys == N, 1)).astype(float)]
     G = np.stack(gs, 1)
