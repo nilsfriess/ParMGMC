@@ -69,7 +69,37 @@ assert fine == "schwarzgibbs" or size == 1, "PCPATCHGIBBS is sequential"
 # --- discretisation ---------------------------------------------------------------------------
 disc = opts.getString("disc", "c0ip")  # c0ip (P2, interior penalty) | spde (P1, Q = L M_L^-1 L)
 dim = opts.getInt("dim", 2)
-mesh = fd.UnitSquareMesh(N, N) if dim == 2 else fd.UnitCubeMesh(N, N, N)
+mesh_type = opts.getString("mesh", "box")  # box (unit square / cube) | toroid (twisted toroid, 3D)
+
+
+def toroid_mesh():
+    """Twisted toroid as in ../toroid: coarse mesh (-tt_n, -tt_ntheta) on rank 0, refined -prerefine
+    times there, distributed, refined in parallel until -refine refinements in total."""
+    import os
+    import sys
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "toroid"))
+    import twisted_toroid
+    n_, nth_ = opts.getInt("tt_n", 4), opts.getInt("tt_ntheta", 33)
+    refine_, pre_ = opts.getInt("refine", 1), opts.getInt("prerefine", 0)
+    coords_, tets_ = twisted_toroid.build(n_, nth_) if comm.rank == 0 else (None, None)
+    plex = fd.mesh.plex_from_cell_list(3, tets_, coords_, comm)
+    for _ in range(pre_):
+        plex.setRefinementUniform(True)
+        plex = plex.refine()
+    if comm.size > 1:
+        plex.distribute(overlap=0)
+    for _ in range(refine_ - pre_):
+        plex.setRefinementUniform(True)
+        plex = plex.refine()
+    # interior-facet integrals (C0IP) need the default facet overlap
+    return fd.Mesh(plex, distribution_parameters={"partition": False})
+
+
+if mesh_type == "toroid":
+    dim = 3
+    mesh = toroid_mesh()
+else:
+    mesh = fd.UnitSquareMesh(N, N) if dim == 2 else fd.UnitCubeMesh(N, N, N)
 V = fd.FunctionSpace(mesh, "Argyris", 5) if disc == "argyris" else fd.FunctionSpace(mesh, "CG", 2 if disc == "c0ip" else 1)
 u, v = fd.TrialFunction(V), fd.TestFunction(V)
 n = fd.FacetNormal(mesh)
@@ -490,7 +520,7 @@ def gather_owned(values):
     return out
 
 
-tag = (f"{disc} N={N} " + (f"coarse=subdomains[{opts.getString('subdomain_source', 'parmetis')}]({opts.getString('pou_dist', 'graph')},L={pou_layers},{pou_profile},sm={opts.getInt('zsmooth', 0)}{'' if opts.getBool('zsmooth_mask', True) else 'nomask'}) " if coarse == "subdomains" else ("coarse=gdsw " if coarse == "gdsw" else f"M={M} ")) + f"k={kappa:g} ns={ns} ndof={ndof} ncoarse={nc} fine={fine}"
+tag = ((f"{disc} toroid r{opts.getInt('refine', 1)} " if mesh_type == "toroid" else f"{disc} N={N} ") + (f"coarse=subdomains[{opts.getString('subdomain_source', 'parmetis')}]({opts.getString('pou_dist', 'graph')},L={pou_layers},{pou_profile},sm={opts.getInt('zsmooth', 0)}{'' if opts.getBool('zsmooth_mask', True) else 'nomask'}) " if coarse == "subdomains" else ("coarse=gdsw " if coarse == "gdsw" else f"M={M} ")) + f"k={kappa:g} ns={ns} ndof={ndof} ncoarse={nc} fine={fine}"
        + ((" subdomains=boxes" if fine_subdomains == "boxes" else f" nblocks={nblocks} overlap={overlap}") if fine == "schwarzgibbs" else "") + f" np={size}")
 
 
