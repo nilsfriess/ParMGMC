@@ -35,6 +35,7 @@ typedef struct {
   PetscInt      dense_threshold; /* Blocks of size <= this are factored and solved densely. */
   PetscRandom   prand;
   MatSolverType st;
+  char          st_buf[64]; /* storage for a solver type given with -pc_cholsampler_mat_solver_type */
   PetscBool     richardson, is_gamg_coarse; /* is_gamg_coarse should be set if the sampler is used as
                                                coarse grid sampler in GAMGMC. GAMG reduces the number
                                                of MPI ranks that participate on the coarser levels, down
@@ -439,6 +440,16 @@ static PetscErrorCode PCSetFromOptions_CholSampler(PC pc, PetscOptionItems Petsc
   PetscCall(PetscOptionsBool("-pc_cholsampler_coarse_gamg", "Sampler is coarse GAMGMC sampler", NULL, flag, &flag, NULL));
   if (flag) PetscCall(PCCholSamplerSetIsCoarseGAMG(pc, PETSC_TRUE));
   PetscCall(PetscOptionsInt("-pc_cholsampler_dense_threshold", "Sequential blocks of size <= this are factored and solved densely", NULL, chol->dense_threshold, &chol->dense_threshold, NULL));
+  {
+    char      st[64];
+    PetscBool set;
+
+    PetscCall(PetscOptionsString("-pc_cholsampler_mat_solver_type", "Solver package for the sparse Cholesky factorisation (e.g. petsc, mumps, mkl_pardiso)", NULL, chol->st, st, sizeof(st), &set));
+    if (set) {
+      PetscCall(PetscStrncpy(chol->st_buf, st, sizeof(chol->st_buf)));
+      chol->st = chol->st_buf;
+    }
+  }
   PetscOptionsHeadEnd();
   PetscFunctionReturn(PETSC_SUCCESS);
 }
