@@ -29,6 +29,8 @@ Options
   -mode sample    -nsamples samples after -nburnin; QoI and pointwise variances vs. exact (computed on
                   rank 0); in serial also an exact Cholesky sampler of the same length as reference.
   -up_sweeps 0|1  sweeps after the coarse step (default 0: V(1,0) cycle; 1: V(1,1))
+  -mode spde      standard SPDE sampler (P1, lumped mass, one CG + GAMG solve per sample) on the same
+                  mesh, for comparison; -spde_rtol (default 1e-8)
   -coarse_noise 0 negative control: deterministic coarse step (the chain is then biased)
 """
 
@@ -101,6 +103,50 @@ if mesh_type == "toroid":
     mesh = toroid_mesh()
 else:
     mesh = fd.UnitSquareMesh(N, N) if dim == 2 else fd.UnitCubeMesh(N, N, N)
+if mode == "spde":
+    # Standard SPDE sampler for alpha = 2 on the same mesh (as ../wrench/wrench_spde.py): P1, lumped mass
+    # M_L, L = K + kappa^2 M, independent samples x = L^{-1} M_L^{1/2} z, z ~ N(0, I); one CG + GAMG
+    # solve per sample (zero initial guess, relative tolerance -spde_rtol on the unpreconditioned
+    # residual). P1 on the mesh with 2N cells per side has as many DOFs as P2 on N.
+    V1 = fd.FunctionSpace(mesh, "CG", 1)
+    u1, v1 = fd.TrialFunction(V1), fd.TestFunction(V1)
+    Lm = fd.assemble((fd.Constant(kappa ** 2) * u1 * v1 + fd.inner(fd.grad(u1), fd.grad(v1))) * fd.dx, mat_type="aij").M.handle
+    with fd.assemble(v1 * fd.dx).dat.vec_ro as mv:
+        sqrt_ml = mv.copy()
+    sqrt_ml.sqrtabs()
+    rtol_ = opts.getReal("spde_rtol", 1e-8)
+    kl = PETSc.KSP().create(comm=Lm.getComm())
+    kl.setOptionsPrefix("spde_")
+    kl.setOperators(Lm, Lm)
+    kl.setType("cg")
+    kl.getPC().setType("gamg")
+    kl.setTolerances(rtol=rtol_, atol=0.0, max_it=5000)
+    kl.setNormType(PETSc.KSP.NormType.UNPRECONDITIONED)
+    kl.setErrorIfNotConverged(True)
+    kl.setFromOptions()
+    comm.Barrier()
+    t0 = time.perf_counter()
+    kl.setUp()
+    comm.Barrier()
+    t_setup = time.perf_counter() - t0
+    rng = np.random.default_rng(seed + 7919 * comm.rank)
+    bz, xz = Lm.createVecs()
+    its = 0
+    for it in range(nburnin + nsamples):
+        if it == nburnin:
+            comm.Barrier()
+            t0 = time.perf_counter()
+            its = 0
+        bz.array[:] = rng.standard_normal(bz.getLocalSize())
+        bz.pointwiseMult(bz, sqrt_ml)
+        kl.solve(bz, xz)
+        its += kl.getIterationNumber()
+    comm.Barrier()
+    t_s = (time.perf_counter() - t0) / nsamples
+    if comm.rank == 0:
+        tag_ = (f"spde toroid r{opts.getInt('refine', 1)}" if mesh_type == "toroid" else f"spde dim={dim} N={N}") + f" k={kappa:g} ndof={Lm.getSize()[0]} np={comm.size}"
+        print(f"RESULT spde           {tag_} | setup {t_setup:.2f} s, {1e3 * t_s:.2f} ms/sample, {its / nsamples:.1f} CG its/sample (rtol {rtol_:g})", flush=True)
+    raise SystemExit(0)
 V = fd.FunctionSpace(mesh, "Argyris", 5) if disc == "argyris" else fd.FunctionSpace(mesh, "CG", 2 if disc == "c0ip" else 1)
 u, v = fd.TrialFunction(V), fd.TestFunction(V)
 n = fd.FacetNormal(mesh)
@@ -602,6 +648,8 @@ if mode == "rho":
         e = energy(x)
         ratios.append(e)
         x.scale(1.0 / e)
+    if opts.getBool("rho_print", False) and rank == 0:
+        print("ratios " + " ".join(f"{r_:.3g}" for r_ in ratios), flush=True)
     last = np.asarray(ratios[-10:])
     rho = float(np.exp(np.mean(np.log(last))))
     if rank == 0:
