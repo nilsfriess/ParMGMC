@@ -4,8 +4,8 @@ toroid_weak_scaling.py start from: the mesh after -refine uniform refinements (=
 partitioned with ParMETIS on the cell graph (cells sharing a face), before the parallel refinements.
 Serial; renders with pyvista (offscreen).
 
-    python toroid_figure.py -refine 2 -nparts 64 -out toroid
-    -> toroid_sample.png, toroid_partition_np64.png
+    python toroid_figure.py -refine 2 -nparts 16 -out toroid
+    -> toroid_sample.png, toroid_partition_np16.png
 """
 
 import numpy as np
@@ -17,7 +17,7 @@ import pymgmc
 import twisted_toroid
 
 opts = PETSc.Options()
-refine, nparts = opts.getInt("refine", 2), opts.getInt("nparts", 64)
+refine, nparts = opts.getInt("refine", 2), opts.getInt("nparts", 16)
 kappa, out = opts.getReal("kappa", 10.0), opts.getString("out", "toroid")
 pymgmc.seed(opts.getInt("seed", 1))
 
@@ -43,6 +43,11 @@ ksp.solve(b, x)
 
 cells = V.cell_node_map().values  # (ncells, 4) vertex numbers, same numbering as X
 X = fd.Function(fd.VectorFunctionSpace(mesh, "CG", 1)).interpolate(fd.SpatialCoordinate(mesh)).dat.data_ro
+# Firedrake reorders the vertices of each cell; orient all tetrahedra positively (VTK convention), otherwise the
+# extracted surface has mixed normals and the shading shows dark patches that look like holes
+neg = np.einsum("ij,ij->i", np.cross(X[cells[:, 1]] - X[cells[:, 0]], X[cells[:, 2]] - X[cells[:, 0]]), X[cells[:, 3]] - X[cells[:, 0]]) < 0
+cells = cells.copy()
+cells[neg] = cells[neg][:, [1, 0, 2, 3]]
 
 # partition of the cell graph (two cells are adjacent if they share a face)
 faces = np.sort(np.concatenate([cells[:, [0, 1, 2]], cells[:, [0, 1, 3]], cells[:, [0, 2, 3]], cells[:, [1, 2, 3]]]), axis=1)
@@ -68,8 +73,10 @@ grid = pv.UnstructuredGrid({pv.CellType.TETRA: cells}, X)
 grid.point_data["sample"] = x.array_r.copy()
 grid.cell_data["part"] = parts
 surf = grid.extract_surface(algorithm="dataset_surface")
-rng = np.random.default_rng(3)
-palette = pv.LookupTable(cmap="turbo", n_values=nparts).values[rng.permutation(nparts), :3]  # unrelated neighbours
+# 16 well-distinguishable colours (cycled if there are more parts)
+palette = (np.array([[31, 119, 180], [255, 127, 14], [44, 160, 44], [214, 39, 40], [148, 103, 189], [140, 86, 75],
+                     [227, 119, 194], [127, 127, 127], [188, 189, 34], [23, 190, 207], [174, 199, 232], [255, 187, 120],
+                     [152, 223, 138], [255, 152, 150], [197, 176, 213], [219, 219, 141]]))[np.arange(nparts) % 16]
 surf.cell_data["part_rgb"] = palette[surf.cell_data["part"]]
 
 
