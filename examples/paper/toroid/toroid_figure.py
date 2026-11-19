@@ -73,6 +73,8 @@ grid = pv.UnstructuredGrid({pv.CellType.TETRA: cells}, X)
 grid.point_data["sample"] = x.array_r.copy()
 grid.cell_data["part"] = parts
 surf = grid.extract_surface(algorithm="dataset_surface")
+# the four corner ridges of the twisted square tube, drawn as lines to show the shape
+ridges = surf.extract_feature_edges(feature_angle=40, boundary_edges=False, manifold_edges=False, non_manifold_edges=False)
 # 16 well-distinguishable colours (cycled if there are more parts)
 palette = (np.array([[31, 119, 180], [255, 127, 14], [44, 160, 44], [214, 39, 40], [148, 103, 189], [140, 86, 75],
                      [227, 119, 194], [127, 127, 127], [188, 189, 34], [23, 190, 207], [174, 199, 232], [255, 187, 120],
@@ -84,8 +86,9 @@ def render(name, scalars, **kw):
     p = pv.Plotter(off_screen=True, window_size=(1600, 1100))
     p.set_background("white")
     p.add_mesh(surf, scalars=scalars, ambient=0.25, specular=0.0, **kw)
+    p.add_mesh(ridges, color="black", line_width=3)
     p.camera_position = "xy"
-    p.camera.elevation = 35  # from above: the faces of the twisted square tube spiral around the ring
+    p.camera.elevation = 15  # almost from above: from lower angles the twisted faces fold over at the outline
     p.camera.zoom(1.2)
     img = p.screenshot(None, return_img=True)
     rows, cols = np.where(np.any(img < 250, axis=2))  # crop the white border
