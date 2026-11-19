@@ -123,6 +123,7 @@ target_sources(parmgmc
             src/woodbury.c
             src/pc_patchgibbs.c
             src/pc_schwarzgibbs.c
+            src/pc_schwarzmgmc.c
 	    src/parmgmc.c
 	    src/problems.c
 	    src/ms.c

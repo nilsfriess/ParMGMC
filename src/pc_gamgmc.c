@@ -133,6 +133,16 @@ PetscErrorCode PCGAMGMCSetInternalPC(PC pc, PC mg)
   PetscFunctionReturn(PETSC_SUCCESS);
 }
 
+/* Type of the inner multigrid PC (PCGAMG or PCMG), as -pc_gamgmc_mg_type. */
+PetscErrorCode PCGAMGMCSetMGType(PC pc, PCType type)
+{
+  PC_GAMGMC pg = pc->data;
+
+  PetscFunctionBeginUser;
+  PetscCall(PetscStrncpy(pg->mgtype, type, sizeof(pg->mgtype)));
+  PetscFunctionReturn(PETSC_SUCCESS);
+}
+
 PetscErrorCode PCGAMGMCSetLevels(PC pc, PetscInt levels)
 {
   PC_GAMGMC pg = pc->data;

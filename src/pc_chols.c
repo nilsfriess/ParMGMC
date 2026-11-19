@@ -46,6 +46,7 @@ typedef struct {
 								                               matrix that contains the actual values and use a sequential
 								                               sampler. This involves additional copies but scales much better.
 								     */
+  PetscBool     deterministic; /* no noise: y = A^{-1} x (for deterministic reference cycles) */
   PetscBool     in_solve;
   PetscInt      sample_index;
   void         *cbctx;
@@ -279,16 +280,20 @@ static PetscErrorCode PCApply_CholSampler(PC pc, Vec x, Vec y)
       PetscCall(VecGetLocalVectorRead(x, chol->xl));
       PetscCall(MatForwardSolve(chol->F, chol->xl, chol->v));
       PetscCall(VecRestoreLocalVectorRead(x, chol->xl));
-      PetscCall(VecSetRandomStandardNormal(chol->r, chol->prand));
-      PetscCall(VecAXPY(chol->v, 1., chol->r));
+      if (!chol->deterministic) {
+        PetscCall(VecSetRandomStandardNormal(chol->r, chol->prand));
+        PetscCall(VecAXPY(chol->v, 1., chol->r));
+      }
       PetscCall(VecGetLocalVector(y, chol->yl));
       PetscCall(MatBackwardSolve(chol->F, chol->v, chol->yl));
       PetscCall(VecRestoreLocalVector(y, chol->yl));
     }
   } else {
     PetscCall(CholSamplerForwardSolve(chol, x, chol->v));
-    PetscCall(VecSetRandomStandardNormal(chol->r, chol->prand));
-    PetscCall(VecAXPY(chol->v, 1., chol->r));
+    if (!chol->deterministic) {
+      PetscCall(VecSetRandomStandardNormal(chol->r, chol->prand));
+      PetscCall(VecAXPY(chol->v, 1., chol->r));
+    }
     PetscCall(CholSamplerBackwardSolve(chol, chol->v, y));
   }
   PetscCall(PCCholSamplerNotifySample(pc, y));
@@ -325,16 +330,20 @@ static PetscErrorCode PCApplyRichardson_CholSampler(PC pc, Vec b, Vec y, Vec w, 
       if (chol->is_gamg_coarse) {
         if (rank == 0) {
           PetscCall(VecCopy(chol->v_cache, chol->v));
-          PetscCall(VecSetRandomStandardNormal(chol->r, chol->prand));
-          PetscCall(VecAXPY(chol->v, 1., chol->r));
+          if (!chol->deterministic) {
+            PetscCall(VecSetRandomStandardNormal(chol->r, chol->prand));
+            PetscCall(VecAXPY(chol->v, 1., chol->r));
+          }
           PetscCall(VecGetLocalVector(y, chol->yl));
           PetscCall(MatBackwardSolve(chol->F, chol->v, chol->yl));
           PetscCall(VecRestoreLocalVector(y, chol->yl));
         }
       } else {
         PetscCall(VecCopy(chol->v_cache, chol->v));
-        PetscCall(VecSetRandomStandardNormal(chol->r, chol->prand));
-        PetscCall(VecAXPY(chol->v, 1., chol->r));
+        if (!chol->deterministic) {
+          PetscCall(VecSetRandomStandardNormal(chol->r, chol->prand));
+          PetscCall(VecAXPY(chol->v, 1., chol->r));
+        }
         PetscCall(CholSamplerBackwardSolve(chol, chol->v, y));
       }
       PetscCall(PCCholSamplerNotifySample(pc, y));
@@ -439,12 +448,13 @@ static PetscErrorCode PCSetFromOptions_CholSampler(PC pc, PetscOptionItems Petsc
   PetscOptionsHeadBegin(PetscOptionsObject, "Cholesky options");
   PetscCall(PetscOptionsBool("-pc_cholsampler_coarse_gamg", "Sampler is coarse GAMGMC sampler", NULL, flag, &flag, NULL));
   if (flag) PetscCall(PCCholSamplerSetIsCoarseGAMG(pc, PETSC_TRUE));
+  PetscCall(PetscOptionsBool("-pc_cholsampler_deterministic", "No noise: exact solves with the Cholesky factor", NULL, chol->deterministic, &chol->deterministic, NULL));
   PetscCall(PetscOptionsInt("-pc_cholsampler_dense_threshold", "Sequential blocks of size <= this are factored and solved densely", NULL, chol->dense_threshold, &chol->dense_threshold, NULL));
   {
     char      st[64];
     PetscBool set;
 
-    PetscCall(PetscOptionsString("-pc_cholsampler_mat_solver_type", "Solver package for the sparse Cholesky factorisation (e.g. petsc, mumps, mkl_pardiso)", NULL, chol->st, st, sizeof(st), &set));
+    PetscCall(PetscOptionsString("-pc_cholsampler_mat_solver_type", "Solver package for the sparse Cholesky factorisation (e.g. petsc, mkl_pardiso; needs MatForwardSolve/MatBackwardSolve)", NULL, chol->st, st, sizeof(st), &set));
     if (set) {
       PetscCall(PetscStrncpy(chol->st_buf, st, sizeof(chol->st_buf)));
       chol->st = chol->st_buf;

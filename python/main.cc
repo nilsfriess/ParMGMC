@@ -17,6 +17,7 @@
 #include "parmgmc/pc/pc_patchgibbs.h"
 #include "parmgmc/pc/pc_gamgmc.h"
 #include "parmgmc/pc/pc_schwarzgibbs.h"
+#include "parmgmc/pc/pc_schwarzmgmc.h"
 
 namespace py = pybind11;
 
@@ -105,6 +106,29 @@ PYBIND11_MODULE(pymgmc, m)
     PetscCallAbort(PETSC_COMM_WORLD, PCSchwarzGibbsSetSubdomains(pc, static_cast<PetscInt>(is.size()), is.data()));
     for (auto &s : is) PetscCallAbort(PETSC_COMM_WORLD, ISDestroy(&s));
   });
+
+  // Two-level Schwarz MGMC sampler (PCSCHWARZMGMC): coarse basis Z, fine subdomains (list of index
+  // arrays, global rows; every rank must call it, possibly with an empty list), internal PCMG.
+  m.def("PCSchwarzMGMCSetCoarseSpace", [](PC pc, Mat Z) { PetscCallAbort(PETSC_COMM_WORLD, PCSchwarzMGMCSetCoarseSpace(pc, Z)); });
+  m.def("PCSchwarzMGMCSetSubdomains", [](PC pc, py::list subs) {
+    std::vector<IS> is;
+    for (auto item : subs) {
+      auto a = py::cast<py::array_t<PetscInt, py::array::c_style | py::array::forcecast>>(item);
+      IS   s;
+      PetscCallAbort(PETSC_COMM_WORLD, ISCreateGeneral(PETSC_COMM_SELF, static_cast<PetscInt>(a.size()), a.data(), PETSC_COPY_VALUES, &s));
+      is.push_back(s);
+    }
+    PetscCallAbort(PETSC_COMM_WORLD, PCSchwarzMGMCSetSubdomains(pc, static_cast<PetscInt>(is.size()), is.data()));
+    for (auto &s : is) PetscCallAbort(PETSC_COMM_WORLD, ISDestroy(&s));
+  });
+  m.def(
+    "PCSchwarzMGMCGetMG",
+    [](PC pc) {
+      PC mg;
+      PetscCallAbort(PETSC_COMM_WORLD, PCSchwarzMGMCGetMG(pc, &mg));
+      return mg;
+    },
+    py::return_value_policy::reference);
 
   m.def("seed", [](unsigned long s) {
     PetscFunctionBegin;
