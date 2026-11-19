@@ -1,6 +1,7 @@
 """Weak-scaling figure of the twisted toroid (alpha = 1, AMGMC) from the CSV of collect.py: time per
-iteration (left) and per independent sample, i.e. times the QoI IACT (right), against the number of
-ranks, for the exact parallel Gibbs smoother and the Hogwild baseline. The weak-scaling efficiency
+iteration (left; exact parallel Gibbs smoother and the Hogwild baseline) and per independent sample, i.e. times
+the QoI IACT written next to each point (right; Gibbs only: Hogwild does not sample the target distribution), against
+the number of ranks. The weak-scaling efficiency
 t(1 rank) / t(P ranks) is written next to each point of the left panel.
 
     python collect.py results/toroid/weak3 --csv weak3.csv
@@ -32,7 +33,7 @@ ap.add_argument("-o", "--output", default="toroid_weak_scaling.pdf")
 a = ap.parse_args()
 rows = [r for r in csv.DictReader(open(a.csv)) if r["gamg"] == "default"]
 
-fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(6.3, 2.5), constrained_layout=True)
+fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(6.3, 1.9), constrained_layout=True)
 for sm, st in STYLE.items():
     rs = sorted((r for r in rows if r["smoother"] == sm), key=lambda r: int(r["ranks"]))
     if not rs:
@@ -42,8 +43,12 @@ for sm, st in STYLE.items():
     for r in rs[1:]:
         ax1.annotate(f"{float(r['efficiency']):.2f}", (int(r["ranks"]), 1e3 * float(r["t_iter"])), fontsize=7,
                      textcoords="offset points", xytext=(4, -9 if sm == "hogwild" else 4), color=st["color"])
-    ax2.plot(p, [1e3 * float(r["t_indep"]) for r in rs], **st)
-for ax, lab in ((ax1, "time per iteration [ms]"), (ax2, "time per independent sample [ms]")):
+    if sm == "gibbs":  # Hogwild does not sample the target distribution: no time per independent sample
+        ax2.plot(p, [1e3 * float(r["t_indep"]) for r in rs], **st)
+        for r in rs:
+            ax2.annotate(f"{float(r['iact']):.2f}", (int(r["ranks"]), 1e3 * float(r["t_indep"])), fontsize=7,
+                         textcoords="offset points", xytext=(4, -9), color=st["color"])
+for ax, lab in ((ax1, "time per iteration [ms]"), (ax2, "time per indep. sample [ms]")):
     ax.set_xscale("log", base=2)
     ax.set_xticks([1, 8, 64, 512], ["1", "8", "64", "512"])
     ax.minorticks_off()
