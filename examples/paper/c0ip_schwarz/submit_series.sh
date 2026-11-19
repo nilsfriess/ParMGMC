@@ -22,8 +22,8 @@ sub() { # name ranks walltime driver-options...
 
 MG="-mode sample -nsamples ${NSAMPLES:-10000} -nburnin 100 -timing_only 1 -gamgmc_pc_mg_log"
 SP="-mode spde -nsamples 1000 -nburnin 10 -timing_only 1"  # no -spde_pc_mg_log: at 256 ranks the per-level GAMG logging slowed the solve ~14x
-# dim N M ranks
-for p in "2 64 8 1" "2 128 16 4" "2 256 32 16" "2 512 64 64" "2 1024 128 256" "3 16 4 2" "3 32 8 16" "3 64 16 128"; do
+# dim N M ranks (cube 216 and 1728 subdomains: 7 and 54 ranks, i.e. 31 and 32 per rank)
+for p in "2 64 8 1" "2 128 16 4" "2 256 32 16" "2 512 64 64" "2 1024 128 256" "3 16 4 2" "3 24 6 7" "3 32 8 16" "3 48 12 54" "3 64 16 128"; do
   read -r d n m np <<< "$p"
   tag=$(printf "d%d_N%d_M%d_np%04d" "$d" "$n" "$m" "$np")
   its=$([ "$d" = 3 ] && echo 80 || echo 50)
@@ -32,6 +32,3 @@ for p in "2 64 8 1" "2 128 16 4" "2 256 32 16" "2 512 64 64" "2 1024 128 256" "3
   sub "$(printf "d%d_N%d_np%04d_spde" "$d" "$n" "$np")" "$np" 00:30:00 -dim "$d" -N "$n" $SP
   sub "$(printf "d%d_N%d_np%04d_spde" "$d" $((2 * n)) "$np")" "$np" 00:30:00 -dim "$d" -N $((2 * n)) $SP
 done
-# cube rho only (no rank count gives 32 subdomains per rank)
-sub d3_N24_M6_np0008_rho 8 00:45:00 -dim 3 -N 24 -M 6 -mode rho -rho_its 80
-sub d3_N48_M12_np0032_rho 32 00:45:00 -dim 3 -N 48 -M 12 -mode rho -rho_its 80

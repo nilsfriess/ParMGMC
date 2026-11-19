@@ -75,12 +75,14 @@ def series(runs):
     """One row per (dim, N, M) of the MGMC series, with matched SPDE and rho."""
     rows = []
     mg = [r for r in runs if r["kind"] == "mgmc"]
-    rho = {(r["dim"], r["N"], r["M"]): r for r in runs if r["kind"] == "rho" and r["rho"] is not None}
+    rhos = [r for r in runs if r["kind"] == "rho" and r["rho"] is not None]
     spde = {(r["dim"], r["N"], r["np"]): r for r in runs if r["kind"] == "spde"}
-    for key in sorted({(r["dim"], r["N"], r["M"]) for r in mg} | set(rho)):
+    for key in sorted({(r["dim"], r["N"], r["M"]) for r in mg + rhos}):
         dim, N, M = key
         nsub = M ** dim
-        np_ = max(1, nsub // PER_RANK[dim])
+        np_ = max(1, round(nsub / PER_RANK[dim]))
+        same = [r for r in rhos if (r["dim"], r["N"], r["M"]) == key]
+        rho = {key: ([r for r in same if r["np"] == np_] or same)[-1]} if same else {}  # prefer the series rank count
         cand = [r for r in mg if (r["dim"], r["N"], r["M"]) == key and r["np"] == np_]
         row = dict(dim=dim, N=N, M=M, nsub=nsub, np=np_, ndof=(2 * N + 1) ** dim, mgmc=cand[-1] if cand else None,
                    rho=rho.get(key), same_mesh=spde.get((dim, N, np_)), same_dofs=spde.get((dim, 2 * N, np_)))
