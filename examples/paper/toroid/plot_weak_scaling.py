@@ -49,7 +49,7 @@ for ax, lab in ((ax1, "time per iteration [ms]"), (ax2, "time per independent sa
     ax.minorticks_off()
     ax.set_xlabel("number of ranks")
     ax.set_ylabel(lab)
-    ax.set_ylim(bottom=0)
+    ax.set_ylim(0, 1.15 * ax.get_ylim()[1])
     ax.grid(True, alpha=0.3)
 ax1.legend(frameon=False)
 fig.savefig(a.output, backend="pgf" if USETEX and a.output.endswith(".pdf") else None)
