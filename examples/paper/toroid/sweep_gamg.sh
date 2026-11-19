@@ -1,15 +1,19 @@
 #!/bin/bash
-# GAMG parameter sweep for the toroid at 512 ranks: all configurations run one after another in
-# ONE allocation (same nodes), each as one job_scaling.sh run (weak3 settings, exact Gibbs).
+# GAMG parameter sweep for the toroid: all configurations run one after another in ONE allocation
+# (same nodes), each as one job_scaling.sh run (weak3 settings, exact Gibbs). The mesh refinement
+# follows the weak-scaling series (1/8/64/512 ranks -> refine 2/3/4/5, prerefine 0/1/2/2).
 #
 # Usage: sbatch --partition=cpu-multi --nodes=32 --ntasks=512 --ntasks-per-node=16 --cpus-per-task=4 \
-#          --time=01:30:00 sweep_gamg.sh <results-dir>
+#          --time=01:30:00 sweep_gamg.sh <results-dir>      (or e.g. --nodes=4 --ntasks=64 for 64 ranks)
 #SBATCH --exclusive
 #SBATCH --export=NONE
 set -uo pipefail
 R=$1
 J=$HOME/algebraic_mgmc_paper/ParMGMC/examples/paper/toroid/job_scaling.sh
-BASE="-tt_refine 5 -tt_prerefine 2 -tt_smoother gibbs -tt_ntheta 33 -tt_nsamples 2000 -tt_nburnin 100 -tt_verbose -no_signal_handler"
+declare -A REF=([1]="2 0" [8]="3 1" [64]="4 2" [512]="5 2")
+read -r refine prerefine <<< "${REF[$SLURM_NTASKS]}"
+tag=$(printf "np%04d" "$SLURM_NTASKS")
+BASE="-tt_refine $refine -tt_prerefine $prerefine -tt_smoother gibbs -tt_ntheta 33 -tt_nsamples 2000 -tt_nburnin 100 -tt_verbose -no_signal_handler"
 P=-gamgmc_pc_gamg_
 configs=(
   "default|"
@@ -28,5 +32,5 @@ for c in "${configs[@]}"; do
   opts=${c#*|}
   echo "$(date -Iseconds) $name: $opts"
   # shellcheck disable=SC2086
-  bash "$J" "$R" "np0512_$name" $BASE $opts
+  bash "$J" "$R" "${tag}_$name" $BASE $opts
 done
