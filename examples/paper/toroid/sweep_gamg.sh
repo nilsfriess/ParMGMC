@@ -25,6 +25,8 @@ configs=(
   "aggressive2|${P}aggressive_coarsening 2"
   "nsmooths2_threshold0.05|${P}agg_nsmooths 2 ${P}threshold 0.05"
   "sweeps2|-gamgmc_mg_levels_ksp_max_it 2"
+  "eqlimit1000|${P}process_eq_limit 1000"
+  "eqlimit5000|${P}process_eq_limit 5000"
   "default_end|"
 )
 for c in "${configs[@]}"; do
