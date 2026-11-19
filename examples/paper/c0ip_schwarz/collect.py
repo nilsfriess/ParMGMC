@@ -12,9 +12,23 @@ import argparse
 import re
 from pathlib import Path
 
+import shutil
+
+import matplotlib as mpl
 import matplotlib.pyplot as plt
 
 PER_RANK = {2: 64, 3: 32}
+
+# same style as ../graph/graph_prior_scaling_plot.py
+mpl.rcParams.update({"font.family": "serif", "font.size": 9, "axes.labelsize": 9, "legend.fontsize": 8,
+                     "xtick.labelsize": 8, "ytick.labelsize": 8, "axes.linewidth": 0.6, "lines.linewidth": 1.2,
+                     "lines.markersize": 4, "savefig.dpi": 600, "savefig.bbox": "tight", "savefig.pad_inches": 0.02,
+                     "pdf.fonttype": 42})
+USETEX = shutil.which("latex") is not None and shutil.which("pdflatex") is not None
+if USETEX:
+    mpl.rcParams.update({"text.usetex": True, "pgf.texsystem": "pdflatex", "pgf.rcfonts": False})
+else:
+    mpl.rcParams.update({"font.serif": ["cmr10"], "mathtext.fontset": "cm", "axes.formatter.use_mathtext": True})
 
 
 def num(pattern, line, cast=float):
@@ -96,12 +110,12 @@ def table(rows):
 
 
 def figure(rows, path):
-    fig, axes = plt.subplots(1, 2, figsize=(9, 3.4), constrained_layout=True)
+    fig, axes = plt.subplots(1, 2, figsize=(6.3, 2.6), constrained_layout=True)
     for ax, dim in zip(axes, (2, 3)):
         rs = [r for r in rows if r["dim"] == dim and r["mgmc"]]
         x = [r["nsub"] for r in rs]
         lines = [("MGMC", [r["mgmc"]["ms"] for r in rs], dict(ls="-", marker="o", color="#0072B2")),
-                 ("MGMC: coarse sample (rank 0)", [r["mgmc"].get("coarse_ms") for r in rs], dict(ls=":", marker="o", mfc="none", color="#0072B2")),
+                 ("MGMC, coarse sample (rank 0)", [r["mgmc"].get("coarse_ms") for r in rs], dict(ls=":", marker="o", mfc="none", color="#0072B2")),
                  ("SPDE, same mesh", [r["same_mesh"] and r["same_mesh"]["ms"] for r in rs], dict(ls="--", marker="s", color="#D55E00")),
                  ("SPDE, same unknowns", [r["same_dofs"] and r["same_dofs"]["ms"] for r in rs], dict(ls="-.", marker="s", mfc="none", color="#D55E00"))]
         for label, y, kw in lines:
@@ -113,11 +127,11 @@ def figure(rows, path):
         ax.set_xticks(x, [str(v) for v in x])
         ax.minorticks_off()
         ax.set_xlabel("number of subdomains")
-        ax.set_title(f"unit {'square' if dim == 2 else 'cube'} ({PER_RANK[dim]} subdomains per rank)")
+        ax.set_title(f"unit {'square' if dim == 2 else 'cube'} ({PER_RANK[dim]} subdomains per rank)", fontsize=9)
         ax.grid(True, which="both", alpha=0.3)
     axes[0].set_ylabel("time per sample [ms]")
-    axes[1].legend(fontsize=8)
-    fig.savefig(path)
+    fig.legend(*axes[0].get_legend_handles_labels(), loc="upper center", bbox_to_anchor=(0.5, 0.0), ncol=4, frameon=False, handlelength=2.6)
+    fig.savefig(path, backend="pgf" if USETEX and str(path).endswith(".pdf") else None)
 
 
 if __name__ == "__main__":
