@@ -21,7 +21,7 @@ sub() { # name ranks walltime driver-options...
 }
 
 MG="-mode sample -nsamples ${NSAMPLES:-10000} -nburnin 100 -timing_only 1 -gamgmc_pc_mg_log"
-SP="-mode spde -nsamples 1000 -nburnin 10 -timing_only 1 -spde_pc_mg_log"
+SP="-mode spde -nsamples 1000 -nburnin 10 -timing_only 1"  # no -spde_pc_mg_log: at 256 ranks the per-level GAMG logging slowed the solve ~14x
 # dim N M ranks
 for p in "2 64 8 1" "2 128 16 4" "2 256 32 16" "2 512 64 64" "2 1024 128 256" "3 16 4 2" "3 32 8 16" "3 64 16 128"; do
   read -r d n m np <<< "$p"
