@@ -109,6 +109,9 @@ typedef struct {
   MPI_Request  *mid_recv_reqs;
   MPI_Request  *send_reqs; /* all sends of one sweep, completed at its end */
   PetscInt      n_send_reqs_max;
+  PetscMPIInt  *wait_idx; /* MPI_Waitsome output: completed receives ... */
+  MPI_Status   *wait_status; /* ... and their statuses */
+  PetscBool     waitany;     /* handle one message per round (MPI_Waitany) instead of all arrived ones (MPI_Waitsome) */
   PetscInt     *mid_recv_buf_size;  /* number of ghost values received from a neighbour per sweep */
   PetscInt     *mid_recv_remaining; /* ... of which still outstanding in the current sweep */
   MidIDData   **mid_recv_bufs;
@@ -144,7 +147,7 @@ typedef struct {
   /* Debug statistics (-pc_parsor_stats) */
   PetscInt       stat_ncolors, stat_ntop, stat_nbot, stat_nint;
   PetscInt       stat_bot_mid_edges; /* couplings of a local BOT node to a MID node on a higher-colour rank */
-  PetscInt       stat_napply, stat_nrounds, stat_nscans;
+  PetscInt       stat_napply, stat_nrounds, stat_nmsgs, stat_nscans;
   PetscLogDouble stat_ttotal, stat_tphase[10]; /* see ParallelSORPhaseNames */
 
   PetscBool debug_no_mid_wait; /* INCORRECT, for timing only: MID nodes use old remote values, no MID messages */
@@ -174,7 +177,19 @@ typedef struct {
   PetscInt        *diag;
   PetscBool        stats;
   PetscBool        debug_no_mid_wait;
+  PetscInt         proc_coloring; /* index into ParSORProcColorings */
+  PetscBool        waitany;
 } *PC_PARSOR;
+
+/* Colouring of the processor graph (two ranks are adjacent if the matrix couples their rows): Jones-Plassmann or
+   greedy (PETSc MatColoring, in parallel), or smallest-last greedy, computed sequentially (and identically) on
+   every rank from the gathered graph, which has one vertex per rank. */
+enum {
+  PARSOR_COLORING_JP,
+  PARSOR_COLORING_GREEDY,
+  PARSOR_COLORING_SL
+};
+static const char *const ParSORProcColorings[] = {"jp", "greedy", "sl"};
 
 static PetscErrorCode CreateGhostCommunication(Mat matin, Vec *lvec_out, VecScatter *mvctx_out)
 {
@@ -212,89 +227,171 @@ static PetscErrorCode CreateGhostCommunication(Mat matin, Vec *lvec_out, VecScat
   PetscFunctionReturn(PETSC_SUCCESS);
 }
 
-static PetscErrorCode ColorProcessors(Mat matin, PetscInt **proccols)
+/* Smallest-last greedy colouring of the processor graph. Every rank gathers all neighbour lists and computes the same
+   colouring. The graph has one vertex per rank, so the O(size^2) ordering is negligible. Smallest-last orderings
+   usually need fewer colours than Jones-Plassmann, and fewer colours mean shorter chains of MID messages. */
+static PetscErrorCode ColorProcessorsSL(MPI_Comm comm, PetscInt nnb, const PetscInt nbs[], PetscInt proccols[])
 {
-  PetscMPIInt     rank, size;
-  PetscInt       *procmap, n, N, n_nb_total = 0, *proc_cols;
-  PetscScalar    *proc_cols_vals;
-  Mat             Ap, Ao, P;
-  const PetscInt *colmap, *ii, *jj;
-  PetscLayout     layout;
-  MatColoring     proc_coloring;
-  ISColoring      isc;
+  PetscMPIInt size, n, *cnts, *displs;
+  PetscInt   *adj, *rowlen, *rowstart, *col, *fill, *deg, *order, *mark;
+  PetscBool  *removed;
 
   PetscFunctionBegin;
-  PetscCallMPI(MPI_Comm_size(PetscObjectComm((PetscObject)matin), &size));
-  PetscCallMPI(MPI_Comm_rank(PetscObjectComm((PetscObject)matin), &rank));
-  PetscCall(PetscCalloc1(size, &procmap));
+  PetscCallMPI(MPI_Comm_size(comm, &size));
+  PetscCall(PetscMPIIntCast(nnb, &n));
+  PetscCall(PetscMalloc2(size, &cnts, size + 1, &displs));
+  PetscCallMPI(MPI_Allgather(&n, 1, MPI_INT, cnts, 1, MPI_INT, comm));
+  displs[0] = 0;
+  for (PetscMPIInt p = 0; p < size; ++p) displs[p + 1] = displs[p] + cnts[p];
+  PetscCall(PetscMalloc1(displs[size], &adj));
+  PetscCallMPI(MPI_Allgatherv(nbs, n, MPIU_INT, adj, cnts, displs, MPIU_INT, comm));
 
+  /* Symmetric adjacency in CSR form, duplicates removed; row p is col[rowstart[p] .. rowstart[p] + rowlen[p]) */
+  PetscCall(PetscCalloc2(size, &rowlen, size + 1, &rowstart));
+  for (PetscMPIInt p = 0; p < size; ++p) {
+    for (PetscMPIInt k = displs[p]; k < displs[p + 1]; ++k) {
+      rowlen[p]++;
+      rowlen[adj[k]]++;
+    }
+  }
+  for (PetscMPIInt p = 0; p < size; ++p) rowstart[p + 1] = rowstart[p] + rowlen[p];
+  PetscCall(PetscMalloc2(rowstart[size], &col, size, &fill));
+  for (PetscMPIInt p = 0; p < size; ++p) fill[p] = rowstart[p];
+  for (PetscMPIInt p = 0; p < size; ++p) {
+    for (PetscMPIInt k = displs[p]; k < displs[p + 1]; ++k) {
+      col[fill[p]++]      = adj[k];
+      col[fill[adj[k]]++] = p;
+    }
+  }
+  for (PetscMPIInt p = 0; p < size; ++p) PetscCall(PetscSortRemoveDupsInt(&rowlen[p], col + rowstart[p]));
+
+  /* Smallest-last ordering: repeatedly remove a vertex of minimum remaining degree (lowest rank on ties) */
+  PetscCall(PetscMalloc3(size, &deg, size, &order, size + 1, &mark));
+  PetscCall(PetscCalloc1(size, &removed));
+  for (PetscMPIInt p = 0; p < size; ++p) deg[p] = rowlen[p];
+  for (PetscInt k = size - 1; k >= 0; --k) {
+    PetscInt v = -1;
+
+    for (PetscMPIInt p = 0; p < size; ++p)
+      if (!removed[p] && (v < 0 || deg[p] < deg[v])) v = p;
+    order[k]   = v;
+    removed[v] = PETSC_TRUE;
+    for (PetscInt j = rowstart[v]; j < rowstart[v] + rowlen[v]; ++j)
+      if (!removed[col[j]]) deg[col[j]]--;
+  }
+
+  /* Greedy colouring in that order (the last removed vertex first) */
+  for (PetscMPIInt p = 0; p < size; ++p) proccols[p] = -1;
+  for (PetscMPIInt c = 0; c <= size; ++c) mark[c] = -1;
+  for (PetscInt k = 0; k < size; ++k) {
+    const PetscInt v = order[k];
+    PetscInt       c = 0;
+
+    for (PetscInt j = rowstart[v]; j < rowstart[v] + rowlen[v]; ++j)
+      if (proccols[col[j]] >= 0) mark[proccols[col[j]]] = v;
+    while (mark[c] == v) ++c;
+    proccols[v] = c;
+  }
+
+  PetscCall(PetscFree(removed));
+  PetscCall(PetscFree3(deg, order, mark));
+  PetscCall(PetscFree2(col, fill));
+  PetscCall(PetscFree2(rowlen, rowstart));
+  PetscCall(PetscFree(adj));
+  PetscCall(PetscFree2(cnts, displs));
+  PetscFunctionReturn(PETSC_SUCCESS);
+}
+
+/* Jones-Plassmann or greedy colouring of the processor graph with PETSc's (parallel) MatColoring */
+static PetscErrorCode ColorProcessorsMatColoring(MPI_Comm comm, PetscInt nnb, const PetscInt nbs[], MatColoringType type, PetscInt proccols[])
+{
+  PetscMPIInt  rank, size;
+  PetscScalar *vals;
+  Mat          P;
+  MatColoring  coloring;
+  ISColoring   isc;
+  IS          *iss;
+  PetscInt     ncols;
+
+  PetscFunctionBegin;
+  PetscCallMPI(MPI_Comm_size(comm, &size));
+  PetscCallMPI(MPI_Comm_rank(comm, &rank));
+  PetscCall(PetscMalloc1(nnb, &vals));
+  for (PetscInt j = 0; j < nnb; ++j) vals[j] = 1;
+  PetscCall(MatCreateAIJ(comm, 1, 1, size, size, 0, NULL, nnb, NULL, &P));
+  {
+    const PetscInt row = rank;
+    PetscCall(MatSetValues(P, 1, &row, nnb, nbs, vals, INSERT_VALUES));
+  }
+  PetscCall(MatAssemblyBegin(P, MAT_FINAL_ASSEMBLY));
+  PetscCall(MatAssemblyEnd(P, MAT_FINAL_ASSEMBLY));
+  PetscCall(MatColoringCreate(P, &coloring));
+  PetscCall(MatColoringSetDistance(coloring, 1));
+  PetscCall(MatColoringSetType(coloring, type));
+  PetscCall(MatColoringApply(coloring, &isc));
+  PetscCall(ISColoringSetType(isc, IS_COLORING_GLOBAL));
+  PetscCall(ISColoringViewFromOptions(isc, NULL, "-pc_parsor_proc_coloring_view"));
+  PetscCall(ISColoringGetIS(isc, PETSC_USE_POINTER, &ncols, &iss));
+  for (PetscInt c = 0; c < ncols; ++c) {
+    const PetscInt *idxs;
+    IS              gis;
+    PetscInt        n;
+
+    PetscCall(ISAllGather(iss[c], &gis));
+    PetscCall(ISGetSize(gis, &n));
+    PetscCall(ISGetIndices(gis, &idxs));
+    for (PetscInt j = 0; j < n; ++j) proccols[idxs[j]] = c;
+    PetscCall(ISRestoreIndices(gis, &idxs));
+    PetscCall(ISDestroy(&gis));
+  }
+  PetscCall(ISColoringRestoreIS(isc, PETSC_USE_POINTER, &iss));
+  PetscCall(ISColoringDestroy(&isc));
+  PetscCall(MatColoringDestroy(&coloring));
+  PetscCall(MatDestroy(&P));
+  PetscCall(PetscFree(vals));
+  PetscFunctionReturn(PETSC_SUCCESS);
+}
+
+/* Colour the processor graph: two ranks are adjacent if the matrix couples rows owned by them. */
+static PetscErrorCode ColorProcessors(Mat matin, PetscInt type, PetscInt **proccols)
+{
+  MPI_Comm        comm = PetscObjectComm((PetscObject)matin);
+  PetscMPIInt     rank, size;
+  PetscInt       *procmap, n, nnb = 0, *nbs;
+  Mat             Ap, Ao;
+  const PetscInt *colmap, *ii, *jj;
+  PetscLayout     layout;
+
+  PetscFunctionBegin;
+  PetscCallMPI(MPI_Comm_size(comm, &size));
+  PetscCallMPI(MPI_Comm_rank(comm, &rank));
+  PetscCall(PetscCalloc1(size, &procmap));
   PetscCall(MatMPIAIJGetSeqAIJ(matin, &Ap, &Ao, &colmap));
   PetscCall(MatGetSize(Ao, &n, NULL));
   PetscCall(MatSeqAIJGetCSRAndMemType(Ao, &ii, &jj, NULL, NULL));
   PetscCall(MatGetLayouts(matin, NULL, &layout));
-  PetscCall(MatGetSize(matin, &N, NULL));
-
   for (PetscInt i = 0; i < n; ++i) {
     for (PetscInt j = ii[i]; j < ii[i + 1]; ++j) {
-      PetscInt    c = colmap[jj[j]];
       PetscMPIInt owner;
 
-      PetscCall(PetscLayoutFindOwner(layout, c, &owner));
+      PetscCall(PetscLayoutFindOwner(layout, colmap[jj[j]], &owner));
       procmap[owner] = 1;
     }
   }
-
   for (PetscInt i = 0; i < size; ++i)
-    if (procmap[i] > 0) n_nb_total++;
+    if (procmap[i] > 0) nnb++;
+  PetscCall(PetscMalloc1(nnb, &nbs));
+  for (PetscInt i = 0, j = 0; i < size; ++i)
+    if (procmap[i] > 0) nbs[j++] = i;
 
-  PetscCall(PetscCalloc1(n_nb_total, &proc_cols));
-  PetscCall(PetscCalloc1(n_nb_total, &proc_cols_vals));
-  for (PetscInt i = 0, j = 0; i < size; ++i) {
-    if (procmap[i] > 0) {
-      proc_cols[j]      = i;
-      proc_cols_vals[j] = 1;
-      ++j;
-    }
-  }
-
-  PetscCall(MatCreateAIJ(PetscObjectComm((PetscObject)matin), 1, 1, size, size, 0, NULL, n_nb_total, NULL, &P));
-  {
-    const PetscInt row = rank;
-    PetscCall(MatSetValues(P, 1, &row, n_nb_total, proc_cols, proc_cols_vals, INSERT_VALUES));
-  }
-  PetscCall(MatAssemblyBegin(P, MAT_FINAL_ASSEMBLY));
-  PetscCall(MatAssemblyEnd(P, MAT_FINAL_ASSEMBLY));
-  PetscCall(MatColoringCreate(P, &proc_coloring));
-  PetscCall(MatColoringSetDistance(proc_coloring, 1));
-  PetscCall(MatColoringSetType(proc_coloring, MATCOLORINGJP));
-  PetscCall(MatColoringApply(proc_coloring, &isc));
-  PetscCall(ISColoringSetType(isc, IS_COLORING_GLOBAL));
-  PetscCall(ISColoringViewFromOptions(isc, NULL, "-pc_parsor_proc_coloring_view"));
   PetscCall(PetscCalloc1(size, proccols));
-  {
-    IS      *iss;
-    PetscInt ncols;
+  if (type == PARSOR_COLORING_SL) PetscCall(ColorProcessorsSL(comm, nnb, nbs, *proccols));
+  else PetscCall(ColorProcessorsMatColoring(comm, nnb, nbs, type == PARSOR_COLORING_GREEDY ? MATCOLORINGGREEDY : MATCOLORINGJP, *proccols));
 
-    PetscCall(ISColoringGetIS(isc, PETSC_USE_POINTER, &ncols, &iss));
-    for (PetscInt c = 0; c < ncols; ++c) {
-      const PetscInt *idxs;
-      IS              gis;
-
-      PetscCall(ISAllGather(iss[c], &gis));
-      PetscCall(ISGetSize(gis, &n));
-      PetscCall(ISGetIndices(gis, &idxs));
-      for (PetscInt j = 0; j < n; ++j) (*proccols)[idxs[j]] = c;
-      PetscCall(ISRestoreIndices(gis, &idxs));
-      PetscCall(ISDestroy(&gis));
-    }
-    PetscCall(ISColoringRestoreIS(isc, PETSC_USE_POINTER, &iss));
-  }
-  PetscCall(ISColoringDestroy(&isc));
-  PetscCall(MatColoringDestroy(&proc_coloring));
-  PetscCall(PetscFree(proc_cols));
-  PetscCall(PetscFree(proc_cols_vals));
+  /* The global ordering is only consistent if coupled ranks have different colours */
+  for (PetscInt j = 0; j < nnb; ++j) PetscCheck((*proccols)[nbs[j]] != (*proccols)[rank], PETSC_COMM_SELF, PETSC_ERR_PLIB, "Ranks %d and %" PetscInt_FMT " are coupled but have the same colour", rank, nbs[j]);
+  PetscCall(PetscFree(nbs));
   PetscCall(PetscFree(procmap));
-  PetscCall(MatDestroy(&P));
   PetscFunctionReturn(PETSC_SUCCESS);
 }
 
@@ -542,6 +639,8 @@ static PetscErrorCode ParallelSORPartitionNodes(Mat matin, ParallelSORData *pars
   PetscCall(PetscCalloc1(parsor->n_mid_recv_nbs, &parsor->mid_recv_buf_size));
   PetscCall(PetscCalloc1(parsor->n_mid_recv_nbs, &parsor->mid_recv_remaining));
   PetscCall(PetscCalloc1(parsor->n_mid_recv_nbs, &parsor->mid_recv_reqs));
+  PetscCall(PetscCalloc1(parsor->n_mid_recv_nbs, &parsor->wait_idx));
+  PetscCall(PetscCalloc1(parsor->n_mid_recv_nbs, &parsor->wait_status));
   for (PetscInt i = 0; i < parsor->n_mid_recv_nbs; ++i) {
     parsor->mid_recv_buf_size[i] = n_mid_recv_buf_size[parsor->mid_recv_nbs[i]];
     PetscCall(PetscCalloc1(parsor->mid_recv_buf_size[i], &parsor->mid_recv_bufs[i]));
@@ -654,13 +753,13 @@ static PetscErrorCode ParallelSORPartitionNodes(Mat matin, ParallelSORData *pars
   PetscFunctionReturn(PETSC_SUCCESS);
 }
 
-static PetscErrorCode ParallelSORSetUp(Mat matin, ParallelSORData *parsor)
+static PetscErrorCode ParallelSORSetUp(Mat matin, PetscInt coloring, ParallelSORData *parsor)
 {
   Mat          A, B;
   PetscScalar *aa_tmp, *ba_tmp;
 
   PetscFunctionBegin;
-  PetscCall(ColorProcessors(matin, &parsor->proccols));
+  PetscCall(ColorProcessors(matin, coloring, &parsor->proccols));
   PetscCall(ParallelSORPartitionNodes(matin, parsor));
   {
     PetscMPIInt size;
@@ -715,6 +814,8 @@ static PetscErrorCode ParallelSORDestroy(ParallelSORData *parsor)
   PetscCall(PetscFree(parsor->mid_local_deps));
   PetscCall(PetscFree(parsor->mid_recv_nbs));
   PetscCall(PetscFree(parsor->mid_recv_reqs));
+  PetscCall(PetscFree(parsor->wait_idx));
+  PetscCall(PetscFree(parsor->wait_status));
   PetscCall(PetscFree(parsor->mid_recv_buf_size));
   PetscCall(PetscFree(parsor->mid_recv_remaining));
   for (PetscInt i = 0; i < parsor->n_mid_recv_nbs; ++i) PetscCall(PetscFree(parsor->mid_recv_bufs[i]));
@@ -797,18 +898,27 @@ static PetscErrorCode ParallelSORProcessMessage(ParallelSORData *parsor, PetscIn
   PetscFunctionReturn(PETSC_SUCCESS);
 }
 
+/* Wait for MID updates and process them: all messages that have arrived (MPI_Waitsome), or only one (MPI_Waitany,
+   -pc_parsor_waitany). Handling all of them before computing and sending means fewer, larger messages downstream. */
 static PetscErrorCode ParallelSORWaitMessage(ParallelSORData *parsor, PetscScalar *lv, PetscInt *nready)
 {
-  PetscMPIInt completed, bytes;
-  MPI_Status  status;
+  PetscMPIInt ncompleted, bytes;
 
   PetscFunctionBegin;
   parsor->stat_nrounds++;
-  PetscCallMPI(MPI_Waitany((PetscMPIInt)parsor->n_mid_recv_nbs, parsor->mid_recv_reqs, &completed, &status));
-  PetscCheck(completed != MPI_UNDEFINED, PETSC_COMM_SELF, PETSC_ERR_PLIB, "Waiting for MID updates but no receive is posted");
-  PetscCallMPI(MPI_Get_count(&status, MPI_BYTE, &bytes));
-  PetscCheck(bytes % (PetscMPIInt)sizeof(MidIDData) == 0, PETSC_COMM_SELF, PETSC_ERR_PLIB, "Received data size not a multiple of MidIDData");
-  PetscCall(ParallelSORProcessMessage(parsor, completed, bytes / (PetscMPIInt)sizeof(MidIDData), lv, nready));
+  if (parsor->waitany) {
+    PetscCallMPI(MPI_Waitany((PetscMPIInt)parsor->n_mid_recv_nbs, parsor->mid_recv_reqs, &parsor->wait_idx[0], &parsor->wait_status[0]));
+    ncompleted = parsor->wait_idx[0] == MPI_UNDEFINED ? MPI_UNDEFINED : 1;
+  } else {
+    PetscCallMPI(MPI_Waitsome((PetscMPIInt)parsor->n_mid_recv_nbs, parsor->mid_recv_reqs, &ncompleted, parsor->wait_idx, parsor->wait_status));
+  }
+  PetscCheck(ncompleted != MPI_UNDEFINED, PETSC_COMM_SELF, PETSC_ERR_PLIB, "Waiting for MID updates but no receive is posted");
+  for (PetscMPIInt k = 0; k < ncompleted; ++k) {
+    PetscCallMPI(MPI_Get_count(&parsor->wait_status[k], MPI_BYTE, &bytes));
+    PetscCheck(bytes % (PetscMPIInt)sizeof(MidIDData) == 0, PETSC_COMM_SELF, PETSC_ERR_PLIB, "Received data size not a multiple of MidIDData");
+    PetscCall(ParallelSORProcessMessage(parsor, parsor->wait_idx[k], bytes / (PetscMPIInt)sizeof(MidIDData), lv, nready));
+  }
+  parsor->stat_nmsgs += ncompleted;
   PetscFunctionReturn(PETSC_SUCCESS);
 }
 
@@ -1004,7 +1114,7 @@ static PetscErrorCode ParallelSORPrintStats(PC pc, PetscBool apply_stats)
 
       PetscCallMPI(MPI_Comm_size(comm, &size));
       PetscCallMPI(MPIU_Allreduce(&active, &nactive, 1, MPIU_INT, MPI_SUM, comm));
-      PetscCall(PetscPrintf(comm, "PARSOR %s setup: %" PetscInt_FMT " processor colours, %" PetscInt_FMT " of %d ranks own rows\n", prefix ? prefix : "", d->stat_ncolors, nactive, size));
+      PetscCall(PetscPrintf(comm, "PARSOR %s setup: %" PetscInt_FMT " processor colours (%s), %" PetscInt_FMT " of %d ranks own rows\n", prefix ? prefix : "", d->stat_ncolors, ParSORProcColorings[parsor->proc_coloring], nactive, size));
     }
     PetscCall(PetscPrintf(comm, "  %-26s %10s %10s %12s\n", "", "min", "max", "sum"));
     {
@@ -1012,20 +1122,21 @@ static PetscErrorCode ParallelSORPrintStats(PC pc, PetscBool apply_stats)
       for (PetscInt k = 0; k < 9; ++k) PetscCall(PetscPrintf(comm, "  %-26s %10" PetscInt_FMT " %10" PetscInt_FMT " %12" PetscInt_FMT "\n", names[k], mn[k], mx[k], sm[k]));
     }
   } else {
-    PetscReal loc[PH_N + 3], mx[PH_N + 3], mn[PH_N + 3];
+    PetscReal loc[PH_N + 4], mx[PH_N + 4], mn[PH_N + 4];
     PetscInt  napply = PetscMax(d->stat_napply, 1);
 
-    loc[0] = (PetscReal)d->stat_nrounds / napply, loc[1] = (PetscReal)d->stat_nscans / napply;
-    for (PetscInt k = 0; k < PH_N; ++k) loc[2 + k] = 1e3 * d->stat_tphase[k] / napply;
-    loc[PH_N + 2] = 1e3 * d->stat_ttotal / napply;
-    PetscCallMPI(MPIU_Allreduce(loc, mx, PH_N + 3, MPIU_REAL, MPI_MAX, comm));
-    PetscCallMPI(MPIU_Allreduce(loc, mn, PH_N + 3, MPIU_REAL, MPI_MIN, comm));
-    PetscCall(PetscPrintf(comm, "PARSOR %s apply (%" PetscInt_FMT " sweeps), per sweep:\n", prefix ? prefix : "", d->stat_napply));
+    loc[0] = (PetscReal)d->stat_nrounds / napply, loc[1] = (PetscReal)d->stat_nmsgs / napply, loc[2] = (PetscReal)d->stat_nscans / napply;
+    for (PetscInt k = 0; k < PH_N; ++k) loc[3 + k] = 1e3 * d->stat_tphase[k] / napply;
+    loc[PH_N + 3] = 1e3 * d->stat_ttotal / napply;
+    PetscCallMPI(MPIU_Allreduce(loc, mx, PH_N + 4, MPIU_REAL, MPI_MAX, comm));
+    PetscCallMPI(MPIU_Allreduce(loc, mn, PH_N + 4, MPIU_REAL, MPI_MIN, comm));
+    PetscCall(PetscPrintf(comm, "PARSOR %s apply (%" PetscInt_FMT " sweeps, %s), per sweep:\n", prefix ? prefix : "", d->stat_napply, d->waitany ? "MPI_Waitany" : "MPI_Waitsome"));
     PetscCall(PetscPrintf(comm, "  %-30s %10s %10s\n", "", "min", "max"));
     PetscCall(PetscPrintf(comm, "  %-30s %10.3g %10.3g\n", "message rounds", (double)mn[0], (double)mx[0]));
-    PetscCall(PetscPrintf(comm, "  %-30s %10.3g %10.3g\n", "scans over mid list", (double)mn[1], (double)mx[1]));
-    for (PetscInt k = 0; k < PH_N; ++k) PetscCall(PetscPrintf(comm, "  %-30s %10.3g %10.3g  [ms]\n", ParallelSORPhaseNames[k], (double)mn[2 + k], (double)mx[2 + k]));
-    PetscCall(PetscPrintf(comm, "  %-30s %10.3g %10.3g  [ms]\n", "total", (double)mn[PH_N + 2], (double)mx[PH_N + 2]));
+    PetscCall(PetscPrintf(comm, "  %-30s %10.3g %10.3g\n", "messages received", (double)mn[1], (double)mx[1]));
+    PetscCall(PetscPrintf(comm, "  %-30s %10.3g %10.3g\n", "scans over mid list", (double)mn[2], (double)mx[2]));
+    for (PetscInt k = 0; k < PH_N; ++k) PetscCall(PetscPrintf(comm, "  %-30s %10.3g %10.3g  [ms]\n", ParallelSORPhaseNames[k], (double)mn[3 + k], (double)mx[3 + k]));
+    PetscCall(PetscPrintf(comm, "  %-30s %10.3g %10.3g  [ms]\n", "total", (double)mn[PH_N + 3], (double)mx[PH_N + 3]));
   }
   PetscFunctionReturn(PETSC_SUCCESS);
 }
@@ -1133,8 +1244,9 @@ static PetscErrorCode PCSetUp_PARSOR(PC pc)
   }
   if (!parsor->parsor_data) {
     PetscCall(PetscNew(&parsor->parsor_data));
-    PetscCall(ParallelSORSetUp(pc->pmat, parsor->parsor_data));
+    PetscCall(ParallelSORSetUp(pc->pmat, parsor->proc_coloring, parsor->parsor_data));
     parsor->parsor_data->debug_no_mid_wait = parsor->debug_no_mid_wait;
+    parsor->parsor_data->waitany           = parsor->waitany;
     if (parsor->stats) PetscCall(ParallelSORPrintStats(pc, PETSC_FALSE));
   } else {
     /* Same nonzero pattern, possibly new values: refresh the cached value arrays */
@@ -1168,6 +1280,8 @@ static PetscErrorCode PCSetFromOptions_PARSOR(PC pc, PetscOptionItems PetscOptio
   PetscCall(PetscOptionsInt("-pc_parsor_its", "Number of SOR iterations", "PCPARSORSetIterations", parsor->its, &parsor->its, NULL));
   PetscCall(PetscOptionsBool("-pc_parsor_stats", "Print partition and communication statistics (debugging)", NULL, parsor->stats, &parsor->stats, NULL));
   PetscCall(PetscOptionsBool("-pc_parsor_debug_no_mid_wait", "INCORRECT sweep for timing only: MID nodes do not wait for remote updates", NULL, parsor->debug_no_mid_wait, &parsor->debug_no_mid_wait, NULL));
+  PetscCall(PetscOptionsEList("-pc_parsor_proc_coloring", "Colouring of the processor graph", NULL, ParSORProcColorings, PETSC_STATIC_ARRAY_LENGTH(ParSORProcColorings), ParSORProcColorings[parsor->proc_coloring], &parsor->proc_coloring, NULL));
+  PetscCall(PetscOptionsBool("-pc_parsor_waitany", "Process one MID message per round (MPI_Waitany) instead of all arrived ones (MPI_Waitsome)", NULL, parsor->waitany, &parsor->waitany, NULL));
   PetscOptionsHeadEnd();
   PetscFunctionReturn(PETSC_SUCCESS);
 }
@@ -1183,6 +1297,7 @@ static PetscErrorCode PCView_PARSOR(PC pc, PetscViewer viewer)
     PetscCall(PetscViewerASCIIPrintf(viewer, "  Omega: %g\n", (double)parsor->omega));
     PetscCall(PetscViewerASCIIPrintf(viewer, "  Iterations: %" PetscInt_FMT "\n", parsor->its));
     PetscCall(PetscViewerASCIIPrintf(viewer, "  Sweep type: Forward\n"));
+    PetscCall(PetscViewerASCIIPrintf(viewer, "  Processor colouring: %s, %s\n", ParSORProcColorings[parsor->proc_coloring], parsor->waitany ? "MPI_Waitany" : "MPI_Waitsome"));
     /* The accumulated per-phase timings are printed here (collective, called at a well-defined
        point, e.g. by a final KSPView) rather than at PCReset/PCDestroy: under petsc4py the
        destruction may happen in the deferred garbage cleanup, whose order differs between ranks,
