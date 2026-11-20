@@ -2,7 +2,7 @@
 
 Series: growing number of box subdomains of fixed size, with 64 (2D) or 32 (3D) subdomains per rank.
 For every MGMC point (dim, N, M) the SPDE runs on the same mesh (N) and with the same number of
-unknowns (2N) on the same number of ranks are matched. rho comes from the -mode rho runs (any rank
+unknowns (2N) on the same number of ranks are matched. rho (stdout only) comes from the -mode rho runs (any rank
 count); the coarse-sample time per cycle from the log_view file next to the .out (MGSmooth Level 0).
 
     python collect.py results/**/*.out --table alpha2_table.tex --figure alpha2_scaling.pdf
@@ -94,17 +94,20 @@ def fmt(x, f="{:.1f}"):
     return "--" if x is None else f.format(x)
 
 
+QOI = 0  # IACT column: QoI of c0ip_mgmc.py, 0 = box mean over [0.25, 0.5]^d, 1 = domain mean, 2 = centre value
+
+
 def table(rows):
-    out = [r"\begin{tabular}{rrrrrrrrr}", r"\toprule",
-           r" & & & & & \multicolumn{2}{c}{MGMC} & \multicolumn{2}{c}{SPDE [ms]} \\ \cmidrule(lr){6-7} \cmidrule(lr){8-9}",
-           r"subdomains & unknowns & colours & $\rho$ & IACT & set-up [s] & [ms] & same mesh & same unknowns \\", r"\midrule"]
+    out = [r"\begin{tabular}{rrrrrrrr}", r"\toprule",
+           r" & & & & \multicolumn{2}{c}{MGMC} & \multicolumn{2}{c}{SPDE [ms]} \\ \cmidrule(lr){5-6} \cmidrule(lr){7-8}",
+           r"subdomains & unknowns & colours & IACT & set-up [s] & [ms] & same mesh & same unknowns \\", r"\midrule"]
     for dim in (2, 3):
-        out.append(rf"\multicolumn{{9}}{{l}}{{\emph{{unit {'square' if dim == 2 else 'cube'}}}}} \\")
+        out.append(rf"\multicolumn{{8}}{{l}}{{\emph{{unit {'square' if dim == 2 else 'cube'}}}}} \\")
         for r in (x for x in rows if x["dim"] == dim):
             m, rh = r["mgmc"], r["rho"]
-            iact = max(m["iact"]) if m and m.get("iact") else None
+            iact = m["iact"][QOI] if m and m.get("iact") else None
             colours = (m or {}).get("colours") or (rh or {}).get("colours")
-            out.append(f"{r['nsub']} & {r['ndof']:,} & {fmt(colours, '{}')} & {fmt(rh and rh['rho'], '{:.3f}')} & "
+            out.append(f"{r['nsub']} & {r['ndof']:,} & {fmt(colours, '{}')} & "
                        f"{fmt(iact, '{:.2f}')} & {fmt(m and m.get('setup'), '{:.2f}')} & {fmt(m and m['ms'])} & "
                        f"{fmt(r['same_mesh'] and r['same_mesh']['ms'])} & {fmt(r['same_dofs'] and r['same_dofs']['ms'])} \\\\".replace(",", r"\,"))
     out += [r"\bottomrule", r"\end{tabular}"]
