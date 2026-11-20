@@ -44,6 +44,11 @@ unless -wr_reference 0 is given.
 Results: a human-readable summary on stdout, a JSON record (-wr_out) and the QOI chain
 as a .npy file (-wr_chain).
 
+Mesh: the wrench (-wr_mesh, default data/wrench.msh), or with -wr_mesh unitsquare the unit square,
+starting from a structured -wr_n0 x -wr_n0 triangle mesh (default 4); there the QOI is the
+integral over the quarter disc of radius 1 around the origin (prior only). -wr_qoi_center x,y[,z] and
+-wr_qoi_radius r replace the QOI ball.
+
 Example:
     python wrench_refinement.py -wr_refine 3 -wr_kappa 0.1 -wr_sampler amgmc \
         -wr_posterior -wr_out run.json -wr_chain run.npy
@@ -78,6 +83,8 @@ MESH_FILE = os.path.join(HERE, "..", "..", "..", "data", "wrench.msh")
 # QOI: L^2 integral of the field over a ball around the ring end of the wrench
 QOI_CENTER = (0.0, 10.0, 0.0)
 QOI_RADIUS = 70.0
+# QOI on the unit square (-wr_mesh unitsquare): integral over the quarter disc of radius 1 at the origin
+UNIT_SQUARE_QOI = ((0.0, 0.0), 1.0)
 
 # Posterior observations: volume-averages over small balls along the shaft, with
 # independent Gaussian noise of variance OBS_SIGMA2.
@@ -246,11 +253,11 @@ def prior_form(V, kappa, alpha):
     )
 
 
-def qoi_vector(V):
+def qoi_vector(V, center=QOI_CENTER, radius=QOI_RADIUS):
     """PETSc Vec m with m^T x = integral of the field x over the QOI ball."""
     x = fd.SpatialCoordinate(V.mesh())
-    r_sq = sum((x[i] - QOI_CENTER[i]) ** 2 for i in range(len(QOI_CENTER)))
-    chi = fd.conditional(fd.lt(r_sq, QOI_RADIUS ** 2), 1.0, 0.0)
+    r_sq = sum((x[i] - center[i]) ** 2 for i in range(len(center)))
+    chi = fd.conditional(fd.lt(r_sq, radius ** 2), 1.0, 0.0)
     meas = fd.assemble(chi * fd.TestFunction(V) * fd.dx)
     with meas.dat.vec_ro as m:
         return m.copy()
@@ -435,6 +442,8 @@ def main():
     cmdline_opts = opts.getAll()  # before the driver adds its own
 
     mesh_file = opts.getString("wr_mesh", MESH_FILE)
+    unit_square = mesh_file == "unitsquare"
+    n0 = opts.getInt("wr_n0", 4)  # unit square: cells per side of the coarse mesh
     alpha = opts.getInt("wr_alpha", 1)
     refine = opts.getInt("wr_refine", 2)
     kappa = opts.getReal("wr_kappa", 0.1)
@@ -456,6 +465,12 @@ def main():
 
     if alpha not in (1, 2):
         raise SystemExit("-wr_alpha must be 1 or 2")
+    if unit_square and posterior:
+        raise SystemExit("the posterior (observations) is only set up for the wrench")
+    qoi_center, qoi_radius = UNIT_SQUARE_QOI if unit_square else (QOI_CENTER, QOI_RADIUS)
+    if opts.hasName("wr_qoi_center"):  # e.g. -wr_qoi_center 0.5,0.5
+        qoi_center = tuple(float(c) for c in opts.getString("wr_qoi_center").split(","))
+    qoi_radius = opts.getReal("wr_qoi_radius", qoi_radius)
     if chunk <= 0 or nsamples <= 0:
         raise SystemExit("-wr_nsamples and -wr_chunk must be positive")
 
@@ -468,7 +483,7 @@ def main():
     pymgmc.seed(seed)
 
     t0 = perf_counter()
-    coarse = fd.Mesh(mesh_file)
+    coarse = fd.UnitSquareMesh(n0, n0) if unit_square else fd.Mesh(mesh_file)
     mesh = fd.MeshHierarchy(coarse, refine)[-1]
     degree = 1 if alpha == 1 else 2
     V = fd.FunctionSpace(mesh, "CG", degree)
@@ -496,7 +511,7 @@ def main():
         rhs = A.createVecs()[0]
         rhs.zeroEntries()
 
-    m = qoi_vector(V)
+    m = qoi_vector(V, qoi_center, qoi_radius)
 
     ksp = PETSc.KSP().create(comm=comm)
     ksp.setOptionsPrefix("")
@@ -629,12 +644,13 @@ def main():
         "driver": "wrench_refinement.py",
         "date": datetime.datetime.now().isoformat(timespec="seconds"),
         "problem": {
-            "mesh": os.path.abspath(mesh_file), "alpha": alpha, "degree": degree,
+            "mesh": "unitsquare" if unit_square else os.path.abspath(mesh_file),
+            "n0": n0 if unit_square else None, "alpha": alpha, "degree": degree,
             "refine": refine, "kappa": kappa,
             "mode": "posterior" if posterior else "prior",
             "ndofs": V.dim(), "ncells": mesh.num_cells(),
             "nnz": int(A.getInfo()["nz_used"]),
-            "qoi": {"center": QOI_CENTER, "radius": QOI_RADIUS},
+            "qoi": {"center": qoi_center, "radius": qoi_radius},
             "observations": {"centers": OBS_CENTERS.tolist(), "radii": OBS_RADII.tolist(),
                              "values": OBS_VALUES.tolist(), "sigma2": obs_sigma2}
             if posterior else None,

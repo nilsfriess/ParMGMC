@@ -1,0 +1,39 @@
+# Geometric vs algebraic MGMC on the unit square (alpha = 1, P1, kappa = 10, one core per run), for
+# job_packed.sh (wrench/). Coarse mesh 4 x 4, refine 3..9 (32^2 .. 2048^2 cells). QoIs: smooth = integral over
+# the quarter disc of radius 1 at the origin, local = integral over the disc of radius 0.1 at the centre.
+# Cholesky only once (its samples are independent, IACT 1 for any QoI). Largest runs first.
+gmgmc_smooth_r9        -wr_mesh unitsquare -wr_kappa 10 -wr_refine 9 -wr_sampler gmgmc  -wr_nsamples 10000 -wr_nburnin 200 -wr_max_time 1500 -wr_seed 7001
+gmgmc_local_r9         -wr_mesh unitsquare -wr_kappa 10 -wr_refine 9 -wr_sampler gmgmc -wr_qoi_center 0.5,0.5 -wr_qoi_radius 0.1 -wr_nsamples 10000 -wr_nburnin 200 -wr_max_time 1500 -wr_seed 7002
+amgmc_smooth_r9        -wr_mesh unitsquare -wr_kappa 10 -wr_refine 9 -wr_sampler amgmc  -wr_nsamples 10000 -wr_nburnin 200 -wr_max_time 1500 -wr_seed 7003
+amgmc_local_r9         -wr_mesh unitsquare -wr_kappa 10 -wr_refine 9 -wr_sampler amgmc -wr_qoi_center 0.5,0.5 -wr_qoi_radius 0.1 -wr_nsamples 10000 -wr_nburnin 200 -wr_max_time 1500 -wr_seed 7004
+cholesky_r9            -wr_mesh unitsquare -wr_kappa 10 -wr_refine 9 -wr_sampler cholesky -wr_nsamples 10000 -wr_nburnin 10 -wr_max_time 1500 -wr_seed 7005
+gmgmc_smooth_r8        -wr_mesh unitsquare -wr_kappa 10 -wr_refine 8 -wr_sampler gmgmc  -wr_nsamples 10000 -wr_nburnin 200 -wr_max_time 1500 -wr_seed 7006
+gmgmc_local_r8         -wr_mesh unitsquare -wr_kappa 10 -wr_refine 8 -wr_sampler gmgmc -wr_qoi_center 0.5,0.5 -wr_qoi_radius 0.1 -wr_nsamples 10000 -wr_nburnin 200 -wr_max_time 1500 -wr_seed 7007
+amgmc_smooth_r8        -wr_mesh unitsquare -wr_kappa 10 -wr_refine 8 -wr_sampler amgmc  -wr_nsamples 10000 -wr_nburnin 200 -wr_max_time 1500 -wr_seed 7008
+amgmc_local_r8         -wr_mesh unitsquare -wr_kappa 10 -wr_refine 8 -wr_sampler amgmc -wr_qoi_center 0.5,0.5 -wr_qoi_radius 0.1 -wr_nsamples 10000 -wr_nburnin 200 -wr_max_time 1500 -wr_seed 7009
+cholesky_r8            -wr_mesh unitsquare -wr_kappa 10 -wr_refine 8 -wr_sampler cholesky -wr_nsamples 10000 -wr_nburnin 10 -wr_max_time 1500 -wr_seed 7010
+gmgmc_smooth_r7        -wr_mesh unitsquare -wr_kappa 10 -wr_refine 7 -wr_sampler gmgmc  -wr_nsamples 10000 -wr_nburnin 200 -wr_max_time 1500 -wr_seed 7011
+gmgmc_local_r7         -wr_mesh unitsquare -wr_kappa 10 -wr_refine 7 -wr_sampler gmgmc -wr_qoi_center 0.5,0.5 -wr_qoi_radius 0.1 -wr_nsamples 10000 -wr_nburnin 200 -wr_max_time 1500 -wr_seed 7012
+amgmc_smooth_r7        -wr_mesh unitsquare -wr_kappa 10 -wr_refine 7 -wr_sampler amgmc  -wr_nsamples 10000 -wr_nburnin 200 -wr_max_time 1500 -wr_seed 7013
+amgmc_local_r7         -wr_mesh unitsquare -wr_kappa 10 -wr_refine 7 -wr_sampler amgmc -wr_qoi_center 0.5,0.5 -wr_qoi_radius 0.1 -wr_nsamples 10000 -wr_nburnin 200 -wr_max_time 1500 -wr_seed 7014
+cholesky_r7            -wr_mesh unitsquare -wr_kappa 10 -wr_refine 7 -wr_sampler cholesky -wr_nsamples 10000 -wr_nburnin 10 -wr_max_time 1500 -wr_seed 7015
+gmgmc_smooth_r6        -wr_mesh unitsquare -wr_kappa 10 -wr_refine 6 -wr_sampler gmgmc  -wr_nsamples 10000 -wr_nburnin 200 -wr_max_time 1500 -wr_seed 7016
+gmgmc_local_r6         -wr_mesh unitsquare -wr_kappa 10 -wr_refine 6 -wr_sampler gmgmc -wr_qoi_center 0.5,0.5 -wr_qoi_radius 0.1 -wr_nsamples 10000 -wr_nburnin 200 -wr_max_time 1500 -wr_seed 7017
+amgmc_smooth_r6        -wr_mesh unitsquare -wr_kappa 10 -wr_refine 6 -wr_sampler amgmc  -wr_nsamples 10000 -wr_nburnin 200 -wr_max_time 1500 -wr_seed 7018
+amgmc_local_r6         -wr_mesh unitsquare -wr_kappa 10 -wr_refine 6 -wr_sampler amgmc -wr_qoi_center 0.5,0.5 -wr_qoi_radius 0.1 -wr_nsamples 10000 -wr_nburnin 200 -wr_max_time 1500 -wr_seed 7019
+cholesky_r6            -wr_mesh unitsquare -wr_kappa 10 -wr_refine 6 -wr_sampler cholesky -wr_nsamples 10000 -wr_nburnin 10 -wr_max_time 1500 -wr_seed 7020
+gmgmc_smooth_r5        -wr_mesh unitsquare -wr_kappa 10 -wr_refine 5 -wr_sampler gmgmc  -wr_nsamples 10000 -wr_nburnin 200 -wr_max_time 1500 -wr_seed 7021
+gmgmc_local_r5         -wr_mesh unitsquare -wr_kappa 10 -wr_refine 5 -wr_sampler gmgmc -wr_qoi_center 0.5,0.5 -wr_qoi_radius 0.1 -wr_nsamples 10000 -wr_nburnin 200 -wr_max_time 1500 -wr_seed 7022
+amgmc_smooth_r5        -wr_mesh unitsquare -wr_kappa 10 -wr_refine 5 -wr_sampler amgmc  -wr_nsamples 10000 -wr_nburnin 200 -wr_max_time 1500 -wr_seed 7023
+amgmc_local_r5         -wr_mesh unitsquare -wr_kappa 10 -wr_refine 5 -wr_sampler amgmc -wr_qoi_center 0.5,0.5 -wr_qoi_radius 0.1 -wr_nsamples 10000 -wr_nburnin 200 -wr_max_time 1500 -wr_seed 7024
+cholesky_r5            -wr_mesh unitsquare -wr_kappa 10 -wr_refine 5 -wr_sampler cholesky -wr_nsamples 10000 -wr_nburnin 10 -wr_max_time 1500 -wr_seed 7025
+gmgmc_smooth_r4        -wr_mesh unitsquare -wr_kappa 10 -wr_refine 4 -wr_sampler gmgmc  -wr_nsamples 10000 -wr_nburnin 200 -wr_max_time 1500 -wr_seed 7026
+gmgmc_local_r4         -wr_mesh unitsquare -wr_kappa 10 -wr_refine 4 -wr_sampler gmgmc -wr_qoi_center 0.5,0.5 -wr_qoi_radius 0.1 -wr_nsamples 10000 -wr_nburnin 200 -wr_max_time 1500 -wr_seed 7027
+amgmc_smooth_r4        -wr_mesh unitsquare -wr_kappa 10 -wr_refine 4 -wr_sampler amgmc  -wr_nsamples 10000 -wr_nburnin 200 -wr_max_time 1500 -wr_seed 7028
+amgmc_local_r4         -wr_mesh unitsquare -wr_kappa 10 -wr_refine 4 -wr_sampler amgmc -wr_qoi_center 0.5,0.5 -wr_qoi_radius 0.1 -wr_nsamples 10000 -wr_nburnin 200 -wr_max_time 1500 -wr_seed 7029
+cholesky_r4            -wr_mesh unitsquare -wr_kappa 10 -wr_refine 4 -wr_sampler cholesky -wr_nsamples 10000 -wr_nburnin 10 -wr_max_time 1500 -wr_seed 7030
+gmgmc_smooth_r3        -wr_mesh unitsquare -wr_kappa 10 -wr_refine 3 -wr_sampler gmgmc  -wr_nsamples 10000 -wr_nburnin 200 -wr_max_time 1500 -wr_seed 7031
+gmgmc_local_r3         -wr_mesh unitsquare -wr_kappa 10 -wr_refine 3 -wr_sampler gmgmc -wr_qoi_center 0.5,0.5 -wr_qoi_radius 0.1 -wr_nsamples 10000 -wr_nburnin 200 -wr_max_time 1500 -wr_seed 7032
+amgmc_smooth_r3        -wr_mesh unitsquare -wr_kappa 10 -wr_refine 3 -wr_sampler amgmc  -wr_nsamples 10000 -wr_nburnin 200 -wr_max_time 1500 -wr_seed 7033
+amgmc_local_r3         -wr_mesh unitsquare -wr_kappa 10 -wr_refine 3 -wr_sampler amgmc -wr_qoi_center 0.5,0.5 -wr_qoi_radius 0.1 -wr_nsamples 10000 -wr_nburnin 200 -wr_max_time 1500 -wr_seed 7034
+cholesky_r3            -wr_mesh unitsquare -wr_kappa 10 -wr_refine 3 -wr_sampler cholesky -wr_nsamples 10000 -wr_nburnin 10 -wr_max_time 1500 -wr_seed 7035
