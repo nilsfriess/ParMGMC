@@ -3,8 +3,8 @@ of runs_unitsquare_k10*.txt (JSON records and QoI chains, one or more results di
 
 Plotted: geometric MGMC and algebraic MGMC with the tuned GAMG parameters (label amgmc_tuned), both QoIs.
 Left: time per independent sample (time per iteration x IACT of the QoI) divided by the number of unknowns n
-(flat = optimal O(n) cost). Right: the IACTs with standard errors. IACT: Sokal's adaptive window (c = 5),
-standard error tau * sqrt(2 (2W + 1) / N). All runs (also the other variants) are printed to stdout.
+(flat = optimal O(n) cost). Right: the IACTs. IACT: Sokal's adaptive window (c = 5); its standard error
+tau * sqrt(2 (2W + 1) / N) is printed (not plotted). All runs (also the other variants) are printed to stdout.
 
     python plot_geo_alg.py <results-dir>... -o geo_alg.pdf --table geo_alg_table.tex
 """
@@ -89,8 +89,7 @@ def main():
             lab = f"{name}, {q} QoI"
             ax1.plot(n, [1e6 * r["t_iter"] * r["tau"] / r["ndofs"] for r in rs], ls=ls, marker="o", color=col,
                      mfc=mfc, label=lab)
-            ax2.errorbar(n, [r["tau"] for r in rs], yerr=[r["tau_se"] for r in rs], ls=ls, marker="o", color=col,
-                         mfc=mfc, capsize=2, label=lab)
+            ax2.plot(n, [r["tau"] for r in rs], ls=ls, marker="o", color=col, mfc=mfc, label=lab)
     for ax in (ax1, ax2):
         ax.set_xscale("log")
         ax.set_xlabel("number of unknowns $n$")
