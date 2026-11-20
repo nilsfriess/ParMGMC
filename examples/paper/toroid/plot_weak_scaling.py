@@ -33,7 +33,7 @@ ap.add_argument("-o", "--output", default="toroid_weak_scaling.pdf")
 a = ap.parse_args()
 rows = [r for r in csv.DictReader(open(a.csv)) if r["gamg"] == "default"]
 
-fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(6.3, 1.9), constrained_layout=True)
+fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(6.3, 2.1), constrained_layout=True)
 for sm, st in STYLE.items():
     rs = sorted((r for r in rows if r["smoother"] == sm), key=lambda r: int(r["ranks"]))
     if not rs:
