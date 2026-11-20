@@ -1,0 +1,34 @@
+# Tuned GAMG parameters for the algebraic sampler, otherwise as runs_unitsquare_k10.txt (for job_packed.sh):
+# amgmc_tuned = the parameters of the earlier geometric/algebraic comparison (wrench_refinement.py GAMG_TUNED),
+# amgmc_ns2 = only -pc_gamg_agg_nsmooths 2 (best in the toroid GAMG sweep). The two *_rep runs repeat runs of
+# runs_unitsquare_k10.txt (same seeds) to compare the node speed between the two jobs.
+amgmc_tuned_smooth_r9 -wr_mesh unitsquare -wr_kappa 10 -wr_refine 9 -wr_sampler amgmc_tuned  -wr_nsamples 10000 -wr_nburnin 200 -wr_max_time 1500 -wr_seed 8001
+amgmc_tuned_local_r9 -wr_mesh unitsquare -wr_kappa 10 -wr_refine 9 -wr_sampler amgmc_tuned -wr_qoi_center 0.5,0.5 -wr_qoi_radius 0.1 -wr_nsamples 10000 -wr_nburnin 200 -wr_max_time 1500 -wr_seed 8002
+amgmc_ns2_smooth_r9 -wr_mesh unitsquare -wr_kappa 10 -wr_refine 9 -wr_sampler amgmc -wr_label amgmc_ns2 -gamgmc_pc_gamg_agg_nsmooths 2  -wr_nsamples 10000 -wr_nburnin 200 -wr_max_time 1500 -wr_seed 8003
+amgmc_ns2_local_r9 -wr_mesh unitsquare -wr_kappa 10 -wr_refine 9 -wr_sampler amgmc -wr_label amgmc_ns2 -gamgmc_pc_gamg_agg_nsmooths 2 -wr_qoi_center 0.5,0.5 -wr_qoi_radius 0.1 -wr_nsamples 10000 -wr_nburnin 200 -wr_max_time 1500 -wr_seed 8004
+amgmc_tuned_smooth_r8 -wr_mesh unitsquare -wr_kappa 10 -wr_refine 8 -wr_sampler amgmc_tuned  -wr_nsamples 10000 -wr_nburnin 200 -wr_max_time 1500 -wr_seed 8005
+amgmc_tuned_local_r8 -wr_mesh unitsquare -wr_kappa 10 -wr_refine 8 -wr_sampler amgmc_tuned -wr_qoi_center 0.5,0.5 -wr_qoi_radius 0.1 -wr_nsamples 10000 -wr_nburnin 200 -wr_max_time 1500 -wr_seed 8006
+amgmc_ns2_smooth_r8 -wr_mesh unitsquare -wr_kappa 10 -wr_refine 8 -wr_sampler amgmc -wr_label amgmc_ns2 -gamgmc_pc_gamg_agg_nsmooths 2  -wr_nsamples 10000 -wr_nburnin 200 -wr_max_time 1500 -wr_seed 8007
+amgmc_ns2_local_r8 -wr_mesh unitsquare -wr_kappa 10 -wr_refine 8 -wr_sampler amgmc -wr_label amgmc_ns2 -gamgmc_pc_gamg_agg_nsmooths 2 -wr_qoi_center 0.5,0.5 -wr_qoi_radius 0.1 -wr_nsamples 10000 -wr_nburnin 200 -wr_max_time 1500 -wr_seed 8008
+amgmc_tuned_smooth_r7 -wr_mesh unitsquare -wr_kappa 10 -wr_refine 7 -wr_sampler amgmc_tuned  -wr_nsamples 10000 -wr_nburnin 200 -wr_max_time 1500 -wr_seed 8009
+amgmc_tuned_local_r7 -wr_mesh unitsquare -wr_kappa 10 -wr_refine 7 -wr_sampler amgmc_tuned -wr_qoi_center 0.5,0.5 -wr_qoi_radius 0.1 -wr_nsamples 10000 -wr_nburnin 200 -wr_max_time 1500 -wr_seed 8010
+amgmc_ns2_smooth_r7 -wr_mesh unitsquare -wr_kappa 10 -wr_refine 7 -wr_sampler amgmc -wr_label amgmc_ns2 -gamgmc_pc_gamg_agg_nsmooths 2  -wr_nsamples 10000 -wr_nburnin 200 -wr_max_time 1500 -wr_seed 8011
+amgmc_ns2_local_r7 -wr_mesh unitsquare -wr_kappa 10 -wr_refine 7 -wr_sampler amgmc -wr_label amgmc_ns2 -gamgmc_pc_gamg_agg_nsmooths 2 -wr_qoi_center 0.5,0.5 -wr_qoi_radius 0.1 -wr_nsamples 10000 -wr_nburnin 200 -wr_max_time 1500 -wr_seed 8012
+amgmc_tuned_smooth_r6 -wr_mesh unitsquare -wr_kappa 10 -wr_refine 6 -wr_sampler amgmc_tuned  -wr_nsamples 10000 -wr_nburnin 200 -wr_max_time 1500 -wr_seed 8013
+amgmc_tuned_local_r6 -wr_mesh unitsquare -wr_kappa 10 -wr_refine 6 -wr_sampler amgmc_tuned -wr_qoi_center 0.5,0.5 -wr_qoi_radius 0.1 -wr_nsamples 10000 -wr_nburnin 200 -wr_max_time 1500 -wr_seed 8014
+amgmc_ns2_smooth_r6 -wr_mesh unitsquare -wr_kappa 10 -wr_refine 6 -wr_sampler amgmc -wr_label amgmc_ns2 -gamgmc_pc_gamg_agg_nsmooths 2  -wr_nsamples 10000 -wr_nburnin 200 -wr_max_time 1500 -wr_seed 8015
+amgmc_ns2_local_r6 -wr_mesh unitsquare -wr_kappa 10 -wr_refine 6 -wr_sampler amgmc -wr_label amgmc_ns2 -gamgmc_pc_gamg_agg_nsmooths 2 -wr_qoi_center 0.5,0.5 -wr_qoi_radius 0.1 -wr_nsamples 10000 -wr_nburnin 200 -wr_max_time 1500 -wr_seed 8016
+amgmc_tuned_smooth_r5 -wr_mesh unitsquare -wr_kappa 10 -wr_refine 5 -wr_sampler amgmc_tuned  -wr_nsamples 10000 -wr_nburnin 200 -wr_max_time 1500 -wr_seed 8017
+amgmc_tuned_local_r5 -wr_mesh unitsquare -wr_kappa 10 -wr_refine 5 -wr_sampler amgmc_tuned -wr_qoi_center 0.5,0.5 -wr_qoi_radius 0.1 -wr_nsamples 10000 -wr_nburnin 200 -wr_max_time 1500 -wr_seed 8018
+amgmc_ns2_smooth_r5 -wr_mesh unitsquare -wr_kappa 10 -wr_refine 5 -wr_sampler amgmc -wr_label amgmc_ns2 -gamgmc_pc_gamg_agg_nsmooths 2  -wr_nsamples 10000 -wr_nburnin 200 -wr_max_time 1500 -wr_seed 8019
+amgmc_ns2_local_r5 -wr_mesh unitsquare -wr_kappa 10 -wr_refine 5 -wr_sampler amgmc -wr_label amgmc_ns2 -gamgmc_pc_gamg_agg_nsmooths 2 -wr_qoi_center 0.5,0.5 -wr_qoi_radius 0.1 -wr_nsamples 10000 -wr_nburnin 200 -wr_max_time 1500 -wr_seed 8020
+amgmc_tuned_smooth_r4 -wr_mesh unitsquare -wr_kappa 10 -wr_refine 4 -wr_sampler amgmc_tuned  -wr_nsamples 10000 -wr_nburnin 200 -wr_max_time 1500 -wr_seed 8021
+amgmc_tuned_local_r4 -wr_mesh unitsquare -wr_kappa 10 -wr_refine 4 -wr_sampler amgmc_tuned -wr_qoi_center 0.5,0.5 -wr_qoi_radius 0.1 -wr_nsamples 10000 -wr_nburnin 200 -wr_max_time 1500 -wr_seed 8022
+amgmc_ns2_smooth_r4 -wr_mesh unitsquare -wr_kappa 10 -wr_refine 4 -wr_sampler amgmc -wr_label amgmc_ns2 -gamgmc_pc_gamg_agg_nsmooths 2  -wr_nsamples 10000 -wr_nburnin 200 -wr_max_time 1500 -wr_seed 8023
+amgmc_ns2_local_r4 -wr_mesh unitsquare -wr_kappa 10 -wr_refine 4 -wr_sampler amgmc -wr_label amgmc_ns2 -gamgmc_pc_gamg_agg_nsmooths 2 -wr_qoi_center 0.5,0.5 -wr_qoi_radius 0.1 -wr_nsamples 10000 -wr_nburnin 200 -wr_max_time 1500 -wr_seed 8024
+amgmc_tuned_smooth_r3 -wr_mesh unitsquare -wr_kappa 10 -wr_refine 3 -wr_sampler amgmc_tuned  -wr_nsamples 10000 -wr_nburnin 200 -wr_max_time 1500 -wr_seed 8025
+amgmc_tuned_local_r3 -wr_mesh unitsquare -wr_kappa 10 -wr_refine 3 -wr_sampler amgmc_tuned -wr_qoi_center 0.5,0.5 -wr_qoi_radius 0.1 -wr_nsamples 10000 -wr_nburnin 200 -wr_max_time 1500 -wr_seed 8026
+amgmc_ns2_smooth_r3 -wr_mesh unitsquare -wr_kappa 10 -wr_refine 3 -wr_sampler amgmc -wr_label amgmc_ns2 -gamgmc_pc_gamg_agg_nsmooths 2  -wr_nsamples 10000 -wr_nburnin 200 -wr_max_time 1500 -wr_seed 8027
+amgmc_ns2_local_r3 -wr_mesh unitsquare -wr_kappa 10 -wr_refine 3 -wr_sampler amgmc -wr_label amgmc_ns2 -gamgmc_pc_gamg_agg_nsmooths 2 -wr_qoi_center 0.5,0.5 -wr_qoi_radius 0.1 -wr_nsamples 10000 -wr_nburnin 200 -wr_max_time 1500 -wr_seed 8028
+gmgmc_local_r8_rep -wr_mesh unitsquare -wr_kappa 10 -wr_refine 8 -wr_sampler gmgmc -wr_label gmgmc_rep -wr_qoi_center 0.5,0.5 -wr_qoi_radius 0.1 -wr_nsamples 10000 -wr_nburnin 200 -wr_max_time 1500 -wr_seed 7007
+amgmc_local_r8_rep -wr_mesh unitsquare -wr_kappa 10 -wr_refine 8 -wr_sampler amgmc -wr_label amgmc_rep -wr_qoi_center 0.5,0.5 -wr_qoi_radius 0.1 -wr_nsamples 10000 -wr_nburnin 200 -wr_max_time 1500 -wr_seed 7009

@@ -1,11 +1,11 @@
 """Geometric vs algebraic MGMC on the unit square: figure and LaTeX table from the wrench_refinement.py runs
-of runs_unitsquare_k10.txt (JSON records and QoI chains in one results directory).
+of runs_unitsquare_k10*.txt (JSON records and QoI chains, one or more results directories).
 
 Left: time per independent sample (time per iteration x IACT of the QoI) against the number of unknowns,
 for both QoIs, with the Cholesky sampler (independent samples) for reference. Right: the IACTs with
 standard errors. IACT: Sokal's adaptive window (c = 5), standard error tau * sqrt(2 (2W + 1) / N).
 
-    python plot_geo_alg.py <results-dir> -o geo_alg.pdf --table geo_alg_table.tex
+    python plot_geo_alg.py <results-dir>... -o geo_alg.pdf --table geo_alg_table.tex
 """
 
 import argparse
@@ -24,8 +24,11 @@ mpl.rcParams.update({"font.family": "serif", "font.size": 9, "axes.labelsize": 9
 USETEX = shutil.which("latex") is not None and shutil.which("pdflatex") is not None
 if USETEX:
     mpl.rcParams.update({"text.usetex": True, "pgf.texsystem": "pdflatex", "pgf.rcfonts": False})
-COL = {"gmgmc": "#0072B2", "amgmc": "#D55E00", "cholesky": "#009E73"}
-NAME = {"gmgmc": "geometric MGMC", "amgmc": "algebraic MGMC", "cholesky": "Cholesky"}
+# Samplers by their -wr_label (variants of amgmc get their own label); others are printed but not plotted
+COL = {"gmgmc": "#0072B2", "amgmc": "#D55E00", "amgmc_tuned": "#CC79A7", "amgmc_ns2": "#E69F00",
+       "cholesky": "#009E73"}
+NAME = {"gmgmc": "geometric MGMC", "amgmc": "algebraic MGMC", "amgmc_tuned": "algebraic MGMC (tuned)",
+        "amgmc_ns2": "algebraic MGMC (2 prol. smoothing steps)", "cholesky": "Cholesky"}
 
 
 def sokal(x, c=5):
@@ -43,15 +46,15 @@ def sokal(x, c=5):
     return max(tau, 1.0), tau * np.sqrt(2 * (2 * w + 1) / n)
 
 
-def load(d):
+def load(dirs):
     rows = []
-    for path in sorted(glob.glob(os.path.join(d, "*.json"))):
+    for path in sorted(p for d in dirs for p in glob.glob(os.path.join(d, "*.json"))):
         with open(path) as fh:
             r = json.load(fh)
         if r.get("driver") != "wrench_refinement.py" or r["problem"]["mesh"] != "unitsquare":
             continue
         tau, se = sokal(np.load(path[:-5] + ".npy"))
-        sampler = r["sampler"]["name"]
+        sampler = r["sampler"].get("label") or r["sampler"]["name"]
         rows.append({"sampler": sampler, "qoi": "smooth" if r["problem"]["qoi"]["radius"] >= 0.5 else "local",
                      "ndofs": r["problem"]["ndofs"], "t_iter": r["timings"]["per_iteration"],
                      "t_setup": r["timings"]["setup"], "nsamples": r["run"]["nsamples"],
@@ -68,7 +71,7 @@ def series(rows, sampler, qoi=None):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("results")
+    ap.add_argument("results", nargs="+")
     ap.add_argument("-o", "--output", default="geo_alg.pdf")
     ap.add_argument("--table")
     a = ap.parse_args()
@@ -76,11 +79,11 @@ def main():
 
     for r in sorted(rows, key=lambda r: (r["sampler"], r["qoi"], r["ndofs"])):
         vr = f"{r['var_ratio']:.3f} +- {r['var_ratio_se']:.3f}" if r["var_ratio"] is not None else "-"
-        print(f"{r['sampler']:9s} {r['qoi']:6s} {r['ndofs']:9d}  t/iter {1e3 * r['t_iter']:9.3f} ms  "
+        print(f"{r['sampler']:12s} {r['qoi']:6s} {r['ndofs']:9d}  t/iter {1e3 * r['t_iter']:9.3f} ms  "
               f"IACT {r['tau']:5.2f} +- {r['tau_se']:4.2f}  N {r['nsamples']:6d}  setup {r['t_setup']:7.2f} s  var {vr}")
 
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(6.3, 2.3), constrained_layout=True)
-    for s in ("gmgmc", "amgmc"):
+    for s in [s for s in COL if s != "cholesky"]:
         for q, ls, mfc in (("smooth", "-", COL[s]), ("local", "--", "white")):
             rs = series(rows, s, q)
             if not rs:
